@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { streamChat } from '../api/chat'
+import { hasTime, formatDate, formatTime } from '../utils/date'
 
 const SUGGESTED = [
   { label: 'What has my career journey looked like?', icon: '💼' },
@@ -191,9 +192,9 @@ function MessageRow({ msg }) {
 
 function EventActionCard({ action, event }) {
   const isCreated = action === 'created'
-  const date = new Date(event.date).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
-  })
+  const dateStr = formatDate(event.date)
+  const timeStr = hasTime(event.date) ? formatTime(event.date) : null
+  const dateDisplay = timeStr ? `${dateStr} at ${timeStr}` : dateStr
   return (
     <Link
       to={`/events/${event._id}`}
@@ -211,7 +212,7 @@ function EventActionCard({ action, event }) {
       </div>
       <p className="text-sm font-medium text-gray-900">{event.title}</p>
       <p className="text-xs text-gray-500 mt-0.5">
-        {date}{event.location ? ` · ${event.location}` : ''}
+        {dateDisplay}{event.location ? ` · ${event.location}` : ''}
       </p>
       <p className="text-xs text-blue-500 mt-1">View or edit →</p>
     </Link>

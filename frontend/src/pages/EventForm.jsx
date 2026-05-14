@@ -2,12 +2,15 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getEvent, createEvent, updateEvent } from '../api/events'
 import TagInput from '../components/TagInput'
+import { hasTime } from '../utils/date'
 
 const EMPTY_FORM = {
   title: '',
   description: '',
   event_type: 'career',
   date: '',
+  includeTime: false,
+  time: '',
   location: '',
   tags: [],
 }
@@ -24,11 +27,17 @@ export default function EventForm() {
     if (!id) return
     getEvent(id)
       .then((event) => {
+        const eventHasTime = hasTime(event.date)
+        const d = new Date(event.date)
         setForm({
           title: event.title ?? '',
           description: event.description ?? '',
           event_type: event.event_type ?? 'career',
           date: event.date ? event.date.slice(0, 10) : '',
+          includeTime: eventHasTime,
+          time: eventHasTime
+            ? `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+            : '',
           location: event.location ?? '',
           tags: event.tags ?? [],
         })
@@ -44,10 +53,11 @@ export default function EventForm() {
     setError(null)
     setSaving(true)
     try {
-      const payload = {
-        ...form,
-        date: new Date(form.date).toISOString(),
-      }
+      const { includeTime, time, ...rest } = form
+      const dateIso = includeTime && time
+        ? `${rest.date}T${time}:00.000Z`
+        : `${rest.date}T00:00:00.000Z`
+      const payload = { ...rest, date: dateIso }
       if (id) {
         await updateEvent(id, payload)
         navigate(`/events/${id}`)
@@ -121,6 +131,37 @@ export default function EventForm() {
             className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="includeTime"
+            checked={form.includeTime}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                includeTime: e.target.checked,
+                time: e.target.checked ? f.time : '',
+              }))
+            }
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="includeTime" className="text-sm text-gray-700 select-none">
+            Include time
+          </label>
+        </div>
+
+        {form.includeTime && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Time</label>
+            <input
+              type="time"
+              value={form.time}
+              onChange={set('time')}
+              className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>

@@ -36,7 +36,7 @@ Schema:
   "intent": "create" | "edit" | "query",
   "fields": {
     "title": string or null,
-    "date": "YYYY-MM-DD" or null,
+    "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
     "event_type": "career" | "travel" | "milestone" | "family" or null,
     "description": string or null,
     "location": string or null,
@@ -104,6 +104,16 @@ def _format_event_line(e: dict) -> str:
 
 def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
+
+
+def _parse_date(date_str: str) -> datetime:
+    """Parse YYYY-MM-DD or YYYY-MM-DDTHH:MM from the LLM, always returning a UTC datetime."""
+    try:
+        if "T" in date_str:
+            return datetime.fromisoformat(date_str).replace(tzinfo=timezone.utc)
+        return datetime.fromisoformat(date_str + "T00:00:00").replace(tzinfo=timezone.utc)
+    except Exception:
+        return datetime.now(timezone.utc)
 
 
 async def _ollama_json(system: str, user_content: str) -> dict:
@@ -208,10 +218,7 @@ async def chat(req: ChatRequest):
 
                 else:
                     # All required fields present — create the event
-                    try:
-                        date_val = datetime.fromisoformat(fields["date"]).replace(tzinfo=timezone.utc)
-                    except Exception:
-                        date_val = datetime.now(timezone.utc)
+                    date_val = _parse_date(fields["date"])
 
                     now = datetime.now(timezone.utc)
                     doc = {
@@ -275,10 +282,7 @@ async def chat(req: ChatRequest):
                     else:
                         # Apply changes
                         if "date" in changes and isinstance(changes["date"], str):
-                            try:
-                                changes["date"] = datetime.fromisoformat(changes["date"]).replace(tzinfo=timezone.utc)
-                            except Exception:
-                                pass
+                            changes["date"] = _parse_date(changes["date"])
                         changes["updated_at"] = datetime.now(timezone.utc)
 
                         event_id = target["_id"]
