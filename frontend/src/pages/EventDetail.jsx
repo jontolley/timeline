@@ -12,10 +12,27 @@ const TYPE_STYLES = {
   family: 'bg-orange-100 text-orange-700',
 }
 
+async function geocodeLocation(loc) {
+  const q = loc.address || loc.name
+  if (!q) return loc
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    )
+    const data = await res.json()
+    if (data[0]) {
+      return { ...loc, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }
+    }
+  } catch { /* leave coords null */ }
+  return loc
+}
+
 export default function EventDetail() {
   const { id } = useParams()
   const navigate = useNavigate()
   const [event, setEvent] = useState(null)
+  const [displayLocation, setDisplayLocation] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -24,6 +41,14 @@ export default function EventDetail() {
       .catch(() => setEvent(null))
       .finally(() => setLoading(false))
   }, [id])
+
+  useEffect(() => {
+    if (!event) { setDisplayLocation(null); return }
+    const loc = event.location
+    if (!loc) { setDisplayLocation(null); return }
+    if (loc.lat != null) { setDisplayLocation(loc); return }
+    geocodeLocation(loc).then(setDisplayLocation)
+  }, [event])
 
   const handleDelete = async () => {
     if (!window.confirm('Delete this event? This cannot be undone.')) return
@@ -71,17 +96,17 @@ export default function EventDetail() {
             ) : (
               locationDisplay(event.location)
             )}
-            {event.location?.lat != null && (
+            {displayLocation?.lat != null && (
               <span className="ml-2 text-xs text-gray-400 font-mono">
-                ({event.location.lat.toFixed(5)}, {event.location.lng.toFixed(5)})
+                ({displayLocation.lat.toFixed(5)}, {displayLocation.lng.toFixed(5)})
               </span>
             )}
           </p>
         )}
-        {event.location?.lat != null && (
+        {displayLocation?.lat != null && (
           <div className="rounded-lg overflow-hidden border border-gray-200 mb-4" style={{ height: 200 }}>
             <MapContainer
-              center={[event.location.lat, event.location.lng]}
+              center={[displayLocation.lat, displayLocation.lng]}
               zoom={13}
               style={{ height: '100%', width: '100%' }}
               dragging={false}
@@ -92,7 +117,7 @@ export default function EventDetail() {
               attributionControl={false}
             >
               <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Marker position={[event.location.lat, event.location.lng]} />
+              <Marker position={[displayLocation.lat, displayLocation.lng]} />
             </MapContainer>
           </div>
         )}

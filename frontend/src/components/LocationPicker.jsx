@@ -13,10 +13,31 @@ function LocationPickerInner({ value, onChange }) {
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
   const debounceRef = useRef(null)
+  const autoGeocodedRef = useRef(false)
 
   useEffect(() => {
     setQuery(value?.address || value?.name || '')
   }, [value?.address, value?.name])
+
+  // On mount: if value has a name/address but no coords, geocode automatically
+  useEffect(() => {
+    if (autoGeocodedRef.current) return
+    if (!value || value.lat != null || !(value.name || value.address)) return
+    autoGeocodedRef.current = true
+    const q = value.address || value.name
+    fetch(
+      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
+      { headers: { 'Accept-Language': 'en' } }
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (data[0]) {
+          onChange({ ...value, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) })
+          setShowMap(true)
+        }
+      })
+      .catch(() => {})
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const search = useCallback((q) => {
     clearTimeout(debounceRef.current)
