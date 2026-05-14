@@ -12,6 +12,7 @@ export default function EventCard({ event }) {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
+    timeZone: 'UTC',
   })
 
   return (

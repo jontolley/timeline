@@ -192,7 +192,7 @@ function MessageRow({ msg }) {
 function EventActionCard({ action, event }) {
   const isCreated = action === 'created'
   const date = new Date(event.date).toLocaleDateString('en-US', {
-    year: 'numeric', month: 'long', day: 'numeric',
+    year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
   })
   return (
     <Link
