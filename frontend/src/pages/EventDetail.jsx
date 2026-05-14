@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
+import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import { getEvent, deleteEvent } from '../api/events'
 import { hasTime, formatDate, formatTime } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
@@ -76,6 +77,24 @@ export default function EventDetail() {
               </span>
             )}
           </p>
+        )}
+        {event.location?.lat != null && (
+          <div className="rounded-lg overflow-hidden border border-gray-200 mb-4" style={{ height: 200 }}>
+            <MapContainer
+              center={[event.location.lat, event.location.lng]}
+              zoom={13}
+              style={{ height: '100%', width: '100%' }}
+              dragging={false}
+              zoomControl={false}
+              scrollWheelZoom={false}
+              doubleClickZoom={false}
+              touchZoom={false}
+              attributionControl={false}
+            >
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+              <Marker position={[event.location.lat, event.location.lng]} />
+            </MapContainer>
+          </div>
         )}
         {event.description && (
           <p className="text-gray-700 mb-4 leading-relaxed">{event.description}</p>
