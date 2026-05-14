@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { streamChat } from '../api/chat'
 import { hasTime, formatDate, formatTime } from '../utils/date'
+import { locationDisplay } from '../utils/location'
 
 const SUGGESTED = [
   { label: 'What has my career journey looked like?', icon: '💼' },
@@ -212,7 +213,7 @@ function EventActionCard({ action, event }) {
       </div>
       <p className="text-sm font-medium text-gray-900">{event.title}</p>
       <p className="text-xs text-gray-500 mt-0.5">
-        {dateDisplay}{event.location ? ` · ${event.location}` : ''}
+        {dateDisplay}{locationDisplay(event.location) ? ` · ${locationDisplay(event.location)}` : ''}
       </p>
       <p className="text-xs text-blue-500 mt-1">View or edit →</p>
     </Link>

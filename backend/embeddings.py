@@ -50,10 +50,20 @@ class EmbeddingService:
         if hasattr(date, "isoformat"):
             date = date.isoformat()
         tags = ", ".join(event.get("tags") or [])
+        loc = event.get("location") or {}
+        if isinstance(loc, str):
+            loc_text = loc
+        elif isinstance(loc, dict):
+            parts = [loc.get("name"), loc.get("address")]
+            loc_text = ", ".join(p for p in parts if p)
+            if loc.get("lat") is not None and loc.get("lng") is not None:
+                loc_text += f" ({loc['lat']:.5f}, {loc['lng']:.5f})"
+        else:
+            loc_text = ""
         text = (
             f"{date} {event.get('event_type', '')}: {event.get('title', '')}. "
             f"{event.get('description', '')}. "
-            f"Location: {event.get('location', '')}. Tags: {tags}"
+            f"Location: {loc_text}. Tags: {tags}"
         )
         vector = await self.embed(text)
         point_id = _point_id(str(event["_id"]))

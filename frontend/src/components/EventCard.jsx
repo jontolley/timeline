@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { hasTime, formatDate, formatTime } from '../utils/date'
+import { locationDisplay } from '../utils/location'
 
 const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
@@ -30,8 +31,8 @@ export default function EventCard({ event }) {
         <p className="text-sm text-gray-500 mt-1">
           {dateStr}{timeStr && <span className="ml-1 text-gray-400">at {timeStr}</span>}
         </p>
-        {event.location && (
-          <p className="text-sm text-gray-600 mt-1">&#128205; {event.location}</p>
+        {locationDisplay(event.location) && (
+          <p className="text-sm text-gray-600 mt-1">&#128205; {locationDisplay(event.location)}</p>
         )}
         {event.description && (
           <p className="text-sm text-gray-600 mt-2 line-clamp-2">{event.description}</p>

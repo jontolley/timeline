@@ -18,7 +18,7 @@ SEED_EVENTS = [
         "description": "Joined a startup in San Francisco as a junior software engineer, working on backend APIs.",
         "event_type": "career",
         "date": datetime(2018, 6, 1, tzinfo=timezone.utc),
-        "location": "San Francisco, CA",
+        "location": {"name": "San Francisco, CA", "address": None, "lat": 37.7749, "lng": -122.4194},
         "tags": ["engineering", "startup"],
     },
     {
@@ -26,7 +26,7 @@ SEED_EVENTS = [
         "description": "Three-week adventure through Thailand, Vietnam, and Cambodia.",
         "event_type": "travel",
         "date": datetime(2019, 3, 15, tzinfo=timezone.utc),
-        "location": "Thailand, Vietnam, Cambodia",
+        "location": {"name": "Southeast Asia", "address": "Thailand, Vietnam, Cambodia", "lat": None, "lng": None},
         "tags": ["backpacking", "adventure", "asia"],
     },
     {
@@ -34,7 +34,7 @@ SEED_EVENTS = [
         "description": "Recognised for leading the migration to microservices architecture.",
         "event_type": "career",
         "date": datetime(2020, 9, 1, tzinfo=timezone.utc),
-        "location": "San Francisco, CA",
+        "location": {"name": "San Francisco, CA", "address": None, "lat": 37.7749, "lng": -122.4194},
         "tags": ["promotion", "engineering"],
     },
     {
@@ -42,7 +42,7 @@ SEED_EVENTS = [
         "description": "Ran the Big Sur International Marathon after six months of training.",
         "event_type": "milestone",
         "date": datetime(2021, 4, 25, tzinfo=timezone.utc),
-        "location": "Big Sur, CA",
+        "location": {"name": "Big Sur, CA", "address": None, "lat": 36.2704, "lng": -121.8081},
         "tags": ["running", "fitness", "personal"],
     },
     {
@@ -50,7 +50,7 @@ SEED_EVENTS = [
         "description": "Spent two weeks in Tokyo, Kyoto, and Osaka exploring culture, food, and temples.",
         "event_type": "travel",
         "date": datetime(2023, 10, 5, tzinfo=timezone.utc),
-        "location": "Japan",
+        "location": {"name": "Japan", "address": "Tokyo, Kyoto, and Osaka, Japan", "lat": 35.6762, "lng": 139.6503},
         "tags": ["japan", "solo", "culture"],
     },
 ]
@@ -65,6 +65,9 @@ def _serialize_doc(doc: dict) -> dict:
             if val.tzinfo is None:
                 val = val.replace(tzinfo=timezone.utc)
             doc[field] = val.isoformat()
+    loc = doc.get("location")
+    if isinstance(loc, str):
+        doc["location"] = {"name": loc, "address": None, "lat": None, "lng": None}
     return doc
 
 

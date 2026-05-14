@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getEvent, createEvent, updateEvent } from '../api/events'
 import TagInput from '../components/TagInput'
+import LocationPicker from '../components/LocationPicker'
 import { hasTime } from '../utils/date'
 
 const EMPTY_FORM = {
@@ -11,7 +12,7 @@ const EMPTY_FORM = {
   date: '',
   includeTime: false,
   time: '',
-  location: '',
+  location: null,
   tags: [],
 }
 
@@ -38,7 +39,9 @@ export default function EventForm() {
           time: eventHasTime
             ? `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
             : '',
-          location: event.location ?? '',
+          location: typeof event.location === 'string'
+            ? { name: event.location, address: null, lat: null, lng: null }
+            : event.location ?? null,
           tags: event.tags ?? [],
         })
       })
@@ -165,11 +168,9 @@ export default function EventForm() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Location</label>
-          <input
+          <LocationPicker
             value={form.location}
-            onChange={set('location')}
-            placeholder="City, Country"
-            className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            onChange={(loc) => setForm((f) => ({ ...f, location: loc }))}
           />
         </div>
 

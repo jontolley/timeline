@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getEvent, deleteEvent } from '../api/events'
 import { hasTime, formatDate, formatTime } from '../utils/date'
+import { locationDisplay, locationMapUrl } from '../utils/location'
 
 const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
@@ -54,8 +55,27 @@ export default function EventDetail() {
         <p className="text-gray-500 mb-2">
           {dateStr}{timeStr && <span className="ml-1 text-gray-400">at {timeStr}</span>}
         </p>
-        {event.location && (
-          <p className="text-gray-600 mb-3">&#128205; {event.location}</p>
+        {locationDisplay(event.location) && (
+          <p className="text-gray-600 mb-3">
+            &#128205;{' '}
+            {locationMapUrl(event.location) ? (
+              <a
+                href={locationMapUrl(event.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:underline text-blue-600"
+              >
+                {locationDisplay(event.location)}
+              </a>
+            ) : (
+              locationDisplay(event.location)
+            )}
+            {event.location?.lat != null && (
+              <span className="ml-2 text-xs text-gray-400 font-mono">
+                ({event.location.lat.toFixed(5)}, {event.location.lng.toFixed(5)})
+              </span>
+            )}
+          </p>
         )}
         {event.description && (
           <p className="text-gray-700 mb-4 leading-relaxed">{event.description}</p>

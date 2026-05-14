@@ -11,12 +11,19 @@ class EventType(str, Enum):
     family = "family"
 
 
+class LocationDetail(BaseModel):
+    name: Optional[str] = None
+    address: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+
+
 class EventBase(BaseModel):
     title: str
     description: Optional[str] = None
     event_type: EventType
     date: datetime
-    location: Optional[str] = None
+    location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = []
 
 
@@ -29,7 +36,7 @@ class EventUpdate(BaseModel):
     description: Optional[str] = None
     event_type: Optional[EventType] = None
     date: Optional[datetime] = None
-    location: Optional[str] = None
+    location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = None
 
 

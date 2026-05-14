@@ -39,7 +39,7 @@ Schema:
     "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
     "event_type": "career" | "travel" | "milestone" | "family" or null,
     "description": string or null,
-    "location": string or null,
+    "location": { "name": string or null, "address": string or null } or null,
     "tags": [string] or null
   },
   "missing_required": ["title", "date", "event_type"],
@@ -56,7 +56,8 @@ Rules:
   wedding/birth/family reunion/parenting → family
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
-- tags: split any comma- or space-separated tags into an array"""
+- tags: split any comma- or space-separated tags into an array
+- location: extract place name and/or address if mentioned; lat/lng are always null (set via map in UI)"""
 
 CLARIFY_SYSTEM = (
     "You help users log personal life events on their timeline. "

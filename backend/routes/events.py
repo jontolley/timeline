@@ -19,6 +19,10 @@ def _serialize(doc: dict) -> dict:
             if val.tzinfo is None:
                 val = val.replace(tzinfo=timezone.utc)
             doc[field] = val.isoformat()
+    # Normalize legacy string locations to LocationDetail format
+    loc = doc.get("location")
+    if isinstance(loc, str):
+        doc["location"] = {"name": loc, "address": None, "lat": None, "lng": None}
     return doc
 
 
