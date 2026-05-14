@@ -10,6 +10,7 @@ export default function FilterBar({ filters, tags, onChange }) {
         <option value="career">Career</option>
         <option value="travel">Travel</option>
         <option value="milestone">Milestone</option>
+        <option value="family">Family</option>
       </select>
       <select
         value={filters.tag || ''}

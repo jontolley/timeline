@@ -37,7 +37,7 @@ Schema:
   "fields": {
     "title": string or null,
     "date": "YYYY-MM-DD" or null,
-    "event_type": "career" | "travel" | "milestone" or null,
+    "event_type": "career" | "travel" | "milestone" | "family" or null,
     "description": string or null,
     "location": string or null,
     "tags": [string] or null
@@ -52,7 +52,8 @@ Rules:
 - intent=query   → everything else (questions, search, general chat)
 - missing_required: list ONLY truly absent required fields (title, date, event_type)
 - Infer event_type from context when obvious: job/promotion/startup → career,
-  trip/travel/visit/journey → travel, graduation/marriage/achievement → milestone
+  trip/travel/visit/journey → travel, graduation/marriage/achievement → milestone,
+  wedding/birth/family reunion/parenting → family
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
 - tags: split any comma- or space-separated tags into an array"""

@@ -8,6 +8,7 @@ class EventType(str, Enum):
     career = "career"
     travel = "travel"
     milestone = "milestone"
+    family = "family"
 
 
 class EventBase(BaseModel):

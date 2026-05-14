@@ -13,6 +13,7 @@ const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
   travel: 'bg-green-100 text-green-700',
   milestone: 'bg-purple-100 text-purple-700',
+  family: 'bg-orange-100 text-orange-700',
 }
 
 // Converts the internal messages array to clean {role, content} pairs for the API
@@ -92,6 +93,7 @@ export default function ChatView() {
           <option value="career">Career</option>
           <option value="travel">Travel</option>
           <option value="milestone">Milestones</option>
+          <option value="family">Family</option>
         </select>
       </div>
 

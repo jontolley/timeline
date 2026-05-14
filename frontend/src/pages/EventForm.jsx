@@ -105,6 +105,7 @@ export default function EventForm() {
             <option value="career">Career</option>
             <option value="travel">Travel</option>
             <option value="milestone">Milestone</option>
+            <option value="family">Family</option>
           </select>
         </div>
 

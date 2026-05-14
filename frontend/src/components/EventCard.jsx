@@ -4,6 +4,7 @@ const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
   travel: 'bg-green-100 text-green-700',
   milestone: 'bg-purple-100 text-purple-700',
+  family: 'bg-orange-100 text-orange-700',
 }
 
 export default function EventCard({ event }) {
