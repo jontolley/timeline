@@ -146,6 +146,79 @@ async def _ollama_json(system: str, user_content: str) -> dict:
         return json.loads(match.group() if match else raw)
 
 
+STOP_WORDS = {
+    "a", "an", "the", "my", "your", "our", "for", "to", "of", "in", "on", "at",
+    "with", "and", "or", "but", "i", "me", "we", "us", "is", "was", "are", "were",
+    "edit", "update", "change", "modify", "event",
+}
+
+
+def _extract_keywords(query: str) -> list[str]:
+    return [
+        w for w in re.findall(r"\w+", query.lower())
+        if len(w) > 1 and w not in STOP_WORDS
+    ]
+
+
+def _doc_text(doc: dict) -> str:
+    loc = doc.get("location")
+    if isinstance(loc, dict):
+        loc_text = " ".join(str(loc.get(k) or "") for k in ("name", "address"))
+    elif isinstance(loc, str):
+        loc_text = loc
+    else:
+        loc_text = ""
+    return " ".join([
+        str(doc.get("title") or ""),
+        str(doc.get("description") or ""),
+        loc_text,
+        " ".join(doc.get("tags") or []),
+    ]).lower()
+
+
+async def _keyword_search(keywords: list[str], limit: int) -> list[dict]:
+    """Find events whose title/description/location/tags contain any of the keywords,
+    ranked by keyword hit count."""
+    if not keywords:
+        return []
+    or_clauses = []
+    for kw in keywords:
+        esc = re.escape(kw)
+        for field in ("title", "description", "location.name", "location.address"):
+            or_clauses.append({field: {"$regex": esc, "$options": "i"}})
+        or_clauses.append({"tags": {"$regex": esc, "$options": "i"}})
+    cursor = events_collection.find({"$or": or_clauses})
+    docs = [_serialize_doc(doc) async for doc in cursor]
+    docs.sort(
+        key=lambda d: sum(1 for kw in keywords if kw in _doc_text(d)),
+        reverse=True,
+    )
+    return docs[:limit]
+
+
+async def _hybrid_event_search(query: str, top_k: int = 3) -> list[dict]:
+    """Combine semantic vector search and keyword text search via reciprocal rank
+    fusion. Returns up to top_k event payload dicts."""
+    pool_size = max(top_k * 4, 12)
+    vector_hits = await embedding_service.search(query, top_k=pool_size)
+    text_hits = await _keyword_search(_extract_keywords(query), pool_size)
+
+    k = 60  # RRF dampening constant
+    scores: dict[str, float] = {}
+    by_id: dict[str, dict] = {}
+    for rank, hit in enumerate(vector_hits):
+        eid = str(hit.get("_id"))
+        scores[eid] = scores.get(eid, 0.0) + 1.0 / (k + rank + 1)
+        by_id[eid] = hit
+    for rank, hit in enumerate(text_hits):
+        eid = str(hit.get("_id"))
+        scores[eid] = scores.get(eid, 0.0) + 1.0 / (k + rank + 1)
+        by_id.setdefault(eid, hit)
+
+    ranked = sorted(scores.items(), key=lambda kv: kv[1], reverse=True)
+    return [by_id[eid] for eid, _ in ranked[:top_k]]
+
+
 NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
 
 
@@ -347,7 +420,7 @@ async def chat(req: ChatRequest):
             # ── EDIT flow ─────────────────────────────────────────────────
             elif intent == "edit":
                 query = event_search or messages[-1]["content"]
-                found = await embedding_service.search(query, top_k=3)
+                found = await _hybrid_event_search(query, top_k=3)
 
                 if not found:
                     async for token in _stream_tokens([
