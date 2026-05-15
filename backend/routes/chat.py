@@ -146,6 +146,40 @@ async def _ollama_json(system: str, user_content: str) -> dict:
         return json.loads(match.group() if match else raw)
 
 
+NOMINATIM_URL = "https://nominatim.openstreetmap.org/search"
+
+
+async def _geocode_location(loc):
+    """Look up lat/lng for a location dict via Nominatim. Returns the loc unchanged
+    if coords are already present, the input isn't a dict with a name/address, or
+    the lookup fails."""
+    if not isinstance(loc, dict):
+        return loc
+    if loc.get("lat") is not None and loc.get("lng") is not None:
+        return loc
+    query = loc.get("address") or loc.get("name")
+    if not query:
+        return loc
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                NOMINATIM_URL,
+                params={"q": query, "format": "json", "limit": 1},
+                headers={"User-Agent": "personal-timeline/1.0", "Accept-Language": "en"},
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            if data:
+                return {
+                    **loc,
+                    "lat": float(data[0]["lat"]),
+                    "lng": float(data[0]["lon"]),
+                }
+    except Exception:
+        pass
+    return loc
+
+
 async def _apply_edit(event_id: str, changes: dict):
     """Apply changes to an event and stream a confirmation. Yields SSE strings."""
     changes = dict(changes)
@@ -153,6 +187,8 @@ async def _apply_edit(event_id: str, changes: dict):
         changes["date"] = _parse_date(changes["date"])
     if "end_date" in changes and isinstance(changes["end_date"], str):
         changes["end_date"] = _parse_date(changes["end_date"])
+    if changes.get("location"):
+        changes["location"] = await _geocode_location(changes["location"])
     changes["updated_at"] = datetime.now(timezone.utc)
 
     await events_collection.update_one(
@@ -275,6 +311,7 @@ async def chat(req: ChatRequest):
                     # All required fields present — create the event
                     date_val = _parse_date(fields["date"])
                     end_date_val = _parse_date(fields["end_date"]) if fields.get("end_date") else None
+                    location_val = await _geocode_location(fields.get("location"))
 
                     now = datetime.now(timezone.utc)
                     doc = {
@@ -283,7 +320,7 @@ async def chat(req: ChatRequest):
                         "event_type": fields["event_type"],
                         "date": date_val,
                         "end_date": end_date_val,
-                        "location": fields.get("location"),
+                        "location": location_val,
                         "tags": fields.get("tags") or [],
                         "created_at": now,
                         "updated_at": now,
@@ -339,6 +376,8 @@ async def chat(req: ChatRequest):
 
                     else:
                         # Defer the write — ask the user to confirm the match first
+                        if changes.get("location"):
+                            changes["location"] = await _geocode_location(changes["location"])
                         yield _sse({
                             "type": "token",
                             "content": "I think you mean this event — does that look right?",
