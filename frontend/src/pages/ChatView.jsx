@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom'
 import { streamChat } from '../api/chat'
 import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
+import { usePeopleStore } from '../store'
+import PeopleChips from '../components/PeopleChips'
 
 const SUGGESTED = [
   { label: 'What has my career journey looked like?', icon: '💼' },
@@ -44,6 +46,7 @@ const FIELD_LABELS = {
   description: 'Description',
   location: 'Location',
   tags: 'Tags',
+  people: 'People',
 }
 
 export default function ChatView() {
@@ -52,6 +55,11 @@ export default function ChatView() {
   const [filter, setFilter] = useState('all')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef(null)
+  const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+
+  useEffect(() => {
+    if (!peopleLoaded) loadPeople().catch(() => {})
+  }, [peopleLoaded, loadPeople])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -177,6 +185,7 @@ export default function ChatView() {
               msg={msg}
               messageIndex={i}
               streaming={streaming}
+              peopleById={peopleById}
               onConfirm={confirmPendingEdit}
               onCancel={cancelPendingEdit}
             />
@@ -233,7 +242,7 @@ function EmptyState({ onSelect }) {
   )
 }
 
-function MessageRow({ msg, messageIndex, streaming, onConfirm, onCancel }) {
+function MessageRow({ msg, messageIndex, streaming, peopleById, onConfirm, onCancel }) {
   const isUser = msg.role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} items-start gap-2`}>
@@ -256,6 +265,7 @@ function MessageRow({ msg, messageIndex, streaming, onConfirm, onCancel }) {
           <PendingEditCard
             pendingEdit={msg.pendingEdit}
             disabled={streaming}
+            peopleById={peopleById}
             onConfirm={(eventId, label) =>
               onConfirm(messageIndex, eventId, msg.pendingEdit.changes, label)
             }
@@ -265,7 +275,11 @@ function MessageRow({ msg, messageIndex, streaming, onConfirm, onCancel }) {
 
         {/* Event action card (create / update result) */}
         {msg.eventAction && !msg.thinking && (
-          <EventActionCard action={msg.eventAction.type} event={msg.eventAction.event} />
+          <EventActionCard
+            action={msg.eventAction.type}
+            event={msg.eventAction.event}
+            peopleById={peopleById}
+          />
         )}
 
         {/* Sources (query results) */}
@@ -277,13 +291,13 @@ function MessageRow({ msg, messageIndex, streaming, onConfirm, onCancel }) {
   )
 }
 
-function PendingEditCard({ pendingEdit, disabled, onConfirm, onCancel }) {
+function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCancel }) {
   const { target, alternatives, changes, status } = pendingEdit
   const [picking, setPicking] = useState(false)
 
   const changeRows = Object.entries(changes)
     .filter(([k]) => FIELD_LABELS[k])
-    .map(([k, v]) => ({ field: k, label: FIELD_LABELS[k], value: formatChangeValue(k, v) }))
+    .map(([k, v]) => ({ field: k, label: FIELD_LABELS[k], value: v }))
 
   if (status === 'cancelled') {
     return (
@@ -305,17 +319,23 @@ function PendingEditCard({ pendingEdit, disabled, onConfirm, onCancel }) {
     <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 space-y-2.5">
       {!picking ? (
         <>
-          <EventSummary event={target} />
+          <EventSummary event={target} peopleById={peopleById} />
           {changeRows.length > 0 && (
             <div className="rounded-md bg-white border border-amber-200 px-2.5 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-1">
                 Proposed changes
               </p>
-              <ul className="space-y-0.5">
+              <ul className="space-y-1">
                 {changeRows.map((row) => (
                   <li key={row.field} className="text-xs text-gray-700">
                     <span className="text-gray-500">{row.label}:</span>{' '}
-                    <span className="font-medium">{row.value}</span>
+                    {row.field === 'people' ? (
+                      <span className="inline-flex align-middle">
+                        <PeopleChips peopleIds={row.value || []} peopleById={peopleById} />
+                      </span>
+                    ) : (
+                      <span className="font-medium">{formatChangeValue(row.field, row.value)}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -366,7 +386,7 @@ function PendingEditCard({ pendingEdit, disabled, onConfirm, onCancel }) {
                   }
                   className="w-full text-left rounded-md border border-amber-200 bg-white px-2.5 py-2 hover:border-amber-400 hover:bg-amber-50 disabled:opacity-50 transition-colors"
                 >
-                  <EventSummary event={alt} />
+                  <EventSummary event={alt} peopleById={peopleById} />
                 </button>
               </li>
             ))}
@@ -395,7 +415,7 @@ function PendingEditCard({ pendingEdit, disabled, onConfirm, onCancel }) {
   )
 }
 
-function EventSummary({ event }) {
+function EventSummary({ event, peopleById }) {
   const dateDisplay = formatDateRange(event.date, event.end_date)
   const loc = locationDisplay(event.location)
   return (
@@ -409,11 +429,16 @@ function EventSummary({ event }) {
       <p className="text-xs text-gray-500">
         {dateDisplay}{loc ? ` · ${loc}` : ''}
       </p>
+      {event.people?.length > 0 && peopleById && (
+        <div className="mt-1">
+          <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+        </div>
+      )}
     </div>
   )
 }
 
-function EventActionCard({ action, event }) {
+function EventActionCard({ action, event, peopleById }) {
   const isCreated = action === 'created'
   const dateDisplay = formatDateRange(event.date, event.end_date)
   return (
@@ -435,6 +460,11 @@ function EventActionCard({ action, event }) {
       <p className="text-xs text-gray-500 mt-0.5">
         {dateDisplay}{locationDisplay(event.location) ? ` · ${locationDisplay(event.location)}` : ''}
       </p>
+      {event.people?.length > 0 && peopleById && (
+        <div className="mt-1.5">
+          <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+        </div>
+      )}
       <p className="text-xs text-blue-500 mt-1">View or edit →</p>
     </Link>
   )
