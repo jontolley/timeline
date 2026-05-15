@@ -42,7 +42,7 @@ Schema:
     "location": { "name": string or null, "address": string or null } or null,
     "tags": [string] or null
   },
-  "missing_required": ["title", "date", "event_type"],
+  "missing_required": ["title", "date", "event_type", "location", "description"],
   "event_search": string or null
 }
 
@@ -50,7 +50,11 @@ Rules:
 - intent=create  → user wants to add / log / record a new event
 - intent=edit    → user wants to update / change / modify an existing event
 - intent=query   → everything else (questions, search, general chat)
-- missing_required: list ONLY truly absent required fields (title, date, event_type)
+- missing_required: list fields that should still be collected before creating the event:
+  * Always include "title", "date", "event_type" if not yet provided by the user
+  * Include "location" ONLY IF: location has not been provided AND the assistant has not already asked for location in this conversation
+  * Include "description" ONLY IF: description has not been provided AND the assistant has not already asked for description in this conversation
+  * Do NOT re-add "location" or "description" if the assistant already asked and the user skipped or ignored them
 - Infer event_type from context when obvious: job/promotion/startup → career,
   trip/travel/visit/journey → travel, graduation/marriage/achievement → milestone,
   wedding/birth/family reunion/parenting → family
@@ -61,8 +65,10 @@ Rules:
 
 CLARIFY_SYSTEM = (
     "You help users log personal life events on their timeline. "
-    "Some information is still missing. Ask for it naturally and conversationally — "
-    "focus on the most important missing piece first, not a long list. "
+    "Some information is still missing or would enrich the event. "
+    "Ask for it naturally and conversationally — ask for the most important missing piece first, "
+    "then mention optional ones (location, description) briefly on the same turn if relevant. "
+    "Make clear that location and description are optional — the user can say 'skip' or 'none'. "
     "Be warm, brief, and encouraging. Don't repeat what's already been provided."
 )
 
