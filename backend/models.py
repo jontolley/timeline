@@ -23,6 +23,7 @@ class EventBase(BaseModel):
     description: Optional[str] = None
     event_type: EventType
     date: datetime
+    end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = []
 
@@ -36,6 +37,7 @@ class EventUpdate(BaseModel):
     description: Optional[str] = None
     event_type: Optional[EventType] = None
     date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = None
 

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { streamChat } from '../api/chat'
-import { hasTime, formatDate, formatTime } from '../utils/date'
+import { formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
 
 const SUGGESTED = [
@@ -193,9 +193,7 @@ function MessageRow({ msg }) {
 
 function EventActionCard({ action, event }) {
   const isCreated = action === 'created'
-  const dateStr = formatDate(event.date)
-  const timeStr = hasTime(event.date) ? formatTime(event.date) : null
-  const dateDisplay = timeStr ? `${dateStr} at ${timeStr}` : dateStr
+  const dateDisplay = formatDateRange(event.date, event.end_date)
   return (
     <Link
       to={`/events/${event._id}`}

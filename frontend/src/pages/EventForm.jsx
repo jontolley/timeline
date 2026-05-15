@@ -12,6 +12,10 @@ const EMPTY_FORM = {
   date: '',
   includeTime: false,
   time: '',
+  includeEndDate: false,
+  end_date: '',
+  includeEndTime: false,
+  end_time: '',
   location: null,
   tags: [],
 }
@@ -30,6 +34,9 @@ export default function EventForm() {
       .then((event) => {
         const eventHasTime = hasTime(event.date)
         const d = new Date(event.date)
+        const eventHasEndDate = !!event.end_date
+        const eventHasEndTime = eventHasEndDate && hasTime(event.end_date)
+        const ed = eventHasEndDate ? new Date(event.end_date) : null
         setForm({
           title: event.title ?? '',
           description: event.description ?? '',
@@ -38,6 +45,12 @@ export default function EventForm() {
           includeTime: eventHasTime,
           time: eventHasTime
             ? `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}`
+            : '',
+          includeEndDate: eventHasEndDate,
+          end_date: event.end_date ? event.end_date.slice(0, 10) : '',
+          includeEndTime: eventHasEndTime,
+          end_time: eventHasEndTime
+            ? `${String(ed.getUTCHours()).padStart(2, '0')}:${String(ed.getUTCMinutes()).padStart(2, '0')}`
             : '',
           location: typeof event.location === 'string'
             ? { name: event.location, address: null, lat: null, lng: null }
@@ -56,11 +69,16 @@ export default function EventForm() {
     setError(null)
     setSaving(true)
     try {
-      const { includeTime, time, ...rest } = form
+      const { includeTime, time, includeEndDate, end_date, includeEndTime, end_time, ...rest } = form
       const dateIso = includeTime && time
         ? `${rest.date}T${time}:00.000Z`
         : `${rest.date}T00:00:00.000Z`
-      const payload = { ...rest, date: dateIso }
+      const endDateIso = includeEndDate && end_date
+        ? includeEndTime && end_time
+          ? `${end_date}T${end_time}:00.000Z`
+          : `${end_date}T00:00:00.000Z`
+        : null
+      const payload = { ...rest, date: dateIso, end_date: endDateIso }
       if (id) {
         await updateEvent(id, payload)
         navigate(`/events/${id}`)
@@ -164,6 +182,71 @@ export default function EventForm() {
               className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            id="includeEndDate"
+            checked={form.includeEndDate}
+            onChange={(e) =>
+              setForm((f) => ({
+                ...f,
+                includeEndDate: e.target.checked,
+                end_date: e.target.checked ? f.end_date : '',
+                includeEndTime: e.target.checked ? f.includeEndTime : false,
+                end_time: e.target.checked ? f.end_time : '',
+              }))
+            }
+            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+          />
+          <label htmlFor="includeEndDate" className="text-sm text-gray-700 select-none">
+            Include end date
+          </label>
+        </div>
+
+        {form.includeEndDate && (
+          <>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+              <input
+                type="date"
+                value={form.end_date}
+                onChange={set('end_date')}
+                min={form.date || undefined}
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="includeEndTime"
+                checked={form.includeEndTime}
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    includeEndTime: e.target.checked,
+                    end_time: e.target.checked ? f.end_time : '',
+                  }))
+                }
+                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor="includeEndTime" className="text-sm text-gray-700 select-none">
+                Include end time
+              </label>
+            </div>
+            {form.includeEndTime && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">End Time</label>
+                <input
+                  type="time"
+                  value={form.end_time}
+                  onChange={set('end_time')}
+                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
+          </>
         )}
 
         <div>

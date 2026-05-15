@@ -37,6 +37,7 @@ Schema:
   "fields": {
     "title": string or null,
     "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
+    "end_date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" or null,
     "event_type": "career" | "travel" | "milestone" | "family" or null,
     "description": string or null,
     "location": { "name": string or null, "address": string or null } or null,
@@ -61,7 +62,8 @@ Rules:
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
 - tags: split any comma- or space-separated tags into an array
-- location: extract place name and/or address if mentioned; lat/lng are always null (set via map in UI)"""
+- location: extract place name and/or address if mentioned; lat/lng are always null (set via map in UI)
+- end_date: populate when user mentions a duration, end date, or range (e.g. "from June 1 to June 10", "two-week trip ending March 5")"""
 
 CLARIFY_SYSTEM = (
     "You help users log personal life events on their timeline. "
@@ -86,7 +88,7 @@ CONFIRM_EDIT_SYSTEM = (
 def _serialize_doc(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
-    for field in ("date", "created_at", "updated_at"):
+    for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
             if val.tzinfo is None:
@@ -226,6 +228,7 @@ async def chat(req: ChatRequest):
                 else:
                     # All required fields present — create the event
                     date_val = _parse_date(fields["date"])
+                    end_date_val = _parse_date(fields["end_date"]) if fields.get("end_date") else None
 
                     now = datetime.now(timezone.utc)
                     doc = {
@@ -233,6 +236,7 @@ async def chat(req: ChatRequest):
                         "description": fields.get("description"),
                         "event_type": fields["event_type"],
                         "date": date_val,
+                        "end_date": end_date_val,
                         "location": fields.get("location"),
                         "tags": fields.get("tags") or [],
                         "created_at": now,

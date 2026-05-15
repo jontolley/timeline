@@ -59,7 +59,7 @@ SEED_EVENTS = [
 def _serialize_doc(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
-    for field in ("date", "created_at", "updated_at"):
+    for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
             if val.tzinfo is None:

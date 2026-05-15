@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { hasTime, formatDate, formatTime } from '../utils/date'
+import { formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
 
 const TYPE_STYLES = {
@@ -10,9 +10,6 @@ const TYPE_STYLES = {
 }
 
 export default function EventCard({ event }) {
-  const dateStr = formatDate(event.date)
-  const timeStr = hasTime(event.date) ? formatTime(event.date) : null
-
   return (
     <Link to={`/events/${event._id}`} className="block group">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 group-hover:shadow-md transition-shadow">
@@ -29,7 +26,7 @@ export default function EventCard({ event }) {
           </span>
         </div>
         <p className="text-sm text-gray-500 mt-1">
-          {dateStr}{timeStr && <span className="ml-1 text-gray-400">at {timeStr}</span>}
+          {formatDateRange(event.date, event.end_date)}
         </p>
         {locationDisplay(event.location) && (
           <p className="text-sm text-gray-600 mt-1">&#128205; {locationDisplay(event.location)}</p>

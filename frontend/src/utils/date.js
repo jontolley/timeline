@@ -16,3 +16,12 @@ export function formatTime(isoDate) {
     hour: 'numeric', minute: '2-digit', timeZone: 'UTC',
   })
 }
+
+export function formatDateRange(startIso, endIso) {
+  const start = formatDate(startIso)
+  const startTime = hasTime(startIso) ? ` at ${formatTime(startIso)}` : ''
+  if (!endIso) return `${start}${startTime}`
+  const end = formatDate(endIso)
+  const endTime = hasTime(endIso) ? ` at ${formatTime(endIso)}` : ''
+  return `${start}${startTime} – ${end}${endTime}`
+}

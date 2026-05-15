@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import { getEvent, deleteEvent } from '../api/events'
-import { hasTime, formatDate, formatTime } from '../utils/date'
+import { formatDateRange } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 
 const TYPE_STYLES = {
@@ -59,8 +59,7 @@ export default function EventDetail() {
   if (loading) return <p className="text-gray-400 py-12 text-center">Loading...</p>
   if (!event) return <p className="text-red-500 py-12 text-center">Event not found.</p>
 
-  const dateStr = formatDate(event.date)
-  const timeStr = hasTime(event.date) ? formatTime(event.date) : null
+  const dateRange = formatDateRange(event.date, event.end_date)
 
   return (
     <div className="max-w-2xl">
@@ -78,9 +77,7 @@ export default function EventDetail() {
             {event.event_type}
           </span>
         </div>
-        <p className="text-gray-500 mb-2">
-          {dateStr}{timeStr && <span className="ml-1 text-gray-400">at {timeStr}</span>}
-        </p>
+        <p className="text-gray-500 mb-2">{dateRange}</p>
         {locationDisplay(event.location) && (
           <p className="text-gray-600 mb-3">
             &#128205;{' '}

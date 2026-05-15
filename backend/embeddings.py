@@ -60,8 +60,12 @@ class EmbeddingService:
                 loc_text += f" ({loc['lat']:.5f}, {loc['lng']:.5f})"
         else:
             loc_text = ""
+        end_date = event.get("end_date", "")
+        if hasattr(end_date, "isoformat"):
+            end_date = end_date.isoformat()
+        date_range = f"{date} to {end_date}" if end_date else date
         text = (
-            f"{date} {event.get('event_type', '')}: {event.get('title', '')}. "
+            f"{date_range} {event.get('event_type', '')}: {event.get('title', '')}. "
             f"{event.get('description', '')}. "
             f"Location: {loc_text}. Tags: {tags}"
         )
