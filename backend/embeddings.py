@@ -1,6 +1,7 @@
 import os
 import uuid
 import httpx
+from bson import ObjectId
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -11,6 +12,7 @@ from qdrant_client.models import (
     MatchValue,
     PointIdsList,
 )
+from database import people_collection
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
@@ -64,10 +66,11 @@ class EmbeddingService:
         if hasattr(end_date, "isoformat"):
             end_date = end_date.isoformat()
         date_range = f"{date} to {end_date}" if end_date else date
+        people_text = await self._people_names_text(event.get("people") or [])
         text = (
             f"{date_range} {event.get('event_type', '')}: {event.get('title', '')}. "
             f"{event.get('description', '')}. "
-            f"Location: {loc_text}. Tags: {tags}"
+            f"Location: {loc_text}. Tags: {tags}. People: {people_text}"
         )
         vector = await self.embed(text)
         point_id = _point_id(str(event["_id"]))
@@ -75,6 +78,19 @@ class EmbeddingService:
             collection_name=COLLECTION_NAME,
             points=[PointStruct(id=point_id, vector=vector, payload=event)],
         )
+
+    async def _people_names_text(self, person_ids: list) -> str:
+        if not person_ids:
+            return ""
+        try:
+            object_ids = [ObjectId(pid) for pid in person_ids if pid]
+        except Exception:
+            return ""
+        if not object_ids:
+            return ""
+        cursor = people_collection.find({"_id": {"$in": object_ids}}, {"name": 1})
+        names = [doc["name"] async for doc in cursor if doc.get("name")]
+        return ", ".join(names)
 
     async def delete_event(self, event_id: str):
         point_id = _point_id(event_id)

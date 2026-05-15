@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from bson import ObjectId
 from database import events_collection
 from models import EventCreate, EventUpdate
@@ -23,16 +23,24 @@ def _serialize(doc: dict) -> dict:
     loc = doc.get("location")
     if isinstance(loc, str):
         doc["location"] = {"name": loc, "address": None, "lat": None, "lng": None}
+    if doc.get("people") is None:
+        doc["people"] = []
     return doc
 
 
 @router.get("")
-async def list_events(event_type: Optional[str] = None, tag: Optional[str] = None):
+async def list_events(
+    event_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    person_id: Optional[list[str]] = Query(None),
+):
     query = {}
     if event_type:
         query["event_type"] = event_type
     if tag:
         query["tags"] = tag
+    if person_id:
+        query["people"] = {"$in": person_id}
     cursor = events_collection.find(query).sort("date", 1)
     return [_serialize(doc) async for doc in cursor]
 

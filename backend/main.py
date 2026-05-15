@@ -9,6 +9,7 @@ from database import events_collection
 from embeddings import EmbeddingService, COLLECTION_NAME
 from routes.events import router as events_router
 from routes.chat import router as chat_router
+from routes.people import router as people_router
 
 embedding_service = EmbeddingService()
 
@@ -113,6 +114,7 @@ app.add_middleware(
 
 app.include_router(events_router)
 app.include_router(chat_router)
+app.include_router(people_router)
 
 
 @app.get("/api/health")

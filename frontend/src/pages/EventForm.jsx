@@ -3,6 +3,8 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { getEvent, createEvent, updateEvent } from '../api/events'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
+import PeoplePicker from '../components/PeoplePicker'
+import { usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
 
 const EMPTY_FORM = {
@@ -18,6 +20,7 @@ const EMPTY_FORM = {
   end_time: '',
   location: null,
   tags: [],
+  people: [],
 }
 
 export default function EventForm() {
@@ -27,6 +30,11 @@ export default function EventForm() {
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+
+  useEffect(() => {
+    if (!peopleLoaded) loadPeople().catch(() => {})
+  }, [peopleLoaded, loadPeople])
 
   useEffect(() => {
     if (!id) return
@@ -56,6 +64,7 @@ export default function EventForm() {
             ? { name: event.location, address: null, lat: null, lng: null }
             : event.location ?? null,
           tags: event.tags ?? [],
+          people: event.people ?? [],
         })
       })
       .catch(() => setError('Failed to load event.'))
@@ -272,6 +281,16 @@ export default function EventForm() {
           <TagInput
             tags={form.tags}
             onChange={(tags) => setForm((f) => ({ ...f, tags }))}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">People</label>
+          <p className="text-xs text-gray-500 mb-2">Leave empty for events not tied to a specific person.</p>
+          <PeoplePicker
+            people={people}
+            selectedIds={form.people}
+            onChange={(ids) => setForm((f) => ({ ...f, people: ids }))}
           />
         </div>
 

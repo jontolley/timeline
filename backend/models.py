@@ -26,6 +26,7 @@ class EventBase(BaseModel):
     end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = []
+    people: Optional[list[str]] = []
 
 
 class EventCreate(EventBase):
@@ -40,9 +41,32 @@ class EventUpdate(BaseModel):
     end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = None
+    people: Optional[list[str]] = None
 
 
 class Event(EventBase):
+    id: str = Field(alias="_id")
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+
+class PersonBase(BaseModel):
+    name: str
+    color: str  # palette key: blue, emerald, violet, amber, rose, cyan, fuchsia, lime, orange, slate
+
+
+class PersonCreate(PersonBase):
+    pass
+
+
+class PersonUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+
+
+class Person(PersonBase):
     id: str = Field(alias="_id")
     created_at: datetime
     updated_at: datetime

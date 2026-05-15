@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom'
 import { formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
+import { usePeopleStore } from '../store'
+import PeopleChips from './PeopleChips'
 
 const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
@@ -10,6 +12,7 @@ const TYPE_STYLES = {
 }
 
 export default function EventCard({ event }) {
+  const peopleById = usePeopleStore((s) => s.peopleById)
   return (
     <Link to={`/events/${event._id}`} className="block group">
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 group-hover:shadow-md transition-shadow">
@@ -33,6 +36,11 @@ export default function EventCard({ event }) {
         )}
         {event.description && (
           <p className="text-sm text-gray-600 mt-2 line-clamp-2">{event.description}</p>
+        )}
+        {event.people?.length > 0 && (
+          <div className="mt-2">
+            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+          </div>
         )}
         {event.tags?.length > 0 && (
           <div className="flex flex-wrap gap-1 mt-2">

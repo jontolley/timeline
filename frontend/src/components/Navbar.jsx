@@ -25,6 +25,14 @@ export default function Navbar() {
           >
             Chat
           </NavLink>
+          <NavLink
+            to="/people"
+            className={({ isActive }) =>
+              `text-sm ${isActive ? 'text-blue-600 font-medium' : 'text-gray-500 hover:text-gray-900'}`
+            }
+          >
+            People
+          </NavLink>
         </div>
         <Link
           to="/events/new"

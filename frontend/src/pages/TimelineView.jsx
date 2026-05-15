@@ -2,19 +2,26 @@ import { useEffect, useState } from 'react'
 import { listEvents } from '../api/events'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
+import { usePeopleStore } from '../store'
 
 export default function TimelineView() {
   const [events, setEvents] = useState([])
-  const [filters, setFilters] = useState({ event_type: '', tag: '' })
+  const [filters, setFilters] = useState({ event_type: '', tag: '', person_ids: [] })
   const [loading, setLoading] = useState(true)
+  const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   const allTags = [...new Set(events.flatMap((e) => e.tags ?? []))]
+
+  useEffect(() => {
+    if (!peopleLoaded) loadPeople().catch(() => {})
+  }, [peopleLoaded, loadPeople])
 
   useEffect(() => {
     setLoading(true)
     const params = {}
     if (filters.event_type) params.event_type = filters.event_type
     if (filters.tag) params.tag = filters.tag
+    if (filters.person_ids?.length) params.person_id = filters.person_ids
     listEvents(params)
       .then(setEvents)
       .catch(console.error)
@@ -27,7 +34,7 @@ export default function TimelineView() {
   return (
     <div>
       <h1 className="text-2xl font-bold text-gray-900 mb-6">Timeline</h1>
-      <FilterBar filters={filters} tags={allTags} onChange={handleFilterChange} />
+      <FilterBar filters={filters} tags={allTags} people={people} onChange={handleFilterChange} />
 
       {loading ? (
         <p className="text-gray-400 text-center py-12">Loading...</p>

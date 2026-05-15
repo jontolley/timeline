@@ -4,6 +4,8 @@ import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import { getEvent, deleteEvent } from '../api/events'
 import { formatDateRange } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
+import { usePeopleStore } from '../store'
+import PeopleChips from '../components/PeopleChips'
 
 const TYPE_STYLES = {
   career: 'bg-blue-100 text-blue-700',
@@ -34,6 +36,11 @@ export default function EventDetail() {
   const [event, setEvent] = useState(null)
   const [displayLocation, setDisplayLocation] = useState(null)
   const [loading, setLoading] = useState(true)
+  const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+
+  useEffect(() => {
+    if (!peopleLoaded) loadPeople().catch(() => {})
+  }, [peopleLoaded, loadPeople])
 
   useEffect(() => {
     getEvent(id)
@@ -120,6 +127,11 @@ export default function EventDetail() {
         )}
         {event.description && (
           <p className="text-gray-700 mb-4 leading-relaxed">{event.description}</p>
+        )}
+        {event.people?.length > 0 && (
+          <div className="mb-4">
+            <PeopleChips peopleIds={event.people} peopleById={peopleById} size="md" />
+          </div>
         )}
         {event.tags?.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-6">

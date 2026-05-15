@@ -1,7 +1,16 @@
 const BASE = '/api/events'
 
 export async function listEvents(params = {}) {
-  const qs = new URLSearchParams(params).toString()
+  const usp = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value == null || value === '') continue
+    if (Array.isArray(value)) {
+      for (const v of value) if (v) usp.append(key, v)
+    } else {
+      usp.set(key, value)
+    }
+  }
+  const qs = usp.toString()
   const res = await fetch(`${BASE}${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Failed to fetch events')
   return res.json()
