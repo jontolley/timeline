@@ -5,6 +5,7 @@ import EventDetail from './pages/EventDetail'
 import EventForm from './pages/EventForm'
 import ChatView from './pages/ChatView'
 import PeopleView from './pages/PeopleView'
+import BackupView from './pages/BackupView'
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
             <Route path="/events/:id/edit" element={<EventForm />} />
             <Route path="/chat" element={<ChatView />} />
             <Route path="/people" element={<PeopleView />} />
+            <Route path="/backup" element={<BackupView />} />
           </Routes>
         </main>
       </div>

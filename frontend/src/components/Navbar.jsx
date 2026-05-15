@@ -33,6 +33,14 @@ export default function Navbar() {
           >
             People
           </NavLink>
+          <NavLink
+            to="/backup"
+            className={({ isActive }) =>
+              `text-sm ${isActive ? 'text-blue-600 font-medium' : 'text-gray-500 hover:text-gray-900'}`
+            }
+          >
+            Backup
+          </NavLink>
         </div>
         <Link
           to="/events/new"
