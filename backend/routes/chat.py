@@ -146,6 +146,38 @@ async def _ollama_json(system: str, user_content: str) -> dict:
         return json.loads(match.group() if match else raw)
 
 
+async def _apply_edit(event_id: str, changes: dict):
+    """Apply changes to an event and stream a confirmation. Yields SSE strings."""
+    changes = dict(changes)
+    if "date" in changes and isinstance(changes["date"], str):
+        changes["date"] = _parse_date(changes["date"])
+    if "end_date" in changes and isinstance(changes["end_date"], str):
+        changes["end_date"] = _parse_date(changes["end_date"])
+    changes["updated_at"] = datetime.now(timezone.utc)
+
+    await events_collection.update_one(
+        {"_id": ObjectId(event_id)},
+        {"$set": changes},
+    )
+    updated = await events_collection.find_one({"_id": ObjectId(event_id)})
+    serialized = _serialize_doc(updated)
+    await embedding_service.upsert_event(serialized)
+
+    changed_keys = [k for k in changes if k != "updated_at"]
+    confirm_prompt = (
+        f"Just updated the event \"{updated.get('title')}\"."
+        f" Changed: {', '.join(changed_keys)}."
+        " Write a brief, warm one-sentence confirmation."
+    )
+    async for token in _stream_tokens([
+        {"role": "system", "content": "You confirm timeline event updates. Be brief and warm."},
+        {"role": "user", "content": confirm_prompt},
+    ]):
+        yield _sse({"type": "token", "content": token})
+
+    yield _sse({"type": "event_updated", "event": serialized})
+
+
 async def _stream_tokens(messages: list[dict]):
     """Async generator yielding token strings from a streaming Ollama call."""
     async with httpx.AsyncClient(timeout=120.0) as client:
@@ -175,9 +207,16 @@ class Message(BaseModel):
     content: str
 
 
+class PendingAction(BaseModel):
+    type: str
+    event_id: str
+    changes: dict
+
+
 class ChatRequest(BaseModel):
     messages: list[Message]
     event_filter: str = "all"
+    action: PendingAction | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +229,13 @@ async def chat(req: ChatRequest):
 
     async def generate():
         try:
+            # Direct action dispatch — bypass intent detection for confirmed edits
+            if req.action and req.action.type == "confirm_edit":
+                async for chunk in _apply_edit(req.action.event_id, req.action.changes):
+                    yield chunk
+                yield _sse({"type": "done"})
+                return
+
             # Build a plain-text conversation transcript for intent detection
             transcript = "\n".join(
                 f"{m['role'].upper()}: {m['content']}" for m in messages
@@ -264,7 +310,7 @@ async def chat(req: ChatRequest):
             # ── EDIT flow ─────────────────────────────────────────────────
             elif intent == "edit":
                 query = event_search or messages[-1]["content"]
-                found = await embedding_service.search(query, top_k=1)
+                found = await embedding_service.search(query, top_k=3)
 
                 if not found:
                     async for token in _stream_tokens([
@@ -279,6 +325,7 @@ async def chat(req: ChatRequest):
 
                 else:
                     target = found[0]
+                    alternatives = found[1:]
                     changes = {k: v for k, v in fields.items() if v is not None}
 
                     if not changes:
@@ -291,33 +338,17 @@ async def chat(req: ChatRequest):
                             yield _sse({"type": "token", "content": token})
 
                     else:
-                        # Apply changes
-                        if "date" in changes and isinstance(changes["date"], str):
-                            changes["date"] = _parse_date(changes["date"])
-                        changes["updated_at"] = datetime.now(timezone.utc)
-
-                        event_id = target["_id"]
-                        await events_collection.update_one(
-                            {"_id": ObjectId(event_id)},
-                            {"$set": changes},
-                        )
-                        updated = await events_collection.find_one({"_id": ObjectId(event_id)})
-                        serialized = _serialize_doc(updated)
-                        await embedding_service.upsert_event(serialized)
-
-                        changed_keys = [k for k in changes if k != "updated_at"]
-                        confirm_prompt = (
-                            f"Just updated the event \"{target.get('title')}\"."
-                            f" Changed: {', '.join(changed_keys)}."
-                            " Write a brief, warm one-sentence confirmation."
-                        )
-                        async for token in _stream_tokens([
-                            {"role": "system", "content": "You confirm timeline event updates. Be brief and warm."},
-                            {"role": "user", "content": confirm_prompt},
-                        ]):
-                            yield _sse({"type": "token", "content": token})
-
-                        yield _sse({"type": "event_updated", "event": serialized})
+                        # Defer the write — ask the user to confirm the match first
+                        yield _sse({
+                            "type": "token",
+                            "content": "I think you mean this event — does that look right?",
+                        })
+                        yield _sse({
+                            "type": "pending_edit",
+                            "target": target,
+                            "alternatives": alternatives,
+                            "changes": changes,
+                        })
 
             # ── QUERY flow ────────────────────────────────────────────────
             else:

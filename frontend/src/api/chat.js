@@ -1,8 +1,9 @@
-export async function streamChat(messages, eventFilter, { onSources, onToken, onEventCreated, onEventUpdated, onDone }) {
+export async function streamChat(messages, eventFilter, callbacks, action = null) {
+  const { onSources, onToken, onEventCreated, onEventUpdated, onPendingEdit, onDone } = callbacks
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ messages, event_filter: eventFilter }),
+    body: JSON.stringify({ messages, event_filter: eventFilter, action }),
   })
 
   const reader = res.body.getReader()
@@ -25,6 +26,7 @@ export async function streamChat(messages, eventFilter, { onSources, onToken, on
         else if (data.type === 'token') onToken?.(data.content)
         else if (data.type === 'event_created') onEventCreated?.(data.event)
         else if (data.type === 'event_updated') onEventUpdated?.(data.event)
+        else if (data.type === 'pending_edit') onPendingEdit?.(data)
         else if (data.type === 'done') onDone?.()
       } catch {
         // ignore malformed lines

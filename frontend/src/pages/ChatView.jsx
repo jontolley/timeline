@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import { streamChat } from '../api/chat'
-import { formatDateRange } from '../utils/date'
+import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
 
 const SUGGESTED = [
@@ -25,6 +25,27 @@ function toApiMessages(messages) {
     .map((m) => ({ role: m.role, content: m.content }))
 }
 
+function formatChangeValue(field, value) {
+  if (value == null) return '—'
+  if (field === 'date' || field === 'end_date') {
+    const iso = value.includes('T') ? value : `${value}T00:00:00Z`
+    return formatDate(iso)
+  }
+  if (field === 'location') return locationDisplay(value) ?? '—'
+  if (field === 'tags') return Array.isArray(value) ? value.join(', ') : String(value)
+  return String(value)
+}
+
+const FIELD_LABELS = {
+  title: 'Title',
+  date: 'Date',
+  end_date: 'End date',
+  event_type: 'Type',
+  description: 'Description',
+  location: 'Location',
+  tags: 'Tags',
+}
+
 export default function ChatView() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -43,23 +64,27 @@ export default function ChatView() {
       return updated
     })
 
-  const sendMessage = async (text) => {
-    const q = text.trim()
-    if (!q || streaming) return
+  const updateAt = (index, patch) =>
+    setMessages((m) => {
+      if (index < 0 || index >= m.length) return m
+      const updated = [...m]
+      updated[index] = { ...updated[index], ...patch }
+      return updated
+    })
 
-    setInput('')
-
-    // Append user message to history
-    const userMsg = { role: 'user', content: q }
-    const assistantMsg = { role: 'assistant', content: '', sources: [], thinking: true, eventAction: null }
-
-    setMessages((m) => [...m, userMsg, assistantMsg])
+  const runChat = async (history, action = null) => {
+    const assistantMsg = {
+      role: 'assistant',
+      content: '',
+      sources: [],
+      thinking: true,
+      eventAction: null,
+      pendingEdit: null,
+    }
+    setMessages((m) => [...m, assistantMsg])
     setStreaming(true)
 
-    // Build history including the new user message (assistant placeholder excluded)
-    const historyForApi = toApiMessages([...messages, userMsg])
-
-    await streamChat(historyForApi, filter, {
+    await streamChat(history, filter, {
       onSources: (sources) => updateLast({ sources }),
       onToken: (token) =>
         setMessages((m) => {
@@ -74,10 +99,52 @@ export default function ChatView() {
         }),
       onEventCreated: (event) => updateLast({ eventAction: { type: 'created', event } }),
       onEventUpdated: (event) => updateLast({ eventAction: { type: 'updated', event } }),
+      onPendingEdit: (data) =>
+        updateLast({
+          pendingEdit: {
+            target: data.target,
+            alternatives: data.alternatives || [],
+            changes: data.changes || {},
+            status: 'awaiting',
+          },
+          thinking: false,
+        }),
       onDone: () => {
         setStreaming(false)
         updateLast({ thinking: false })
       },
+    }, action)
+  }
+
+  const sendMessage = async (text) => {
+    const q = text.trim()
+    if (!q || streaming) return
+    setInput('')
+    const userMsg = { role: 'user', content: q }
+    setMessages((m) => [...m, userMsg])
+    const historyForApi = toApiMessages([...messages, userMsg])
+    await runChat(historyForApi)
+  }
+
+  const confirmPendingEdit = async (messageIndex, eventId, changes, label) => {
+    if (streaming) return
+    // Lock the card immediately so it can't be double-clicked.
+    updateAt(messageIndex, {
+      pendingEdit: { ...messages[messageIndex].pendingEdit, status: 'confirmed' },
+    })
+    const userMsg = { role: 'user', content: label }
+    setMessages((m) => [...m, userMsg])
+    const historyForApi = toApiMessages([...messages.slice(0, messageIndex + 1), userMsg])
+    await runChat(historyForApi, {
+      type: 'confirm_edit',
+      event_id: eventId,
+      changes,
+    })
+  }
+
+  const cancelPendingEdit = (messageIndex) => {
+    updateAt(messageIndex, {
+      pendingEdit: { ...messages[messageIndex].pendingEdit, status: 'cancelled' },
     })
   }
 
@@ -105,7 +172,14 @@ export default function ChatView() {
           <EmptyState onSelect={sendMessage} />
         ) : (
           messages.map((msg, i) => (
-            <MessageRow key={i} msg={msg} />
+            <MessageRow
+              key={i}
+              msg={msg}
+              messageIndex={i}
+              streaming={streaming}
+              onConfirm={confirmPendingEdit}
+              onCancel={cancelPendingEdit}
+            />
           ))
         )}
         <div ref={bottomRef} />
@@ -159,7 +233,7 @@ function EmptyState({ onSelect }) {
   )
 }
 
-function MessageRow({ msg }) {
+function MessageRow({ msg, messageIndex, streaming, onConfirm, onCancel }) {
   const isUser = msg.role === 'user'
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} items-start gap-2`}>
@@ -177,16 +251,164 @@ function MessageRow({ msg }) {
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
         )}
 
+        {/* Pending edit confirmation card */}
+        {msg.pendingEdit && !msg.thinking && (
+          <PendingEditCard
+            pendingEdit={msg.pendingEdit}
+            disabled={streaming}
+            onConfirm={(eventId, label) =>
+              onConfirm(messageIndex, eventId, msg.pendingEdit.changes, label)
+            }
+            onCancel={() => onCancel(messageIndex)}
+          />
+        )}
+
         {/* Event action card (create / update result) */}
         {msg.eventAction && !msg.thinking && (
           <EventActionCard action={msg.eventAction.type} event={msg.eventAction.event} />
         )}
 
         {/* Sources (query results) */}
-        {!isUser && msg.sources?.length > 0 && !msg.thinking && !msg.eventAction && (
+        {!isUser && msg.sources?.length > 0 && !msg.thinking && !msg.eventAction && !msg.pendingEdit && (
           <Sources sources={msg.sources} />
         )}
       </div>
+    </div>
+  )
+}
+
+function PendingEditCard({ pendingEdit, disabled, onConfirm, onCancel }) {
+  const { target, alternatives, changes, status } = pendingEdit
+  const [picking, setPicking] = useState(false)
+
+  const changeRows = Object.entries(changes)
+    .filter(([k]) => FIELD_LABELS[k])
+    .map(([k, v]) => ({ field: k, label: FIELD_LABELS[k], value: formatChangeValue(k, v) }))
+
+  if (status === 'cancelled') {
+    return (
+      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">
+        Edit cancelled. Try again with more detail about which event you mean.
+      </div>
+    )
+  }
+
+  if (status === 'confirmed') {
+    return (
+      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
+        Applying your changes…
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2.5 space-y-2.5">
+      {!picking ? (
+        <>
+          <EventSummary event={target} />
+          {changeRows.length > 0 && (
+            <div className="rounded-md bg-white border border-amber-200 px-2.5 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 mb-1">
+                Proposed changes
+              </p>
+              <ul className="space-y-0.5">
+                {changeRows.map((row) => (
+                  <li key={row.field} className="text-xs text-gray-700">
+                    <span className="text-gray-500">{row.label}:</span>{' '}
+                    <span className="font-medium">{row.value}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2 pt-0.5">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() =>
+                onConfirm(target._id, `Yes, update "${target.title}".`)
+              }
+              className="px-3 py-1.5 bg-amber-600 text-white text-xs font-medium rounded-md hover:bg-amber-700 disabled:opacity-50 transition-colors"
+            >
+              Confirm
+            </button>
+            {alternatives.length > 0 && (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => setPicking(true)}
+                className="px-3 py-1.5 bg-white border border-amber-300 text-amber-800 text-xs font-medium rounded-md hover:bg-amber-100 disabled:opacity-50 transition-colors"
+              >
+                Choose another
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onCancel}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <p className="text-xs text-amber-800 font-medium">Pick the event you meant:</p>
+          <ul className="space-y-1.5">
+            {alternatives.map((alt) => (
+              <li key={alt._id}>
+                <button
+                  type="button"
+                  disabled={disabled}
+                  onClick={() =>
+                    onConfirm(alt._id, `Use "${alt.title}" instead.`)
+                  }
+                  className="w-full text-left rounded-md border border-amber-200 bg-white px-2.5 py-2 hover:border-amber-400 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                >
+                  <EventSummary event={alt} />
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="flex gap-2 pt-0.5">
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={() => setPicking(false)}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              disabled={disabled}
+              onClick={onCancel}
+              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+            >
+              None of these
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function EventSummary({ event }) {
+  const dateDisplay = formatDateRange(event.date, event.end_date)
+  const loc = locationDisplay(event.location)
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className={`text-[11px] px-2 py-0.5 rounded-full ${TYPE_STYLES[event.event_type] ?? 'bg-gray-100 text-gray-600'}`}>
+          {event.event_type}
+        </span>
+        <span className="text-sm font-medium text-gray-900">{event.title}</span>
+      </div>
+      <p className="text-xs text-gray-500">
+        {dateDisplay}{loc ? ` · ${loc}` : ''}
+      </p>
     </div>
   )
 }
