@@ -38,6 +38,13 @@ class EmbeddingService:
                 vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
             )
 
+    async def reset_collection(self):
+        try:
+            await self.qdrant.delete_collection(collection_name=COLLECTION_NAME)
+        except Exception:
+            pass
+        await self.ensure_collection()
+
     async def embed(self, text: str) -> list[float]:
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(
