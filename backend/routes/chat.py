@@ -190,61 +190,26 @@ async def _anthropic_json(system: str, user_content: str) -> dict:
     return json.loads(match.group() if match else text)
 
 
-STOP_WORDS = {
-    "a", "an", "the", "my", "your", "our", "for", "to", "of", "in", "on", "at",
-    "with", "and", "or", "but", "i", "me", "we", "us", "is", "was", "are", "were",
-    "edit", "update", "change", "modify", "event",
-}
-
-
-def _extract_keywords(query: str) -> list[str]:
-    return [
-        w for w in re.findall(r"\w+", query.lower())
-        if len(w) > 1 and w not in STOP_WORDS
-    ]
-
-
-def _doc_text(doc: dict) -> str:
-    loc = doc.get("location")
-    if isinstance(loc, dict):
-        loc_text = " ".join(str(loc.get(k) or "") for k in ("name", "address"))
-    elif isinstance(loc, str):
-        loc_text = loc
-    else:
-        loc_text = ""
-    return " ".join([
-        str(doc.get("title") or ""),
-        str(doc.get("description") or ""),
-        loc_text,
-        " ".join(doc.get("tags") or []),
-    ]).lower()
-
-
 async def _keyword_search(
-    keywords: list[str],
+    query: str,
     limit: int,
     event_type_filter: str = None,
 ) -> list[dict]:
-    """Find events whose title/description/location/tags contain any of the keywords,
-    ranked by keyword hit count."""
-    if not keywords:
+    """Full-text search via Mongo's $text index (events_text_search, created at
+    startup in main.py). Ranks by built-in BM25-style textScore, with field
+    weights — title hits outweigh description hits, etc."""
+    if not query or not query.strip():
         return []
-    or_clauses = []
-    for kw in keywords:
-        esc = re.escape(kw)
-        for field in ("title", "description", "location.name", "location.address"):
-            or_clauses.append({field: {"$regex": esc, "$options": "i"}})
-        or_clauses.append({"tags": {"$regex": esc, "$options": "i"}})
-    query = {"$or": or_clauses}
+    mongo_query: dict = {"$text": {"$search": query}}
     if event_type_filter and event_type_filter != "all":
-        query = {"$and": [query, {"event_type": event_type_filter}]}
-    cursor = events_collection.find(query)
-    docs = [_serialize_doc(doc) async for doc in cursor]
-    docs.sort(
-        key=lambda d: sum(1 for kw in keywords if kw in _doc_text(d)),
-        reverse=True,
+        mongo_query["event_type"] = event_type_filter
+    cursor = (
+        events_collection
+        .find(mongo_query, {"score": {"$meta": "textScore"}})
+        .sort([("score", {"$meta": "textScore"})])
+        .limit(limit)
     )
-    return docs[:limit]
+    return [_serialize_doc(doc) async for doc in cursor]
 
 
 async def _hybrid_event_search(
@@ -259,7 +224,7 @@ async def _hybrid_event_search(
         query, top_k=pool_size, event_type_filter=event_type_filter
     )
     text_hits = await _keyword_search(
-        _extract_keywords(query), pool_size, event_type_filter=event_type_filter
+        query, pool_size, event_type_filter=event_type_filter
     )
 
     k = 60  # RRF dampening constant

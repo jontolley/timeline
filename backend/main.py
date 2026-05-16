@@ -74,10 +74,38 @@ def _serialize_doc(doc: dict) -> dict:
     return doc
 
 
+async def _ensure_text_index():
+    """Create the Mongo full-text index used by the chat keyword search if it
+    doesn't already exist. Field weights make title hits dominate, then tags,
+    then location, with description as the lowest-priority haystack."""
+    existing = await events_collection.index_information()
+    if "events_text_search" in existing:
+        return
+    await events_collection.create_index(
+        [
+            ("title", "text"),
+            ("tags", "text"),
+            ("location.name", "text"),
+            ("location.address", "text"),
+            ("description", "text"),
+        ],
+        weights={
+            "title": 10,
+            "tags": 5,
+            "location.name": 3,
+            "location.address": 3,
+            "description": 1,
+        },
+        name="events_text_search",
+        default_language="english",
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         await embedding_service.ensure_collection()
+        await _ensure_text_index()
 
         count = await events_collection.count_documents({})
         if count == 0:
