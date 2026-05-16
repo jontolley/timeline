@@ -7,3 +7,5 @@ python-dotenv
 httpx
 qdrant-client
 python-multipart
+anthropic
+openai

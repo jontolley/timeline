@@ -4,13 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Prerequisites (host machine)
 
-Ollama must be running natively on the host before any Docker services start:
+Two API keys must be exported before `docker compose up` (or written to a `.env` file in the project root, which compose reads automatically):
 
 ```bash
-ollama serve
-ollama pull mistral
-ollama pull nomic-embed-text
+export ANTHROPIC_API_KEY=sk-ant-...
+export OPENAI_API_KEY=sk-...
 ```
+
+- `ANTHROPIC_API_KEY` powers chat (default model `claude-sonnet-4-6`).
+- `OPENAI_API_KEY` powers vector embeddings (default model `text-embedding-3-small`, 1536 dims).
+
+Optional overrides: `ANTHROPIC_MODEL`, `OPENAI_EMBED_MODEL`. Changing the embedding model changes vector dimensions — see "Changing models" below.
 
 ## Running the app
 
@@ -61,26 +65,27 @@ npm run build    # production build to dist/
 | Backend | FastAPI + Uvicorn | 8000 |
 | MongoDB | Motor (async driver) | 27017 |
 | Qdrant | Vector DB for semantic search | 6333 |
-| Ollama | LLM + embeddings (host process) | 11434 |
+| Anthropic API | Chat (Claude Sonnet 4.6 by default) | — |
+| OpenAI API | Embeddings (text-embedding-3-small, 1536-dim) | — |
 
-Persistent data lives in `./data/mongo` and `./data/qdrant`. Ollama models are in `~/.ollama`.
+Persistent data lives in `./data/mongo` and `./data/qdrant`.
 
 ### Backend (`backend/`)
 
 - **`main.py`** — FastAPI app with lifespan. On startup: ensures Qdrant collection exists, seeds MongoDB with sample events if empty, syncs any unindexed events to Qdrant. Registers the events and chat routers.
 - **`database.py`** — Motor async client; exposes `events_collection` (the single collection used throughout).
 - **`models.py`** — Pydantic models: `EventBase` / `EventCreate` / `EventUpdate` / `Event`. The `LocationDetail` model (`{name, address, lat, lng}`) is the canonical location type; legacy string locations are normalised to this shape on read in both `_serialize` functions.
-- **`embeddings.py`** — `EmbeddingService` wraps Qdrant. Uses `nomic-embed-text` (768-dim vectors). Point IDs are `uuid5(NAMESPACE_DNS, mongo_id_string)` for deterministic, collision-free IDs. Uses `query_points()` (not the removed `search()`) from qdrant-client ≥1.7.
+- **`embeddings.py`** — `EmbeddingService` wraps Qdrant + the OpenAI embeddings API (`text-embedding-3-small`, 1536-dim vectors). Point IDs are `uuid5(NAMESPACE_DNS, mongo_id_string)` for deterministic, collision-free IDs. `ensure_collection()` detects vector-dimension mismatches against the stored Qdrant collection and drops + recreates so events get re-embedded by the startup sync loop in `main.py`. Uses `query_points()` (not the removed `search()`) from qdrant-client ≥1.7.
 - **`routes/events.py`** — Standard CRUD. `_serialize()` converts ObjectId→str, datetimes→ISO, and normalises legacy string locations.
-- **`routes/chat.py`** — SSE streaming endpoint. Three flows: **create**, **edit**, **query**. Intent is detected via a non-streaming Ollama JSON-mode call (`_ollama_json`). The full conversation transcript is sent each turn so the model can track multi-turn state. SSE event types: `sources`, `token`, `event_created`, `event_updated`, `done`.
+- **`routes/chat.py`** — SSE streaming endpoint. Three flows: **create**, **edit**, **query**. Intent is detected via a non-streaming Anthropic call (`_anthropic_json`) and parsed as JSON. The full conversation transcript is sent each turn so the model can track multi-turn state. Static system prompts (INTENT_SYSTEM, TIMELINE_SYSTEM, DECOMPOSE_SYSTEM, etc.) get top-level `cache_control: ephemeral` so repeat calls hit the prompt cache. SSE event types: `sources`, `token`, `event_created`, `event_updated`, `done`.
 
 ### Chat intent flow
 
-1. Full conversation transcript → `INTENT_SYSTEM` prompt → Ollama JSON → `{intent, fields, missing_required, event_search}`
+1. Full conversation transcript → `INTENT_SYSTEM` prompt → Anthropic JSON → `{intent, fields, missing_required, event_search}`
 2. `missing_required` can include `title`, `date`, `event_type`, `location`, `description`. The LLM reads the transcript to avoid re-asking fields already requested in a previous turn.
 3. **create**: if `missing_required` non-empty → clarify; else → insert to MongoDB + upsert to Qdrant + stream confirmation.
 4. **edit**: semantic search for target event → apply `fields` changes → update MongoDB + Qdrant.
-5. **query**: semantic search top-5 → RAG context injected into streaming Ollama chat.
+5. **query**: semantic search top-5 → RAG context injected into streaming Anthropic chat.
 
 ### Frontend (`frontend/src/`)
 
@@ -100,12 +105,15 @@ Persistent data lives in `./data/mongo` and `./data/qdrant`. Ollama models are i
 
 ## Changing models
 
-Set `OLLAMA_MODEL` or `OLLAMA_EMBED_MODEL` in `docker-compose.yml`. **Changing the embedding model requires clearing Qdrant** since vector dimensions will differ:
+Set `ANTHROPIC_MODEL` or `OPENAI_EMBED_MODEL` in your shell or `.env`. Changing the chat model is a no-op data-wise.
+
+**Changing the embedding model changes vector dimensions and invalidates the existing index.** `EmbeddingService.ensure_collection()` detects this on startup, drops the Qdrant collection, and the startup sync loop re-embeds every event via the new model — no manual cleanup required:
 
 ```bash
-docker compose down
-rm -rf ./data/qdrant
-docker compose up --build
+# In .env or your shell:
+OPENAI_EMBED_MODEL=text-embedding-3-large   # 3072-dim instead of 1536
+docker compose up -d backend
+# Backend startup detects the dim change, recreates the collection, and re-embeds.
 ```
 
 ## Testing

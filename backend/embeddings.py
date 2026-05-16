@@ -1,7 +1,7 @@
 import os
 import uuid
-import httpx
 from bson import ObjectId
+from openai import AsyncOpenAI
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
@@ -15,10 +15,11 @@ from qdrant_client.models import (
 from database import people_collection
 
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_EMBED_MODEL = os.getenv("OLLAMA_EMBED_MODEL", "nomic-embed-text")
+OPENAI_EMBED_MODEL = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-small")
 COLLECTION_NAME = "timeline_events"
-VECTOR_SIZE = 768
+VECTOR_SIZE = 1536  # text-embedding-3-small native dimension
+
+openai_client = AsyncOpenAI()
 
 
 def _point_id(event_id: str) -> str:
@@ -30,13 +31,23 @@ class EmbeddingService:
         self.qdrant = AsyncQdrantClient(url=QDRANT_URL)
 
     async def ensure_collection(self):
+        """Create the Qdrant collection if missing. If it already exists with a
+        different vector dimension (e.g. after switching embedding providers),
+        drop and recreate so subsequent upserts succeed."""
         collections = await self.qdrant.get_collections()
         names = [c.name for c in collections.collections]
-        if COLLECTION_NAME not in names:
-            await self.qdrant.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
-            )
+        if COLLECTION_NAME in names:
+            info = await self.qdrant.get_collection(COLLECTION_NAME)
+            existing_size = info.config.params.vectors.size
+            if existing_size == VECTOR_SIZE:
+                return
+            # Dimension mismatch — drop and recreate; events get re-embedded
+            # by the startup sync loop in main.py.
+            await self.qdrant.delete_collection(collection_name=COLLECTION_NAME)
+        await self.qdrant.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE),
+        )
 
     async def reset_collection(self):
         try:
@@ -46,13 +57,11 @@ class EmbeddingService:
         await self.ensure_collection()
 
     async def embed(self, text: str) -> list[float]:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(
-                f"{OLLAMA_URL}/api/embeddings",
-                json={"model": OLLAMA_EMBED_MODEL, "prompt": text},
-            )
-            resp.raise_for_status()
-            return resp.json()["embedding"]
+        response = await openai_client.embeddings.create(
+            model=OPENAI_EMBED_MODEL,
+            input=text,
+        )
+        return response.data[0].embedding
 
     async def upsert_event(self, event: dict):
         date = event.get("date", "")

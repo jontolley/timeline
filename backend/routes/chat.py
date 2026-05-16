@@ -7,6 +7,7 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from bson import ObjectId
+from anthropic import AsyncAnthropic
 
 from embeddings import EmbeddingService
 from database import events_collection, people_collection
@@ -14,8 +15,8 @@ from database import events_collection, people_collection
 router = APIRouter(prefix="/api/chat")
 embedding_service = EmbeddingService()
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")
+async_anthropic = AsyncAnthropic()
 
 # ---------------------------------------------------------------------------
 # System prompts
@@ -145,25 +146,21 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-async def _ollama_json(system: str, user_content: str) -> dict:
-    """Non-streaming Ollama call that returns parsed JSON."""
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        resp = await client.post(
-            f"{OLLAMA_URL}/api/chat",
-            json={
-                "model": OLLAMA_MODEL,
-                "stream": False,
-                "format": "json",
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user_content},
-                ],
-            },
-        )
-        resp.raise_for_status()
-        raw = resp.json()["message"]["content"]
-        match = re.search(r"\{.*\}", raw, re.DOTALL)
-        return json.loads(match.group() if match else raw)
+async def _anthropic_json(system: str, user_content: str) -> dict:
+    """Non-streaming Anthropic call that returns parsed JSON. The static
+    system prompt is auto-cached via top-level cache_control to cut input
+    cost on repeated calls (intent classification, query decomposition)."""
+    response = await async_anthropic.messages.create(
+        model=ANTHROPIC_MODEL,
+        max_tokens=2048,
+        system=system,
+        cache_control={"type": "ephemeral"},
+        messages=[{"role": "user", "content": user_content}],
+    )
+    text = next((b.text for b in response.content if b.type == "text"), "")
+    # Defensive: tolerate the model adding preamble around the JSON.
+    match = re.search(r"\{.*\}", text, re.DOTALL)
+    return json.loads(match.group() if match else text)
 
 
 STOP_WORDS = {
@@ -293,7 +290,7 @@ async def _decompose_query(question: str) -> list[str]:
     original question if anything goes wrong."""
     fallback = [question.strip()] if question and question.strip() else []
     try:
-        decomp = await _ollama_json(DECOMPOSE_SYSTEM, question)
+        decomp = await _anthropic_json(DECOMPOSE_SYSTEM, question)
         queries = decomp.get("queries")
         if not isinstance(queries, list):
             return fallback
@@ -377,33 +374,27 @@ async def _apply_edit(event_id: str, changes: dict):
         f" Changed: {', '.join(changed_keys)}."
         " Write a brief, warm one-sentence confirmation."
     )
-    async for token in _stream_tokens([
-        {"role": "system", "content": "You confirm timeline event updates. Be brief and warm."},
-        {"role": "user", "content": confirm_prompt},
-    ]):
+    async for token in _stream_tokens(
+        "You confirm timeline event updates. Be brief and warm.",
+        [{"role": "user", "content": confirm_prompt}],
+    ):
         yield _sse({"type": "token", "content": token})
 
     yield _sse({"type": "event_updated", "event": serialized})
 
 
-async def _stream_tokens(messages: list[dict]):
-    """Async generator yielding token strings from a streaming Ollama call."""
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        async with client.stream(
-            "POST",
-            f"{OLLAMA_URL}/api/chat",
-            json={"model": OLLAMA_MODEL, "stream": True, "messages": messages},
-        ) as resp:
-            async for line in resp.aiter_lines():
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    content = data.get("message", {}).get("content", "")
-                    if content:
-                        yield content
-                except json.JSONDecodeError:
-                    pass
+async def _stream_tokens(system: str, messages: list[dict]):
+    """Async generator yielding text deltas from a streaming Anthropic call.
+    The static system prompt is auto-cached via top-level cache_control."""
+    async with async_anthropic.messages.stream(
+        model=ANTHROPIC_MODEL,
+        max_tokens=2048,
+        system=system,
+        cache_control={"type": "ephemeral"},
+        messages=messages,
+    ) as stream:
+        async for text in stream.text_stream:
+            yield text
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +442,7 @@ async def chat(req: ChatRequest):
 
             # ── Step 1: intent detection (fast, non-streaming JSON call) ──
             try:
-                intent_data = await _ollama_json(INTENT_SYSTEM, transcript)
+                intent_data = await _anthropic_json(INTENT_SYSTEM, transcript)
             except Exception as exc:
                 intent_data = {"intent": "query", "fields": {}, "missing_required": []}
 
@@ -483,10 +474,10 @@ async def chat(req: ChatRequest):
                         f"Still need: {', '.join(missing)}.\n"
                         "Ask the user for the missing information."
                     )
-                    async for token in _stream_tokens([
-                        {"role": "system", "content": CLARIFY_SYSTEM},
-                        {"role": "user", "content": clarify_prompt},
-                    ]):
+                    async for token in _stream_tokens(
+                        CLARIFY_SYSTEM,
+                        [{"role": "user", "content": clarify_prompt}],
+                    ):
                         yield _sse({"type": "token", "content": token})
 
                 else:
@@ -526,10 +517,10 @@ async def chat(req: ChatRequest):
                         )
                         + " Write a brief, warm one-sentence confirmation."
                     )
-                    async for token in _stream_tokens([
-                        {"role": "system", "content": "You confirm that a timeline event was saved. Be brief and warm."},
-                        {"role": "user", "content": confirm_prompt},
-                    ]):
+                    async for token in _stream_tokens(
+                        "You confirm that a timeline event was saved. Be brief and warm.",
+                        [{"role": "user", "content": confirm_prompt}],
+                    ):
                         yield _sse({"type": "token", "content": token})
 
                     yield _sse({"type": "event_created", "event": serialized})
@@ -540,14 +531,14 @@ async def chat(req: ChatRequest):
                 found = await _hybrid_event_search(query, top_k=3)
 
                 if not found:
-                    async for token in _stream_tokens([
-                        {"role": "system", "content": "You help manage a personal timeline."},
-                        {"role": "user", "content": (
+                    async for token in _stream_tokens(
+                        "You help manage a personal timeline.",
+                        [{"role": "user", "content": (
                             f"The user wanted to edit an event matching '{query}' "
                             "but nothing was found. Apologise briefly and suggest "
                             "they check the timeline view to find the right event."
-                        )},
-                    ]):
+                        )}],
+                    ):
                         yield _sse({"type": "token", "content": token})
 
                 else:
@@ -558,10 +549,10 @@ async def chat(req: ChatRequest):
                     if not changes:
                         # Found the event but don't know what to change — ask
                         event_summary = _format_event_line(target)
-                        async for token in _stream_tokens([
-                            {"role": "system", "content": CONFIRM_EDIT_SYSTEM},
-                            {"role": "user", "content": f"Found event: {event_summary}. What would the user like to change?"},
-                        ]):
+                        async for token in _stream_tokens(
+                            CONFIRM_EDIT_SYSTEM,
+                            [{"role": "user", "content": f"Found event: {event_summary}. What would the user like to change?"}],
+                        ):
                             yield _sse({"type": "token", "content": token})
 
                     else:
@@ -623,16 +614,14 @@ async def chat(req: ChatRequest):
                 yield _sse({"type": "sources", "events": sources})
 
                 context = "\n".join(_format_event_line(e) for e in events)
-                ollama_messages = [{"role": "system", "content": TIMELINE_SYSTEM}]
-                # Include prior turns for conversational context
-                for m in messages[:-1]:
-                    ollama_messages.append(m)
-                ollama_messages.append({
+                # Include prior turns for conversational context, then append
+                # the freshly-built RAG question as the final user turn.
+                chat_messages = list(messages[:-1]) + [{
                     "role": "user",
                     "content": f"Timeline events:\n{context}\n\nQuestion: {last_question}",
-                })
+                }]
 
-                async for token in _stream_tokens(ollama_messages):
+                async for token in _stream_tokens(TIMELINE_SYSTEM, chat_messages):
                     yield _sse({"type": "token", "content": token})
 
         except Exception as exc:
