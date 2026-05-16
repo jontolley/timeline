@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
-import { getEvent, deleteEvent } from '../api/events'
+import { getEvent, deleteEvent, attachPhoto, removePhoto } from '../api/events'
+import { uploadPhoto } from '../api/uploads'
 import { formatDateRange } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { usePeopleStore } from '../store'
@@ -61,6 +62,29 @@ export default function EventDetail() {
     if (!window.confirm('Delete this event? This cannot be undone.')) return
     await deleteEvent(id)
     navigate('/')
+  }
+
+  const handlePhotosSelected = async (files) => {
+    if (!files?.length) return
+    for (const file of files) {
+      try {
+        const meta = await uploadPhoto(file)
+        const updated = await attachPhoto(id, meta)
+        setEvent(updated)
+      } catch (err) {
+        window.alert(`Failed to upload ${file.name}: ${err.message}`)
+      }
+    }
+  }
+
+  const handlePhotoDelete = async (key) => {
+    if (!window.confirm('Remove this photo?')) return
+    try {
+      const updated = await removePhoto(id, key)
+      setEvent(updated)
+    } catch (err) {
+      window.alert(`Failed to remove photo: ${err.message}`)
+    }
   }
 
   if (loading) return <p className="text-gray-400 py-12 text-center">Loading...</p>
@@ -145,6 +169,11 @@ export default function EventDetail() {
             ))}
           </div>
         )}
+        <PhotoSection
+          photos={event.photos || []}
+          onSelect={handlePhotosSelected}
+          onDelete={handlePhotoDelete}
+        />
         <div className="flex gap-3 pt-2 border-t border-gray-100">
           <Link
             to={`/events/${id}/edit`}
@@ -160,6 +189,81 @@ export default function EventDetail() {
           </button>
         </div>
       </div>
+    </div>
+  )
+}
+
+function PhotoSection({ photos, onSelect, onDelete }) {
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleChange = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setUploading(true)
+    try {
+      await onSelect(files)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  return (
+    <div className="mb-6">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-medium text-gray-700">
+          Photos {photos.length > 0 && <span className="text-gray-400">({photos.length})</span>}
+        </h2>
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+          className="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
+        >
+          {uploading ? 'Uploading…' : '+ Add photos'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          className="hidden"
+          onChange={handleChange}
+        />
+      </div>
+      {photos.length === 0 ? (
+        <p className="text-xs text-gray-400 italic">No photos yet.</p>
+      ) : (
+        <div className="grid grid-cols-3 gap-2">
+          {photos.map((p) => (
+            <div key={p.key} className="relative group aspect-square overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+              {p.url ? (
+                <a href={p.url} target="_blank" rel="noopener noreferrer">
+                  <img
+                    src={p.url}
+                    alt=""
+                    loading="lazy"
+                    className="w-full h-full object-cover hover:opacity-90 transition-opacity"
+                  />
+                </a>
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                  Unavailable
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => onDelete(p.key)}
+                title="Remove photo"
+                className="absolute top-1 right-1 bg-white/90 text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

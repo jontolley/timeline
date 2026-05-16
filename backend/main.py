@@ -11,6 +11,7 @@ from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
 from routes.backup import router as backup_router
+from routes.uploads import router as uploads_router
 
 embedding_service = EmbeddingService()
 
@@ -117,6 +118,7 @@ app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)
 app.include_router(backup_router)
+app.include_router(uploads_router)
 
 
 @app.get("/api/health")

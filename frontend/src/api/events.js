@@ -47,3 +47,21 @@ export async function deleteEvent(id) {
   if (!res.ok) throw new Error('Failed to delete event')
   return res.json()
 }
+
+export async function attachPhoto(eventId, photo) {
+  const res = await fetch(`${BASE}/${eventId}/photos`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(photo),
+  })
+  if (!res.ok) throw new Error('Failed to attach photo')
+  return res.json()
+}
+
+export async function removePhoto(eventId, key) {
+  const res = await fetch(`${BASE}/${eventId}/photos/${encodeURIComponent(key)}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('Failed to remove photo')
+  return res.json()
+}

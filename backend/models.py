@@ -18,6 +18,15 @@ class LocationDetail(BaseModel):
     lng: Optional[float] = None
 
 
+class PhotoRef(BaseModel):
+    key: str
+    thumb_key: Optional[str] = None
+    content_type: str
+    width: Optional[int] = None
+    height: Optional[int] = None
+    uploaded_at: Optional[datetime] = None
+
+
 class EventBase(BaseModel):
     title: str
     description: Optional[str] = None
@@ -27,6 +36,7 @@ class EventBase(BaseModel):
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = []
     people: Optional[list[str]] = []
+    photos: Optional[list[PhotoRef]] = []
 
 
 class EventCreate(EventBase):
