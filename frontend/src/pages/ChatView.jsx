@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { streamChat } from '../api/chat'
 import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
-import { usePeopleStore } from '../store'
+import { usePeopleStore, useChatStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 
 const SUGGESTED = [
@@ -18,13 +17,6 @@ const TYPE_STYLES = {
   travel: 'bg-green-100 text-green-700',
   milestone: 'bg-purple-100 text-purple-700',
   family: 'bg-orange-100 text-orange-700',
-}
-
-// Converts the internal messages array to clean {role, content} pairs for the API
-function toApiMessages(messages) {
-  return messages
-    .filter((m) => m.content)
-    .map((m) => ({ role: m.role, content: m.content }))
 }
 
 function formatChangeValue(field, value) {
@@ -50,12 +42,19 @@ const FIELD_LABELS = {
 }
 
 export default function ChatView() {
-  const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [filter, setFilter] = useState('all')
-  const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef(null)
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const {
+    messages,
+    filter,
+    streaming,
+    setFilter,
+    reset,
+    sendMessage: sendStoreMessage,
+    confirmPendingEdit,
+    cancelPendingEdit,
+  } = useChatStore()
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -65,95 +64,15 @@ export default function ChatView() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  const updateLast = (patch) =>
-    setMessages((m) => {
-      const updated = [...m]
-      updated[updated.length - 1] = { ...updated[updated.length - 1], ...patch }
-      return updated
-    })
-
-  const updateAt = (index, patch) =>
-    setMessages((m) => {
-      if (index < 0 || index >= m.length) return m
-      const updated = [...m]
-      updated[index] = { ...updated[index], ...patch }
-      return updated
-    })
-
-  const runChat = async (history, action = null) => {
-    const assistantMsg = {
-      role: 'assistant',
-      content: '',
-      sources: [],
-      thinking: true,
-      eventAction: null,
-      pendingEdit: null,
-    }
-    setMessages((m) => [...m, assistantMsg])
-    setStreaming(true)
-
-    await streamChat(history, filter, {
-      onSources: (sources) => updateLast({ sources }),
-      onToken: (token) =>
-        setMessages((m) => {
-          const updated = [...m]
-          const last = updated[updated.length - 1]
-          updated[updated.length - 1] = {
-            ...last,
-            content: last.content + token,
-            thinking: false,
-          }
-          return updated
-        }),
-      onEventCreated: (event) => updateLast({ eventAction: { type: 'created', event } }),
-      onEventUpdated: (event) => updateLast({ eventAction: { type: 'updated', event } }),
-      onPendingEdit: (data) =>
-        updateLast({
-          pendingEdit: {
-            target: data.target,
-            alternatives: data.alternatives || [],
-            changes: data.changes || {},
-            status: 'awaiting',
-          },
-          thinking: false,
-        }),
-      onDone: () => {
-        setStreaming(false)
-        updateLast({ thinking: false })
-      },
-    }, action)
-  }
-
-  const sendMessage = async (text) => {
-    const q = text.trim()
-    if (!q || streaming) return
+  const sendMessage = (text) => {
     setInput('')
-    const userMsg = { role: 'user', content: q }
-    setMessages((m) => [...m, userMsg])
-    const historyForApi = toApiMessages([...messages, userMsg])
-    await runChat(historyForApi)
+    sendStoreMessage(text)
   }
 
-  const confirmPendingEdit = async (messageIndex, eventId, changes, label) => {
+  const startNewChat = () => {
     if (streaming) return
-    // Lock the card immediately so it can't be double-clicked.
-    updateAt(messageIndex, {
-      pendingEdit: { ...messages[messageIndex].pendingEdit, status: 'confirmed' },
-    })
-    const userMsg = { role: 'user', content: label }
-    setMessages((m) => [...m, userMsg])
-    const historyForApi = toApiMessages([...messages.slice(0, messageIndex + 1), userMsg])
-    await runChat(historyForApi, {
-      type: 'confirm_edit',
-      event_id: eventId,
-      changes,
-    })
-  }
-
-  const cancelPendingEdit = (messageIndex) => {
-    updateAt(messageIndex, {
-      pendingEdit: { ...messages[messageIndex].pendingEdit, status: 'cancelled' },
-    })
+    reset()
+    setInput('')
   }
 
   return (
@@ -161,6 +80,15 @@ export default function ChatView() {
       {/* Header */}
       <div className="flex items-center gap-3 mb-4 shrink-0">
         <h1 className="text-2xl font-bold text-gray-900 flex-1">Chat with your Timeline</h1>
+        <button
+          type="button"
+          onClick={startNewChat}
+          disabled={streaming || messages.length === 0}
+          title="Start a new chat session"
+          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          + New chat
+        </button>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}

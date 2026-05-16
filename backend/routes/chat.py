@@ -118,18 +118,45 @@ def _serialize_doc(doc: dict) -> dict:
     return doc
 
 
-def _format_event_line(e: dict) -> str:
+def _format_event_line(e: dict, people_names: dict | None = None) -> str:
     date = str(e.get("date", ""))[:10]
     etype = e.get("event_type", "").capitalize()
     title = e.get("title", "")
     location = e.get("location", "")
+    if isinstance(location, dict):
+        location = location.get("name") or location.get("address") or ""
     tags = " ".join(f"#{t}" for t in (e.get("tags") or []))
     parts = [f"[{date}] {etype}: {title}"]
     if location:
         parts.append(f"({location})")
+    if people_names:
+        names = [people_names.get(str(pid)) for pid in (e.get("people") or [])]
+        names = [n for n in names if n]
+        if names:
+            parts.append(f"with {', '.join(names)}")
     if tags:
         parts.append(tags)
     return " ".join(parts)
+
+
+async def _people_names_for_events(events: list[dict]) -> dict:
+    """Look up person names for every person id referenced across the given
+    events. Returns {person_id_str: name}."""
+    ids: set = set()
+    for e in events:
+        for pid in (e.get("people") or []):
+            if pid:
+                ids.add(str(pid))
+    if not ids:
+        return {}
+    try:
+        object_ids = [ObjectId(pid) for pid in ids]
+    except Exception:
+        return {}
+    cursor = people_collection.find(
+        {"_id": {"$in": object_ids}}, {"_id": 1, "name": 1}
+    )
+    return {str(doc["_id"]): doc["name"] async for doc in cursor if doc.get("name")}
 
 
 def _sse(payload: dict) -> str:
@@ -613,7 +640,8 @@ async def chat(req: ChatRequest):
                 sources = [e.get("title", "") for e in events]
                 yield _sse({"type": "sources", "events": sources})
 
-                context = "\n".join(_format_event_line(e) for e in events)
+                people_names = await _people_names_for_events(events)
+                context = "\n".join(_format_event_line(e, people_names) for e in events)
                 # Include prior turns for conversational context, then append
                 # the freshly-built RAG question as the final user turn.
                 chat_messages = list(messages[:-1]) + [{
