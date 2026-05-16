@@ -118,6 +118,9 @@ def _serialize_doc(doc: dict) -> dict:
     return doc
 
 
+_DESCRIPTION_MAX_CHARS = 280
+
+
 def _format_event_line(e: dict, people_names: dict | None = None) -> str:
     date = str(e.get("date", ""))[:10]
     etype = e.get("event_type", "").capitalize()
@@ -136,6 +139,14 @@ def _format_event_line(e: dict, people_names: dict | None = None) -> str:
             parts.append(f"with {', '.join(names)}")
     if tags:
         parts.append(tags)
+    description = (e.get("description") or "").strip()
+    if description:
+        # Collapse whitespace so multi-line descriptions stay on one row, and
+        # cap length so RAG context for ~12 events stays bounded.
+        description = " ".join(description.split())
+        if len(description) > _DESCRIPTION_MAX_CHARS:
+            description = description[:_DESCRIPTION_MAX_CHARS].rstrip() + "…"
+        parts.append(f"— {description}")
     return " ".join(parts)
 
 
