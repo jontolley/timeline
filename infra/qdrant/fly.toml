@@ -1,0 +1,17 @@
+app = "timeline-qdrant"
+primary_region = "sjc"
+
+[build]
+  image = "qdrant/qdrant:latest"
+
+[env]
+  QDRANT__SERVICE__HOST = "::"
+
+[[mounts]]
+  source = "qdrant_data"
+  destination = "/qdrant/storage"
+  initial_size = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

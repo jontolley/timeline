@@ -21,7 +21,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      MONGO_URL: mongodb://mongo:27017
+      MONGO_URL: ${MONGO_URL:-mongodb://mongo:27017}
       QDRANT_URL: http://qdrant:6333
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       OPENAI_API_KEY: ${OPENAI_API_KEY}
