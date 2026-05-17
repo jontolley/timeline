@@ -55,6 +55,15 @@ npm run dev      # dev server at http://localhost:5173
 npm run build    # production build to dist/
 ```
 
+## Local dev vs. production
+
+The app is deployed publicly (backend + Qdrant on Fly, MongoDB Atlas, frontend on Cloudflare Pages). Local dev runs the full stack from `docker-compose.yml` against the in-cluster Mongo + Qdrant. Things that keep the two environments cleanly separated:
+
+- **Mongo:** `docker-compose.yml` has `MONGO_URL: ${MONGO_URL:-mongodb://mongo:27017}` — falls back to the local container if `MONGO_URL` is unset. The Atlas connection string lives in `.env` under `ATLAS_MONGO_URL` (deliberately not `MONGO_URL`) so it does NOT override the local default. Renaming it to `MONGO_URL` would silently point dev at prod.
+- **Auth defaults:** `COOKIE_SECURE` defaults to `false`, `APP_BASE_URL` to `http://localhost:3000`, `CORS_ORIGINS` to the localhost origins. Magic-link emails still send via Resend in dev using the real `RESEND_API_KEY`. Set `AUTH_DISABLED=true` to bypass the flow entirely for API testing.
+- **Photos:** R2 is shared between dev and prod — there is no separate dev bucket. Test uploads land in the prod bucket, so clean them up.
+- **`/api` routing:** the Cloudflare Pages Function at `frontend/functions/api/[[path]].js` only runs in production. Locally, nginx (Docker frontend) or the Vite dev server proxy (`vite.config.js`) handles `/api/*` → `localhost:8000`.
+
 ## Architecture overview
 
 ### Services
