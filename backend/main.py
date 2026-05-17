@@ -12,6 +12,7 @@ from routes.chat import router as chat_router
 from routes.people import router as people_router
 from routes.backup import router as backup_router
 from routes.uploads import router as uploads_router
+from routes.auth import router as auth_router
 
 embedding_service = EmbeddingService()
 
@@ -135,13 +136,23 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+import os
+
+_origins_env = os.getenv(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:5173",
+)
+ALLOWED_ORIGINS = [o.strip() for o in _origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    allow_credentials=True,
 )
 
+app.include_router(auth_router)
 app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)

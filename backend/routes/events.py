@@ -1,14 +1,15 @@
 from datetime import datetime, timezone
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from bson import ObjectId
+from auth import require_auth
 from database import events_collection
 from models import EventCreate, EventUpdate
 from embeddings import EmbeddingService
 import storage
 
-router = APIRouter(prefix="/api/events")
+router = APIRouter(prefix="/api/events", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
 
 

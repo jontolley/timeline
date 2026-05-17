@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import Navbar from './components/Navbar'
 import TimelineView from './pages/TimelineView'
@@ -6,8 +7,34 @@ import EventForm from './pages/EventForm'
 import ChatView from './pages/ChatView'
 import PeopleView from './pages/PeopleView'
 import BackupView from './pages/BackupView'
+import LoginView from './pages/LoginView'
+import { useAuthStore } from './store'
 
 export default function App() {
+  const { status, check, markUnauthorized } = useAuthStore()
+
+  useEffect(() => {
+    check()
+  }, [check])
+
+  useEffect(() => {
+    const handler = () => markUnauthorized()
+    window.addEventListener('auth:unauthorized', handler)
+    return () => window.removeEventListener('auth:unauthorized', handler)
+  }, [markUnauthorized])
+
+  if (status === 'loading') {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p className="text-gray-400 text-sm">Loading…</p>
+      </div>
+    )
+  }
+
+  if (status === 'unauthenticated') {
+    return <LoginView />
+  }
+
   return (
     <BrowserRouter>
       <div className="min-h-screen bg-gray-50">

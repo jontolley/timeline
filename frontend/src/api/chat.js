@@ -3,8 +3,13 @@ export async function streamChat(messages, eventFilter, callbacks, action = null
   const res = await fetch('/api/chat', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
     body: JSON.stringify({ messages, event_filter: eventFilter, action }),
   })
+  if (res.status === 401) {
+    window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+    throw new Error('Unauthorized')
+  }
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()

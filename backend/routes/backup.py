@@ -5,13 +5,14 @@ import zipfile
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
+from auth import require_auth
 from database import events_collection, people_collection
 from embeddings import EmbeddingService
 
-router = APIRouter(prefix="/api/backup")
+router = APIRouter(prefix="/api/backup", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
 
 ALLOWED_COLORS = {

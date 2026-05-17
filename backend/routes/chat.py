@@ -3,16 +3,17 @@ import json
 import re
 import httpx
 from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from bson import ObjectId
 from anthropic import AsyncAnthropic
 
+from auth import require_auth
 from embeddings import EmbeddingService
 from database import events_collection, people_collection
 
-router = APIRouter(prefix="/api/chat")
+router = APIRouter(prefix="/api/chat", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
 
 ANTHROPIC_MODEL = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-6")

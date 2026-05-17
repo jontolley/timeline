@@ -2,6 +2,31 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { listPeople } from '../api/people'
 import { streamChat } from '../api/chat'
+import { fetchMe, logout as apiLogout } from '../api/auth'
+
+export const useAuthStore = create((set, get) => ({
+  status: 'loading',  // 'loading' | 'authenticated' | 'unauthenticated'
+  email: null,
+
+  check: async () => {
+    const result = await fetchMe()
+    set({
+      status: result.authenticated ? 'authenticated' : 'unauthenticated',
+      email: result.email || null,
+    })
+  },
+
+  signOut: async () => {
+    try { await apiLogout() } catch { /* clear local state regardless */ }
+    set({ status: 'unauthenticated', email: null })
+  },
+
+  markUnauthorized: () => {
+    if (get().status !== 'unauthenticated') {
+      set({ status: 'unauthenticated', email: null })
+    }
+  },
+}))
 
 export const useEventStore = create((set) => ({
   events: [],

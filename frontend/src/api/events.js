@@ -1,3 +1,5 @@
+import { http } from './http'
+
 const BASE = '/api/events'
 
 export async function listEvents(params = {}) {
@@ -11,19 +13,19 @@ export async function listEvents(params = {}) {
     }
   }
   const qs = usp.toString()
-  const res = await fetch(`${BASE}${qs ? `?${qs}` : ''}`)
+  const res = await http(`${BASE}${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Failed to fetch events')
   return res.json()
 }
 
 export async function getEvent(id) {
-  const res = await fetch(`${BASE}/${id}`)
+  const res = await http(`${BASE}/${id}`)
   if (!res.ok) throw new Error('Event not found')
   return res.json()
 }
 
 export async function createEvent(data) {
-  const res = await fetch(BASE, {
+  const res = await http(BASE, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -33,7 +35,7 @@ export async function createEvent(data) {
 }
 
 export async function updateEvent(id, data) {
-  const res = await fetch(`${BASE}/${id}`, {
+  const res = await http(`${BASE}/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -43,13 +45,13 @@ export async function updateEvent(id, data) {
 }
 
 export async function deleteEvent(id) {
-  const res = await fetch(`${BASE}/${id}`, { method: 'DELETE' })
+  const res = await http(`${BASE}/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Failed to delete event')
   return res.json()
 }
 
 export async function attachPhoto(eventId, photo) {
-  const res = await fetch(`${BASE}/${eventId}/photos`, {
+  const res = await http(`${BASE}/${eventId}/photos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(photo),
@@ -59,7 +61,7 @@ export async function attachPhoto(eventId, photo) {
 }
 
 export async function removePhoto(eventId, key) {
-  const res = await fetch(`${BASE}/${eventId}/photos/${encodeURIComponent(key)}`, {
+  const res = await http(`${BASE}/${eventId}/photos/${encodeURIComponent(key)}`, {
     method: 'DELETE',
   })
   if (!res.ok) throw new Error('Failed to remove photo')

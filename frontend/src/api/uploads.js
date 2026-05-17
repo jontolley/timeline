@@ -1,3 +1,5 @@
+import { http } from './http'
+
 const FULL_MAX_DIM = 2000
 const THUMB_MAX_DIM = 400
 const FULL_QUALITY = 0.85
@@ -45,7 +47,7 @@ function renderResized(img, maxDim, quality, filename) {
 }
 
 async function presignUpload(contentType) {
-  const res = await fetch('/api/uploads/presign', {
+  const res = await http('/api/uploads/presign', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ content_type: contentType }),

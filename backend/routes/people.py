@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from bson import ObjectId
 
+from auth import require_auth
 from database import people_collection, events_collection
 from models import PersonCreate, PersonUpdate
 from embeddings import EmbeddingService
 
-router = APIRouter(prefix="/api/people")
+router = APIRouter(prefix="/api/people", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
 
 ALLOWED_COLORS = {

@@ -32,7 +32,15 @@ export default function BackupView() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await fetch('/api/backup/restore', { method: 'POST', body: fd })
+      const res = await fetch('/api/backup/restore', {
+        method: 'POST',
+        body: fd,
+        credentials: 'include',
+      })
+      if (res.status === 401) {
+        window.dispatchEvent(new CustomEvent('auth:unauthorized'))
+        throw new Error('Unauthorized')
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         throw new Error(body.detail || `Restore failed (${res.status})`)

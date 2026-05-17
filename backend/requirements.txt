@@ -10,3 +10,5 @@ python-multipart
 anthropic
 openai
 aioboto3
+itsdangerous
+email-validator

@@ -1,8 +1,9 @@
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from auth import require_auth
 from storage import (
     ALLOWED_IMAGE_TYPES,
     EXT_FOR_TYPE,
@@ -10,7 +11,7 @@ from storage import (
     presign_put,
 )
 
-router = APIRouter(prefix="/api/uploads")
+router = APIRouter(prefix="/api/uploads", dependencies=[Depends(require_auth)])
 
 
 class PresignRequest(BaseModel):
