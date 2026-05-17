@@ -5,7 +5,11 @@ import httpx
 from fastapi import HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
-ALLOWED_EMAIL = os.getenv("ALLOWED_EMAIL", "").strip().lower()
+ALLOWED_EMAILS: set[str] = {
+    e.strip().lower()
+    for e in os.getenv("ALLOWED_EMAIL", "").split(",")
+    if e.strip()
+}
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-me-in-production")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM = os.getenv("RESEND_FROM", "onboarding@resend.dev")
@@ -21,7 +25,7 @@ _signer = URLSafeTimedSerializer(SESSION_SECRET, salt="timeline-auth")
 
 
 def is_allowed(email: str) -> bool:
-    return bool(ALLOWED_EMAIL) and email.strip().lower() == ALLOWED_EMAIL
+    return email.strip().lower() in ALLOWED_EMAILS
 
 
 def make_magic_token(email: str) -> str:
@@ -81,7 +85,7 @@ async def send_magic_link(email: str, link: str) -> None:
 async def require_auth(request: Request) -> str:
     """FastAPI dependency. Returns the authenticated user's email or raises 401."""
     if AUTH_DISABLED:
-        return ALLOWED_EMAIL or "dev@local"
+        return next(iter(ALLOWED_EMAILS), "dev@local")
     token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
