@@ -31,6 +31,7 @@ export default function EventDetail() {
   const [event, setEvent] = useState(null)
   const [displayLocation, setDisplayLocation] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [lightboxIndex, setLightboxIndex] = useState(null)
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   useEffect(() => {
@@ -165,7 +166,16 @@ export default function EventDetail() {
           photos={event.photos || []}
           onSelect={handlePhotosSelected}
           onDelete={handlePhotoDelete}
+          onOpen={setLightboxIndex}
         />
+        {lightboxIndex !== null && event.photos?.[lightboxIndex] && (
+          <Lightbox
+            photos={event.photos}
+            index={lightboxIndex}
+            onClose={() => setLightboxIndex(null)}
+            onChange={setLightboxIndex}
+          />
+        )}
         <div className="flex gap-3 pt-6 border-t border-ink-line">
           <Link
             to={`/events/${id}/edit`}
@@ -185,7 +195,78 @@ export default function EventDetail() {
   )
 }
 
-function PhotoSection({ photos, onSelect, onDelete }) {
+function Lightbox({ photos, index, onClose, onChange }) {
+  const count = photos.length
+  const photo = photos[index]
+  const goPrev = () => onChange((index - 1 + count) % count)
+  const goNext = () => onChange((index + 1) % count)
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (e.key === 'Escape') onClose()
+      else if (e.key === 'ArrowLeft') goPrev()
+      else if (e.key === 'ArrowRight') goNext()
+    }
+    window.addEventListener('keydown', handler)
+    const prevOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      window.removeEventListener('keydown', handler)
+      document.body.style.overflow = prevOverflow
+    }
+  }, [index, count]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center select-none"
+    >
+      <img
+        src={photo.url}
+        alt=""
+        onClick={(e) => e.stopPropagation()}
+        className="max-w-[95vw] max-h-[90vh] object-contain"
+      />
+
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onClose() }}
+        aria-label="Close"
+        className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-xl backdrop-blur"
+      >
+        ✕
+      </button>
+
+      {count > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); goPrev() }}
+            aria-label="Previous photo"
+            className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-2xl backdrop-blur"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); goNext() }}
+            aria-label="Next photo"
+            className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-2xl backdrop-blur"
+          >
+            ›
+          </button>
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs num bg-white/10 rounded-full px-3 py-1 backdrop-blur">
+            {index + 1} / {count}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
 
@@ -228,17 +309,21 @@ function PhotoSection({ photos, onSelect, onDelete }) {
         <p className="text-xs text-ink-faint italic">No photos yet.</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
-          {photos.map((p) => (
+          {photos.map((p, i) => (
             <div key={p.key} className="relative group aspect-square overflow-hidden rounded-md border border-ink-line bg-surface">
               {p.url ? (
-                <a href={p.url} target="_blank" rel="noopener noreferrer">
+                <button
+                  type="button"
+                  onClick={() => onOpen(i)}
+                  className="block w-full h-full"
+                >
                   <img
                     src={p.url}
                     alt=""
                     loading="lazy"
                     className="w-full h-full object-cover hover:opacity-90 transition-opacity"
                   />
-                </a>
+                </button>
               ) : (
                 <div className="w-full h-full flex items-center justify-center text-xs text-ink-faint">
                   Unavailable
