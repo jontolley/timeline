@@ -185,15 +185,26 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
+def _system_blocks(static_system: str) -> list[dict]:
+    """Build a system-prompt list with a dynamic date preamble followed by
+    the cached static prompt. The preamble must NOT be cached — it changes
+    daily — but the bulk of the prompt still hits the cache."""
+    today = datetime.now(timezone.utc)
+    preamble = f"Today is {today.strftime('%A, %Y-%m-%d')} (UTC)."
+    return [
+        {"type": "text", "text": preamble},
+        {"type": "text", "text": static_system, "cache_control": {"type": "ephemeral"}},
+    ]
+
+
 async def _anthropic_json(system: str, user_content: str) -> dict:
     """Non-streaming Anthropic call that returns parsed JSON. The static
-    system prompt is auto-cached via top-level cache_control to cut input
-    cost on repeated calls (intent classification, query decomposition)."""
+    system block is cached via cache_control; a small dynamic preamble with
+    today's date sits in front so the model can resolve relative dates."""
     response = await async_anthropic.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=2048,
-        system=system,
-        cache_control={"type": "ephemeral"},
+        system=_system_blocks(system),
         messages=[{"role": "user", "content": user_content}],
     )
     text = next((b.text for b in response.content if b.type == "text"), "")
@@ -389,12 +400,12 @@ async def _apply_edit(event_id: str, changes: dict):
 
 async def _stream_tokens(system: str, messages: list[dict]):
     """Async generator yielding text deltas from a streaming Anthropic call.
-    The static system prompt is auto-cached via top-level cache_control."""
+    Static system block is cached; a dynamic date preamble sits in front so
+    the model can answer questions like 'what did I do last week'."""
     async with async_anthropic.messages.stream(
         model=ANTHROPIC_MODEL,
         max_tokens=2048,
-        system=system,
-        cache_control={"type": "ephemeral"},
+        system=_system_blocks(system),
         messages=messages,
     ) as stream:
         async for text in stream.text_stream:
