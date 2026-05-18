@@ -12,7 +12,10 @@ export default function EventCard({ event }) {
   const t = eventTypeStyles(event.event_type)
 
   return (
-    <Link to={`/events/${event._id}`} className="block group">
+    <Link
+      to={`/events/${event._id}`}
+      className="block group bg-surface rounded-lg p-4 hover:bg-ink-line/40 transition-colors"
+    >
       <div className="flex items-baseline gap-2 mb-1">
         <span className={`text-[11px] font-medium tracking-wide uppercase ${t.label}`}>
           {event.event_type}

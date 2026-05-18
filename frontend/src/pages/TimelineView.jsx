@@ -71,7 +71,7 @@ export default function TimelineView() {
             return (
               <li key={event._id} className="relative pl-8 pb-8 last:pb-2">
                 <span
-                  className={`absolute left-0 top-[10px] w-[15px] h-[15px] rounded-full bg-paper ring-2 ${t.ring}`}
+                  className={`absolute left-0 top-[26px] w-[15px] h-[15px] rounded-full bg-paper ring-2 ${t.ring}`}
                 />
                 <EventCard event={event} />
               </li>
