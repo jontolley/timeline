@@ -221,7 +221,7 @@ function Lightbox({ photos, index, onClose, onChange }) {
       role="dialog"
       aria-modal="true"
       onClick={onClose}
-      className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center select-none"
+      className="fixed inset-0 z-[1000] bg-black/90 flex items-center justify-center select-none"
     >
       <img
         src={photo.url}
