@@ -1,7 +1,4 @@
-import csv
-import io
 import json
-import zipfile
 from datetime import datetime, timezone
 
 from bson import ObjectId
@@ -82,76 +79,6 @@ async def backup_json():
     return Response(
         content=body,
         media_type="application/json",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
-
-
-def _people_csv(people: list[dict]) -> str:
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow(["_id", "name", "color", "created_at", "updated_at"])
-    for p in people:
-        writer.writerow([
-            p.get("_id", ""),
-            p.get("name", ""),
-            p.get("color", ""),
-            p.get("created_at", "") or "",
-            p.get("updated_at", "") or "",
-        ])
-    return buf.getvalue()
-
-
-def _events_csv(events: list[dict], people_by_id: dict) -> str:
-    buf = io.StringIO()
-    writer = csv.writer(buf)
-    writer.writerow([
-        "_id", "title", "description", "event_type",
-        "date", "end_date",
-        "location_name", "location_address", "location_lat", "location_lng",
-        "tags", "people_ids", "people_names",
-        "created_at", "updated_at",
-    ])
-    for e in events:
-        loc = e.get("location") or {}
-        if not isinstance(loc, dict):
-            loc = {}
-        people_ids = e.get("people") or []
-        people_names = [people_by_id.get(pid, {}).get("name", "") for pid in people_ids]
-        writer.writerow([
-            e.get("_id", ""),
-            e.get("title", "") or "",
-            e.get("description", "") or "",
-            e.get("event_type", "") or "",
-            e.get("date", "") or "",
-            e.get("end_date", "") or "",
-            loc.get("name") or "",
-            loc.get("address") or "",
-            loc.get("lat") if loc.get("lat") is not None else "",
-            loc.get("lng") if loc.get("lng") is not None else "",
-            "|".join(e.get("tags") or []),
-            "|".join(people_ids),
-            "|".join(n for n in people_names if n),
-            e.get("created_at", "") or "",
-            e.get("updated_at", "") or "",
-        ])
-    return buf.getvalue()
-
-
-@router.get("/csv")
-async def backup_csv():
-    people = [_serialize_person(p) async for p in people_collection.find().sort("name", 1)]
-    events = [_serialize_event(e) async for e in events_collection.find().sort("date", 1)]
-    people_by_id = {p["_id"]: p for p in people}
-
-    zip_buf = io.BytesIO()
-    with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("people.csv", _people_csv(people))
-        zf.writestr("events.csv", _events_csv(events, people_by_id))
-
-    filename = f"timeline-backup-{_today()}.zip"
-    return Response(
-        content=zip_buf.getvalue(),
-        media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
@@ -283,67 +210,6 @@ def _parse_json_payload(content: bytes) -> tuple[list[dict], list[dict]]:
     return people, events
 
 
-def _row_to_event(row: dict) -> dict | None:
-    name = (row.get("location_name") or "").strip()
-    address = (row.get("location_address") or "").strip()
-    lat = (row.get("location_lat") or "").strip()
-    lng = (row.get("location_lng") or "").strip()
-    location = None
-    if name or address or lat or lng:
-        location = {
-            "name": name or None,
-            "address": address or None,
-            "lat": float(lat) if lat else None,
-            "lng": float(lng) if lng else None,
-        }
-    tags = [t for t in (row.get("tags") or "").split("|") if t]
-    people_ids = [p for p in (row.get("people_ids") or "").split("|") if p]
-    return _normalize_event({
-        "_id": row.get("_id"),
-        "title": row.get("title"),
-        "description": row.get("description") or None,
-        "event_type": row.get("event_type"),
-        "date": row.get("date") or None,
-        "end_date": row.get("end_date") or None,
-        "location": location,
-        "tags": tags,
-        "people": people_ids,
-        "created_at": row.get("created_at") or None,
-        "updated_at": row.get("updated_at") or None,
-    })
-
-
-def _parse_csv_zip(content: bytes) -> tuple[list[dict], list[dict]]:
-    try:
-        zf = zipfile.ZipFile(io.BytesIO(content))
-    except zipfile.BadZipFile as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid zip file: {exc}")
-    names = zf.namelist()
-    people: list[dict] = []
-    events: list[dict] = []
-    if "people.csv" in names:
-        with zf.open("people.csv") as fh:
-            reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8"))
-            for row in reader:
-                norm = _normalize_person({
-                    "_id": row.get("_id"),
-                    "name": row.get("name"),
-                    "color": row.get("color"),
-                    "created_at": row.get("created_at") or None,
-                    "updated_at": row.get("updated_at") or None,
-                })
-                if norm:
-                    people.append(norm)
-    if "events.csv" in names:
-        with zf.open("events.csv") as fh:
-            reader = csv.DictReader(io.TextIOWrapper(fh, encoding="utf-8"))
-            for row in reader:
-                norm = _row_to_event(row)
-                if norm:
-                    events.append(norm)
-    return people, events
-
-
 def _serialize_event_for_index(doc: dict) -> dict:
     """Match the shape the embedding service expects (string _id, ISO dates)."""
     out = dict(doc)
@@ -359,12 +225,7 @@ async def restore(file: UploadFile = File(...)):
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
-    filename = (file.filename or "").lower()
-    is_zip = filename.endswith(".zip") or content[:2] == b"PK"
-    if is_zip:
-        people_docs, event_docs = _parse_csv_zip(content)
-    else:
-        people_docs, event_docs = _parse_json_payload(content)
+    people_docs, event_docs = _parse_json_payload(content)
 
     # Replace data: drop both collections, insert from backup.
     await people_collection.delete_many({})
@@ -389,5 +250,4 @@ async def restore(file: UploadFile = File(...)):
         "people_restored": len(people_docs),
         "events_restored": len(event_docs),
         "events_indexed": indexed,
-        "format": "zip" if is_zip else "json",
     }

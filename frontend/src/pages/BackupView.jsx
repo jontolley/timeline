@@ -71,25 +71,19 @@ export default function BackupView() {
       </p>
 
       <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-2">Download</h2>
-      <div className="ring-1 ring-ink-line rounded-lg divide-y divide-ink-line mb-8">
+      <div className="ring-1 ring-ink-line rounded-lg mb-8">
         <BackupOption
           title="JSON"
-          description="Single file with the full structure preserved (best for re-importing later)."
+          description="Single file with the full structure preserved."
           filename={`timeline-backup-${today}.json`}
           href="/api/backup/json"
-        />
-        <BackupOption
-          title="CSV"
-          description="Zip containing events.csv and people.csv (easy to open in a spreadsheet)."
-          filename={`timeline-backup-${today}.zip`}
-          href="/api/backup/csv"
         />
       </div>
 
       <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-2">Restore</h2>
       <div className="ring-1 ring-ink-line rounded-lg px-5 py-4">
         <p className="text-xs text-ink-mute mb-3">
-          Upload a JSON backup or a zip from a CSV download. The restore will
+          Upload a JSON backup. The restore will
           <span className="font-semibold text-rose-600"> replace </span>
           all current events and people.
         </p>
@@ -97,7 +91,7 @@ export default function BackupView() {
           <input
             ref={fileInputRef}
             type="file"
-            accept=".json,.zip,application/json,application/zip"
+            accept=".json,application/json"
             onChange={handleFile}
             className="text-sm text-ink-soft file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-ink-line file:text-sm file:bg-surface file:text-ink-soft hover:file:bg-ink-line/40"
           />
