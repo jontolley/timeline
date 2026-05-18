@@ -48,9 +48,7 @@ export default function ChatView() {
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
   const {
     messages,
-    filter,
     streaming,
-    setFilter,
     reset,
     sendMessage: sendStoreMessage,
     confirmPendingEdit,
@@ -96,17 +94,6 @@ export default function ChatView() {
         >
           + New chat
         </button>
-        <select
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-          className="border border-ink-line rounded-md px-3 py-1.5 text-sm bg-white text-ink-soft"
-        >
-          <option value="all">All Events</option>
-          <option value="career">Career</option>
-          <option value="travel">Travel</option>
-          <option value="milestone">Milestones</option>
-          <option value="family">Family</option>
-        </select>
       </div>
 
       {/* Message area */}

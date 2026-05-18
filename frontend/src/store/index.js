@@ -185,7 +185,6 @@ export const useChatStore = create(persist((set, get) => ({
   // mid-stream — onRehydrateStorage scrubs those.
   partialize: (state) => ({
     messages: state.messages,
-    filter: state.filter,
   }),
   onRehydrateStorage: () => (state) => {
     if (!state) return
