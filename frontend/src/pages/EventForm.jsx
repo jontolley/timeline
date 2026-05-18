@@ -92,8 +92,8 @@ export default function EventForm() {
         await updateEvent(id, payload)
         navigate(`/events/${id}`)
       } else {
-        await createEvent(payload)
-        navigate('/')
+        const created = await createEvent(payload)
+        navigate(`/events/${created._id}`)
       }
     } catch (err) {
       setError(err.message)
