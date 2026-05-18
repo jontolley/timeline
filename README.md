@@ -43,7 +43,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **People with color coding.** Attach people to events; filter the timeline by who was there.
 - **Photo attachments.** Upload to events; thumbnails generated server-side and stored in R2.
 - **Magic-link auth.** Email allowlist + Resend-delivered sign-in links, no passwords.
-- **Backup/restore.** JSON or CSV export, with a confirmation-gated restore.
+- **Backup/restore.** Lossless JSON export, with a confirmation-gated restore.
 - **Mobile-friendly.** Responsive layout tested on phone and desktop.
 
 ## Documentation
