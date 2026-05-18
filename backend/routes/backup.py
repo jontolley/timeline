@@ -207,6 +207,27 @@ def _normalize_person(p: dict) -> dict | None:
     return out
 
 
+def _normalize_photo(p: dict) -> dict | None:
+    key = (p.get("key") or "").strip()
+    content_type = (p.get("content_type") or "").strip()
+    if not key or not content_type:
+        return None
+    out: dict = {"key": key, "content_type": content_type}
+    thumb_key = (p.get("thumb_key") or "").strip()
+    if thumb_key:
+        out["thumb_key"] = thumb_key
+    for dim in ("width", "height"):
+        val = p.get(dim)
+        if isinstance(val, int):
+            out[dim] = val
+        elif isinstance(val, str) and val.isdigit():
+            out[dim] = int(val)
+    uploaded = _parse_iso(p.get("uploaded_at"))
+    if uploaded is not None:
+        out["uploaded_at"] = uploaded
+    return out
+
+
 def _normalize_event(e: dict) -> dict | None:
     title = (e.get("title") or "").strip()
     event_type = (e.get("event_type") or "").strip()
@@ -223,6 +244,10 @@ def _normalize_event(e: dict) -> dict | None:
     people = e.get("people") or []
     if not isinstance(people, list):
         people = []
+    raw_photos = e.get("photos") or []
+    if not isinstance(raw_photos, list):
+        raw_photos = []
+    photos = [p for p in (_normalize_photo(p) for p in raw_photos if isinstance(p, dict)) if p]
     out = {
         "title": title,
         "description": e.get("description"),
@@ -232,6 +257,7 @@ def _normalize_event(e: dict) -> dict | None:
         "location": location,
         "tags": [str(t) for t in tags if t],
         "people": [str(p) for p in people if p],
+        "photos": photos,
         "created_at": _parse_iso(e.get("created_at")) or now,
         "updated_at": _parse_iso(e.get("updated_at")) or now,
     }
