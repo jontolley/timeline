@@ -318,14 +318,23 @@ async def _decompose_query(question: str) -> list[str]:
         return fallback
 
 
-def _assistant_asked_about_people(transcript: str) -> bool:
-    """Heuristic: did any prior ASSISTANT turn already ask the user about people?
-    We check for keywords that the clarify prompt would naturally use."""
-    keywords = ("people", "person", "anyone", "who was", "who else", "with you")
-    for line in transcript.split("\n"):
-        if not line.startswith("ASSISTANT:"):
+# Keywords the CLARIFY_SYSTEM prompt would naturally use when asking about
+# each optional field. Used to detect what's already been asked so we never
+# pester the user twice for the same thing.
+_OPTIONAL_FIELD_KEYWORDS = {
+    "people": ("people", "person", "anyone", "who was", "who else", "with you"),
+    "location": ("location", "where", "place", "address"),
+    "description": ("description", "describe", "few words", "tell me more", "anything else about"),
+}
+
+
+def _assistant_asked_about(messages: list[dict], keywords: tuple) -> bool:
+    """Heuristic: did any prior assistant turn already ask the user about a
+    field matched by these keywords?"""
+    for m in messages:
+        if m.get("role") != "assistant":
             continue
-        lower = line.lower()
+        lower = (m.get("content") or "").lower()
         if any(k in lower for k in keywords):
             return True
     return False
@@ -468,13 +477,23 @@ async def chat(req: ChatRequest):
 
             # ── CREATE flow ───────────────────────────────────────────────
             if intent == "create":
-                # Force "people" into the missing list if the user hasn't named
-                # anyone and the assistant hasn't already asked (the LLM's own
-                # missing_required is unreliable about this).
+                # The LLM's missing_required is unreliable for optional fields —
+                # it sometimes re-adds them after we've already asked. Filter
+                # out anything the assistant has already asked about so we
+                # never pester the user twice.
+                asked_about = {
+                    field: _assistant_asked_about(messages, kws)
+                    for field, kws in _OPTIONAL_FIELD_KEYWORDS.items()
+                }
+                missing = [m for m in missing if not asked_about.get(m, False)]
+
+                # Force "people" into missing if the user hasn't named anyone
+                # and the assistant hasn't asked yet — otherwise the LLM may
+                # skip prompting entirely for events with no obvious people.
                 if (
                     not (fields.get("people") or [])
                     and "people" not in missing
-                    and not _assistant_asked_about_people(transcript)
+                    and not asked_about["people"]
                 ):
                     missing = [*missing, "people"]
 
