@@ -25,8 +25,8 @@ export default function App() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-400 text-sm">Loading…</p>
+      <div className="min-h-screen bg-paper flex items-center justify-center">
+        <p className="text-ink-faint text-sm">Loading…</p>
       </div>
     )
   }
@@ -37,9 +37,9 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-paper">
         <Navbar />
-        <main className="max-w-4xl mx-auto px-4 py-8">
+        <main className="max-w-3xl mx-auto px-5 sm:px-6 py-8 sm:py-12">
           <Routes>
             <Route path="/" element={<TimelineView />} />
             <Route path="/events/new" element={<EventForm />} />

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { listEvents } from '../api/events'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
+import { eventTypeStyles } from '../utils/eventTypes'
 import { usePeopleStore } from '../store'
 
 export default function TimelineView() {
@@ -33,25 +34,38 @@ export default function TimelineView() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Timeline</h1>
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink">
+          Timeline
+        </h1>
+        {!loading && events.length > 0 && (
+          <p className="text-sm text-ink-mute mt-2 num">
+            {events.length} {events.length === 1 ? 'event' : 'events'}
+          </p>
+        )}
+      </div>
+
       <FilterBar filters={filters} tags={allTags} people={people} onChange={handleFilterChange} />
 
       {loading ? (
-        <p className="text-gray-400 text-center py-12">Loading...</p>
+        <p className="text-ink-faint text-center py-12">Loading…</p>
       ) : events.length === 0 ? (
-        <p className="text-gray-400 text-center py-12">No events found.</p>
+        <p className="text-ink-faint text-center py-12">No events found.</p>
       ) : (
-        <div className="relative">
-          <div className="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200" />
-          <div className="space-y-6 pl-10">
-            {events.map((event) => (
-              <div key={event._id} className="relative">
-                <div className="absolute -left-7 top-4 w-3 h-3 rounded-full bg-blue-500 border-2 border-white shadow-sm" />
+        <ol className="relative">
+          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-ink-line" />
+          {events.map((event) => {
+            const t = eventTypeStyles(event.event_type)
+            return (
+              <li key={event._id} className="relative pl-8 pb-8 last:pb-2">
+                <span
+                  className={`absolute left-0 top-[10px] w-[15px] h-[15px] rounded-full bg-paper ring-2 ${t.ring}`}
+                />
                 <EventCard event={event} />
-              </div>
-            ))}
-          </div>
-        </div>
+              </li>
+            )
+          })}
+        </ol>
       )}
     </div>
   )

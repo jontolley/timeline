@@ -112,19 +112,19 @@ function LocationPickerInner({ value, onChange }) {
           value={query}
           onChange={handleQueryChange}
           placeholder="Search for a place or address…"
-          className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
         />
         {searching && (
-          <span className="absolute right-3 top-2 text-xs text-gray-400">Searching…</span>
+          <span className="absolute right-3 top-2 text-xs text-ink-faint">Searching…</span>
         )}
         {results.length > 0 && (
-          <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-52 overflow-y-auto">
+          <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-ink-line rounded-md shadow-lg max-h-52 overflow-y-auto">
             {results.map((r) => (
               <li key={r.place_id}>
                 <button
                   type="button"
                   onClick={() => selectResult(r)}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-700 hover:bg-blue-50 truncate"
+                  className="w-full text-left px-3 py-2 text-sm text-ink-soft hover:bg-accent-soft truncate"
                 >
                   {r.display_name}
                 </button>
@@ -137,13 +137,13 @@ function LocationPickerInner({ value, onChange }) {
       <button
         type="button"
         onClick={() => setShowMap((s) => !s)}
-        className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
+        className="text-sm text-accent hover:text-ink flex items-center gap-1"
       >
         {showMap ? '▾ Hide map' : '▸ Pick on map'}
       </button>
 
       {showMap && (
-        <div className="rounded-lg overflow-hidden border border-gray-200" style={{ height: 280 }}>
+        <div className="rounded-lg overflow-hidden border border-ink-line" style={{ height: 280 }}>
           <MapContainer
             center={mapCenter}
             zoom={13}
@@ -161,13 +161,13 @@ function LocationPickerInner({ value, onChange }) {
       )}
 
       {value && (value.name || value.address || value.lat != null) && (
-        <div className="flex items-start justify-between bg-gray-50 border border-gray-200 rounded-md px-3 py-2 text-sm">
+        <div className="flex items-start justify-between bg-surface border border-ink-line rounded-md px-3 py-2 text-sm">
           <div className="min-w-0">
             {(value.name || value.address) && (
-              <p className="font-medium text-gray-800 truncate">{value.name || value.address}</p>
+              <p className="font-medium text-ink truncate">{value.name || value.address}</p>
             )}
             {value.lat != null && (
-              <p className="text-xs text-gray-400 mt-0.5 font-mono">
+              <p className="text-xs text-ink-faint mt-0.5 font-mono">
                 {value.lat.toFixed(6)}, {value.lng.toFixed(6)}
               </p>
             )}
@@ -175,7 +175,7 @@ function LocationPickerInner({ value, onChange }) {
           <button
             type="button"
             onClick={handleClear}
-            className="text-gray-400 hover:text-gray-600 ml-3 shrink-0 text-xs"
+            className="text-ink-faint hover:text-ink-mute ml-3 shrink-0 text-xs"
           >
             Clear
           </button>

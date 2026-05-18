@@ -19,13 +19,13 @@ export default function TagInput({ tags, onChange }) {
         {tags.map((tag) => (
           <span
             key={tag}
-            className="flex items-center gap-1 bg-gray-100 text-gray-700 px-2 py-0.5 rounded-full text-sm"
+            className="inline-flex items-center gap-1 bg-surface text-ink-soft ring-1 ring-ink-line px-2 py-0.5 rounded-full text-[11px]"
           >
             #{tag}
             <button
               type="button"
               onClick={() => removeTag(tag)}
-              className="text-gray-400 hover:text-gray-700 leading-none"
+              className="text-ink-faint hover:text-ink leading-none"
             >
               &times;
             </button>
@@ -44,12 +44,12 @@ export default function TagInput({ tags, onChange }) {
             }
           }}
           placeholder="Add tag and press Enter"
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm flex-1"
+          className="border border-ink-line rounded-md px-3 py-1.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-accent-ring"
         />
         <button
           type="button"
           onClick={addTag}
-          className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 rounded-md text-sm text-gray-700"
+          className="px-3 py-1.5 bg-surface hover:bg-ink-line/40 ring-1 ring-ink-line rounded-md text-sm text-ink-soft"
         >
           Add
         </button>

@@ -9,9 +9,9 @@ export default function PeoplePicker({ people, selectedIds, onChange }) {
 
   if (people.length === 0) {
     return (
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-ink-mute">
         No people yet.{' '}
-        <Link to="/people" className="text-blue-600 hover:underline">
+        <Link to="/people" className="text-accent hover:underline">
           Add some
         </Link>{' '}
         to associate with this event.
@@ -32,7 +32,7 @@ export default function PeoplePicker({ people, selectedIds, onChange }) {
             className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
               selected
                 ? `${c.chip} border-transparent`
-                : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                : 'bg-paper text-ink-mute border-ink-line hover:border-ink-faint'
             }`}
           >
             <span className={`w-2 h-2 rounded-full ${c.dot}`} />

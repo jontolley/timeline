@@ -60,18 +60,18 @@ export default function BackupView() {
   }
 
   return (
-    <div className="max-w-2xl">
-      <Link to="/" className="text-blue-600 hover:underline text-sm mb-4 block">
+    <div>
+      <Link to="/" className="text-ink-mute hover:text-ink text-sm mb-4 inline-block">
         &larr; Back to Timeline
       </Link>
-      <h1 className="text-2xl font-bold text-gray-900 mb-2">Backup &amp; restore</h1>
-      <p className="text-sm text-gray-600 mb-6">
+      <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink mb-3">Backup &amp; restore</h1>
+      <p className="text-sm text-ink-mute mb-6">
         Download a copy of every event and person, or replace your timeline
         from a previous backup file.
       </p>
 
-      <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Download</h2>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 divide-y divide-gray-100 mb-8">
+      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-2">Download</h2>
+      <div className="ring-1 ring-ink-line rounded-lg divide-y divide-ink-line mb-8">
         <BackupOption
           title="JSON"
           description="Single file with the full structure preserved (best for re-importing later)."
@@ -86,11 +86,11 @@ export default function BackupView() {
         />
       </div>
 
-      <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-2">Restore</h2>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 px-5 py-4">
-        <p className="text-xs text-gray-500 mb-3">
+      <h2 className="text-sm font-semibold text-ink-soft uppercase tracking-wide mb-2">Restore</h2>
+      <div className="ring-1 ring-ink-line rounded-lg px-5 py-4">
+        <p className="text-xs text-ink-mute mb-3">
           Upload a JSON backup or a zip from a CSV download. The restore will
-          <span className="font-semibold text-red-600"> replace </span>
+          <span className="font-semibold text-rose-600"> replace </span>
           all current events and people.
         </p>
         <div className="flex flex-wrap items-center gap-3">
@@ -99,7 +99,7 @@ export default function BackupView() {
             type="file"
             accept=".json,.zip,application/json,application/zip"
             onChange={handleFile}
-            className="text-sm text-gray-700 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-gray-300 file:text-sm file:bg-gray-50 file:text-gray-700 hover:file:bg-gray-100"
+            className="text-sm text-ink-soft file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border file:border-ink-line file:text-sm file:bg-surface file:text-ink-soft hover:file:bg-ink-line/40"
           />
           <button
             onClick={startRestore}
@@ -111,12 +111,12 @@ export default function BackupView() {
         </div>
 
         {error && (
-          <p className="mt-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md px-3 py-2">
+          <p className="mt-4 text-sm text-rose-600 bg-rose-50 ring-1 ring-rose-200 rounded-md px-3 py-2">
             {error}
           </p>
         )}
         {result && !error && (
-          <p className="mt-4 text-sm text-green-700 bg-green-50 border border-green-200 rounded-md px-3 py-2">
+          <p className="mt-4 text-sm text-emerald-700 bg-emerald-50 ring-1 ring-emerald-200 rounded-md px-3 py-2">
             Restored {result.events_restored} events and {result.people_restored} people
             {typeof result.events_indexed === 'number' && result.events_indexed !== result.events_restored
               ? ` (${result.events_indexed} re-indexed for search)`
@@ -142,14 +142,14 @@ function BackupOption({ title, description, filename, href }) {
   return (
     <div className="px-5 py-4 flex items-center gap-4">
       <div className="flex-1 min-w-0">
-        <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-        <p className="text-xs text-gray-500 mt-0.5">{description}</p>
-        <p className="text-xs text-gray-400 mt-1 font-mono truncate">{filename}</p>
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <p className="text-xs text-ink-mute mt-0.5">{description}</p>
+        <p className="text-xs text-ink-faint mt-1 font-mono truncate">{filename}</p>
       </div>
       <a
         href={href}
         download
-        className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors shrink-0"
+        className="px-4 py-2 bg-ink text-paper rounded-md text-sm font-medium hover:bg-ink-soft transition-colors shrink-0"
       >
         Download
       </a>
@@ -160,16 +160,16 @@ function BackupOption({ title, description, filename, href }) {
 function ConfirmRestoreModal({ file, busy, onConfirm, onCancel }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-xl border border-gray-200 max-w-md w-full p-6">
-        <h2 className="text-lg font-semibold text-gray-900 mb-2">Replace all data?</h2>
-        <p className="text-sm text-gray-600 mb-3">
+      <div className="bg-paper rounded-lg shadow-lift ring-1 ring-ink-line max-w-md w-full p-6">
+        <h2 className="text-lg font-semibold text-ink mb-2">Replace all data?</h2>
+        <p className="text-sm text-ink-mute mb-3">
           This will delete every event and person currently in your timeline
           and replace them with the contents of:
         </p>
-        <p className="text-sm font-mono text-gray-800 bg-gray-50 border border-gray-200 rounded-md px-3 py-2 mb-4 break-all">
+        <p className="text-sm font-mono text-ink bg-surface border border-ink-line rounded-md px-3 py-2 mb-4 break-all">
           {file.name}
         </p>
-        <p className="text-xs text-gray-500 mb-5">
+        <p className="text-xs text-ink-mute mb-5">
           Search re-indexing happens automatically and may take a minute for
           larger backups. This cannot be undone.
         </p>
@@ -177,7 +177,7 @@ function ConfirmRestoreModal({ file, busy, onConfirm, onCancel }) {
           <button
             onClick={onCancel}
             disabled={busy}
-            className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md text-sm font-medium hover:bg-gray-200 disabled:opacity-50 transition-colors"
+            className="px-4 py-2 bg-surface text-ink-soft ring-1 ring-ink-line rounded-md text-sm font-medium hover:bg-ink-line/40 disabled:opacity-50 transition-colors"
           >
             Cancel
           </button>

@@ -1,63 +1,58 @@
 import { Link } from 'react-router-dom'
 import { formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
+import { eventTypeStyles } from '../utils/eventTypes'
 import { usePeopleStore } from '../store'
 import PeopleChips from './PeopleChips'
-
-const TYPE_STYLES = {
-  career: 'bg-blue-100 text-blue-700',
-  travel: 'bg-green-100 text-green-700',
-  milestone: 'bg-purple-100 text-purple-700',
-  family: 'bg-orange-100 text-orange-700',
-}
 
 const MAX_THUMBS = 4
 
 export default function EventCard({ event }) {
   const peopleById = usePeopleStore((s) => s.peopleById)
+  const t = eventTypeStyles(event.event_type)
+
   return (
     <Link to={`/events/${event._id}`} className="block group">
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 group-hover:shadow-md transition-shadow">
-        <div className="flex items-start justify-between gap-2">
-          <h3 className="font-semibold text-gray-900 group-hover:text-blue-600 transition-colors">
-            {event.title}
-          </h3>
-          <span
-            className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${
-              TYPE_STYLES[event.event_type] ?? 'bg-gray-100 text-gray-600'
-            }`}
-          >
-            {event.event_type}
-          </span>
-        </div>
-        <p className="text-sm text-gray-500 mt-1">
-          {formatDateRange(event.date, event.end_date)}
-        </p>
-        {locationDisplay(event.location) && (
-          <p className="text-sm text-gray-600 mt-1">&#128205; {locationDisplay(event.location)}</p>
-        )}
-        {event.description && (
-          <p className="text-sm text-gray-600 mt-2 line-clamp-2">{event.description}</p>
-        )}
-        {event.people?.length > 0 && (
-          <div className="mt-2">
-            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
-          </div>
-        )}
-        {event.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-1 mt-2">
-            {event.tags.map((tag) => (
-              <span
-                key={tag}
-                className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-        {event.photos?.length > 0 && <PhotoStrip photos={event.photos} />}
+      <div className="flex items-baseline gap-2 mb-1">
+        <span className={`text-[11px] font-medium tracking-wide uppercase ${t.label}`}>
+          {event.event_type}
+        </span>
+        <span className="text-[11px] text-ink-faint num">
+          · {formatDateRange(event.date, event.end_date)}
+        </span>
       </div>
+
+      <h3 className="text-[17px] font-semibold tracking-tightish text-ink leading-snug group-hover:text-accent transition-colors">
+        {event.title}
+      </h3>
+
+      {locationDisplay(event.location) && (
+        <p className="text-sm text-ink-mute mt-1">{locationDisplay(event.location)}</p>
+      )}
+
+      {event.description && (
+        <p className="text-[15px] text-ink-soft mt-3 leading-relaxed line-clamp-3">
+          {event.description}
+        </p>
+      )}
+
+      {event.photos?.length > 0 && <PhotoStrip photos={event.photos} />}
+
+      {(event.people?.length > 0 || event.tags?.length > 0) && (
+        <div className="flex flex-wrap items-center gap-1.5 mt-4">
+          {event.people?.length > 0 && (
+            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+          )}
+          {event.tags?.map((tag) => (
+            <span
+              key={tag}
+              className="text-[11px] text-ink-mute bg-surface ring-1 ring-ink-line px-2 py-0.5 rounded-full"
+            >
+              #{tag}
+            </span>
+          ))}
+        </div>
+      )}
     </Link>
   )
 }
@@ -66,7 +61,7 @@ function PhotoStrip({ photos }) {
   const shown = photos.slice(0, MAX_THUMBS)
   const extra = photos.length - shown.length
   return (
-    <div className="flex gap-1.5 mt-3">
+    <div className="grid grid-cols-4 gap-1.5 mt-4 max-w-sm">
       {shown.map((p, i) => {
         const src = p.thumb_url || p.url
         if (!src) return null
@@ -74,7 +69,7 @@ function PhotoStrip({ photos }) {
         return (
           <div
             key={p.key}
-            className="relative w-14 h-14 rounded-md overflow-hidden border border-gray-200 bg-gray-50 shrink-0"
+            className="relative aspect-square rounded-md overflow-hidden ring-1 ring-ink-line bg-surface"
           >
             <img
               src={src}
@@ -83,7 +78,7 @@ function PhotoStrip({ photos }) {
               className="w-full h-full object-cover"
             />
             {isLast && extra > 0 && (
-              <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-xs font-semibold">
+              <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-xs font-semibold">
                 +{extra}
               </div>
             )}

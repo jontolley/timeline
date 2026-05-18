@@ -7,13 +7,7 @@ import { formatDateRange } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
-
-const TYPE_STYLES = {
-  career: 'bg-blue-100 text-blue-700',
-  travel: 'bg-green-100 text-green-700',
-  milestone: 'bg-purple-100 text-purple-700',
-  family: 'bg-orange-100 text-orange-700',
-}
+import { eventTypeStyles } from '../utils/eventTypes'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -87,37 +81,35 @@ export default function EventDetail() {
     }
   }
 
-  if (loading) return <p className="text-gray-400 py-12 text-center">Loading...</p>
-  if (!event) return <p className="text-red-500 py-12 text-center">Event not found.</p>
+  if (loading) return <p className="text-ink-faint py-12 text-center">Loading…</p>
+  if (!event) return <p className="text-rose-600 py-12 text-center">Event not found.</p>
 
   const dateRange = formatDateRange(event.date, event.end_date)
+  const t = eventTypeStyles(event.event_type)
 
   return (
-    <div className="max-w-2xl">
-      <Link to="/" className="text-blue-600 hover:underline text-sm mb-4 block">
+    <div>
+      <Link to="/" className="text-ink-mute hover:text-ink text-sm mb-4 inline-block">
         &larr; Back to Timeline
       </Link>
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-        <div className="flex items-start justify-between gap-4 mb-4">
-          <h1 className="text-2xl font-bold text-gray-900">{event.title}</h1>
-          <span
-            className={`text-sm font-medium px-3 py-1 rounded-full shrink-0 ${
-              TYPE_STYLES[event.event_type] ?? 'bg-gray-100 text-gray-600'
-            }`}
-          >
+      <div>
+        <div className="flex items-baseline gap-2 mb-1">
+          <span className={`text-[11px] font-medium tracking-wide uppercase ${t.label}`}>
             {event.event_type}
           </span>
+          <span className="text-[11px] text-ink-faint num">· {dateRange}</span>
         </div>
-        <p className="text-gray-500 mb-2">{dateRange}</p>
+        <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-tight text-ink mb-4">
+          {event.title}
+        </h1>
         {locationDisplay(event.location) && (
-          <p className="text-gray-600 mb-3">
-            &#128205;{' '}
+          <p className="text-sm text-ink-mute mb-3">
             {locationMapUrl(event.location) ? (
               <a
                 href={locationMapUrl(event.location)}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="hover:underline text-blue-600"
+                className="text-accent hover:underline"
               >
                 {locationDisplay(event.location)}
               </a>
@@ -125,14 +117,14 @@ export default function EventDetail() {
               locationDisplay(event.location)
             )}
             {displayLocation?.lat != null && (
-              <span className="ml-2 text-xs text-gray-400 font-mono">
+              <span className="ml-2 text-xs text-ink-faint font-mono num">
                 ({displayLocation.lat.toFixed(5)}, {displayLocation.lng.toFixed(5)})
               </span>
             )}
           </p>
         )}
         {displayLocation?.lat != null && (
-          <div className="rounded-lg overflow-hidden border border-gray-200 mb-4" style={{ height: 200 }}>
+          <div className="rounded-lg overflow-hidden ring-1 ring-ink-line mb-5" style={{ height: 200 }}>
             <MapContainer
               center={[displayLocation.lat, displayLocation.lng]}
               zoom={13}
@@ -150,7 +142,7 @@ export default function EventDetail() {
           </div>
         )}
         {event.description && (
-          <p className="text-gray-700 mb-4 leading-relaxed">{event.description}</p>
+          <p className="text-[15px] text-ink-soft mb-5 leading-relaxed whitespace-pre-wrap">{event.description}</p>
         )}
         {event.people?.length > 0 && (
           <div className="mb-4">
@@ -158,11 +150,11 @@ export default function EventDetail() {
           </div>
         )}
         {event.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-6">
+          <div className="flex flex-wrap gap-1.5 mb-6">
             {event.tags.map((tag) => (
               <span
                 key={tag}
-                className="text-sm bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full"
+                className="text-[11px] text-ink-mute bg-surface ring-1 ring-ink-line px-2 py-0.5 rounded-full"
               >
                 #{tag}
               </span>
@@ -174,16 +166,16 @@ export default function EventDetail() {
           onSelect={handlePhotosSelected}
           onDelete={handlePhotoDelete}
         />
-        <div className="flex gap-3 pt-2 border-t border-gray-100">
+        <div className="flex gap-3 pt-6 border-t border-ink-line">
           <Link
             to={`/events/${id}/edit`}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 transition-colors"
+            className="px-4 py-2 bg-ink text-paper rounded-md text-sm font-medium hover:bg-ink-soft transition-colors"
           >
             Edit
           </Link>
           <button
             onClick={handleDelete}
-            className="px-4 py-2 bg-red-50 text-red-600 border border-red-200 rounded-md text-sm font-medium hover:bg-red-100 transition-colors"
+            className="px-4 py-2 bg-paper text-rose-600 ring-1 ring-rose-200 rounded-md text-sm font-medium hover:bg-rose-50 transition-colors"
           >
             Delete
           </button>
@@ -212,14 +204,14 @@ function PhotoSection({ photos, onSelect, onDelete }) {
   return (
     <div className="mb-6">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-medium text-gray-700">
-          Photos {photos.length > 0 && <span className="text-gray-400">({photos.length})</span>}
+        <h2 className="text-sm font-medium text-ink-soft">
+          Photos {photos.length > 0 && <span className="text-ink-faint">({photos.length})</span>}
         </h2>
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="text-xs px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 disabled:opacity-50 transition-colors"
+          className="text-xs px-3 py-1.5 bg-white border border-ink-line text-ink-soft rounded-md hover:bg-surface disabled:opacity-50 transition-colors"
         >
           {uploading ? 'Uploading…' : '+ Add photos'}
         </button>
@@ -233,11 +225,11 @@ function PhotoSection({ photos, onSelect, onDelete }) {
         />
       </div>
       {photos.length === 0 ? (
-        <p className="text-xs text-gray-400 italic">No photos yet.</p>
+        <p className="text-xs text-ink-faint italic">No photos yet.</p>
       ) : (
         <div className="grid grid-cols-3 gap-2">
           {photos.map((p) => (
-            <div key={p.key} className="relative group aspect-square overflow-hidden rounded-md border border-gray-200 bg-gray-50">
+            <div key={p.key} className="relative group aspect-square overflow-hidden rounded-md border border-ink-line bg-surface">
               {p.url ? (
                 <a href={p.url} target="_blank" rel="noopener noreferrer">
                   <img
@@ -248,7 +240,7 @@ function PhotoSection({ photos, onSelect, onDelete }) {
                   />
                 </a>
               ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-gray-400">
+                <div className="w-full h-full flex items-center justify-center text-xs text-ink-faint">
                   Unavailable
                 </div>
               )}
@@ -256,7 +248,7 @@ function PhotoSection({ photos, onSelect, onDelete }) {
                 type="button"
                 onClick={() => onDelete(p.key)}
                 title="Remove photo"
-                className="absolute top-1 right-1 bg-white/90 text-red-600 rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow"
+                className="absolute top-1 right-1 bg-white/90 text-rose-600 rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow"
               >
                 ✕
               </button>

@@ -13,10 +13,10 @@ const SUGGESTED = [
 ]
 
 const TYPE_STYLES = {
-  career: 'bg-blue-100 text-blue-700',
-  travel: 'bg-green-100 text-green-700',
-  milestone: 'bg-purple-100 text-purple-700',
-  family: 'bg-orange-100 text-orange-700',
+  career:    'bg-indigo-50 text-indigo-700',
+  travel:    'bg-emerald-50 text-emerald-700',
+  milestone: 'bg-violet-50 text-violet-700',
+  family:    'bg-amber-50 text-amber-700',
 }
 
 function formatChangeValue(field, value) {
@@ -44,6 +44,7 @@ const FIELD_LABELS = {
 export default function ChatView() {
   const [input, setInput] = useState('')
   const bottomRef = useRef(null)
+  const inputRef = useRef(null)
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
   const {
     messages,
@@ -64,6 +65,12 @@ export default function ChatView() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Return focus to the input once the assistant is done streaming, so the
+  // user can immediately type a follow-up.
+  useEffect(() => {
+    if (!streaming) inputRef.current?.focus()
+  }, [streaming])
+
   const sendMessage = (text) => {
     setInput('')
     sendStoreMessage(text)
@@ -79,20 +86,20 @@ export default function ChatView() {
     <div className="flex flex-col" style={{ height: 'calc(100vh - 130px)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 mb-4 shrink-0">
-        <h1 className="text-2xl font-bold text-gray-900 flex-1">Chat with your Timeline</h1>
+        <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink flex-1">Chat</h1>
         <button
           type="button"
           onClick={startNewChat}
           disabled={streaming || messages.length === 0}
           title="Start a new chat session"
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="border border-ink-line rounded-md px-3 py-1.5 text-sm bg-white text-ink-soft hover:bg-surface disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
         >
           + New chat
         </button>
         <select
           value={filter}
           onChange={(e) => setFilter(e.target.value)}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700"
+          className="border border-ink-line rounded-md px-3 py-1.5 text-sm bg-white text-ink-soft"
         >
           <option value="all">All Events</option>
           <option value="career">Career</option>
@@ -125,18 +132,19 @@ export default function ChatView() {
       {/* Input */}
       <div className="flex gap-2 shrink-0">
         <input
+          ref={inputRef}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) sendMessage(input) }}
           disabled={streaming}
           placeholder={streaming ? 'Thinking…' : 'Ask or say "add an event"…'}
-          className="flex-1 border border-gray-300 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:bg-gray-50"
+          className="flex-1 border border-ink-line rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring disabled:opacity-50 disabled:bg-surface"
         />
         <button
           onClick={() => sendMessage(input)}
           disabled={streaming || !input.trim()}
-          className="px-5 py-2.5 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          className="px-5 py-2.5 bg-ink text-paper rounded-lg text-sm font-medium hover:bg-ink-soft disabled:opacity-50 transition-colors"
         >
           Send
         </button>
@@ -152,14 +160,14 @@ export default function ChatView() {
 function EmptyState({ onSelect }) {
   return (
     <div className="text-center py-16">
-      <p className="text-gray-400 mb-2 text-sm">Ask questions or manage your timeline with natural language.</p>
-      <p className="text-gray-300 mb-6 text-xs">Try one of these to get started:</p>
+      <p className="text-ink-faint mb-2 text-sm">Ask questions or manage your timeline with natural language.</p>
+      <p className="text-ink-faint mb-6 text-xs">Try one of these to get started:</p>
       <div className="space-y-2 max-w-sm mx-auto">
         {SUGGESTED.map(({ label, icon }) => (
           <button
             key={label}
             onClick={() => onSelect(label)}
-            className="flex items-center gap-3 w-full text-left px-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-blue-50 hover:border-blue-200 transition-colors"
+            className="flex items-center gap-3 w-full text-left px-4 py-2.5 bg-white border border-ink-line rounded-lg text-sm text-ink-soft hover:bg-accent-soft hover:ring-accent-ring transition-colors"
           >
             <span>{icon}</span>
             <span>{label}</span>
@@ -175,15 +183,15 @@ function MessageRow({ msg, messageIndex, streaming, peopleById, onConfirm, onCan
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} items-start gap-2`}>
       {!isUser && (
-        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center shrink-0 mt-0.5 text-sm">
+        <div className="w-8 h-8 rounded-full bg-accent-soft flex items-center justify-center shrink-0 mt-0.5 text-sm">
           🤖
         </div>
       )}
       <div className={`max-w-[75%] rounded-xl px-4 py-3 ${
-        isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-800'
+        isUser ? 'bg-ink text-paper' : 'bg-white border border-ink-line text-ink'
       }`}>
         {msg.thinking ? (
-          <p className="text-sm text-gray-400 italic animate-pulse">Thinking…</p>
+          <p className="text-sm text-ink-faint italic animate-pulse">Thinking…</p>
         ) : (
           <p className="text-sm whitespace-pre-wrap leading-relaxed">{msg.content}</p>
         )}
@@ -229,7 +237,7 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
 
   if (status === 'cancelled') {
     return (
-      <div className="mt-3 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5 text-xs text-gray-500">
+      <div className="mt-3 rounded-lg border border-ink-line bg-surface px-3 py-2.5 text-xs text-ink-mute">
         Edit cancelled. Try again with more detail about which event you mean.
       </div>
     )
@@ -237,7 +245,7 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
 
   if (status === 'confirmed') {
     return (
-      <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-xs text-blue-700">
+      <div className="mt-3 rounded-lg border ring-accent-ring bg-accent-soft px-3 py-2.5 text-xs text-accent">
         Applying your changes…
       </div>
     )
@@ -255,8 +263,8 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
               </p>
               <ul className="space-y-1">
                 {changeRows.map((row) => (
-                  <li key={row.field} className="text-xs text-gray-700">
-                    <span className="text-gray-500">{row.label}:</span>{' '}
+                  <li key={row.field} className="text-xs text-ink-soft">
+                    <span className="text-ink-mute">{row.label}:</span>{' '}
                     {row.field === 'people' ? (
                       <span className="inline-flex align-middle">
                         <PeopleChips peopleIds={row.value || []} peopleById={peopleById} />
@@ -294,7 +302,7 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
               type="button"
               disabled={disabled}
               onClick={onCancel}
-              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 bg-white border border-ink-line text-ink-soft text-xs font-medium rounded-md hover:bg-surface disabled:opacity-50 transition-colors"
             >
               Cancel
             </button>
@@ -324,7 +332,7 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
               type="button"
               disabled={disabled}
               onClick={() => setPicking(false)}
-              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 bg-white border border-ink-line text-ink-soft text-xs font-medium rounded-md hover:bg-surface disabled:opacity-50 transition-colors"
             >
               Back
             </button>
@@ -332,7 +340,7 @@ function PendingEditCard({ pendingEdit, disabled, peopleById, onConfirm, onCance
               type="button"
               disabled={disabled}
               onClick={onCancel}
-              className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 text-xs font-medium rounded-md hover:bg-gray-100 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 bg-white border border-ink-line text-ink-soft text-xs font-medium rounded-md hover:bg-surface disabled:opacity-50 transition-colors"
             >
               None of these
             </button>
@@ -349,12 +357,12 @@ function EventSummary({ event, peopleById }) {
   return (
     <div>
       <div className="flex items-center gap-2 mb-0.5">
-        <span className={`text-[11px] px-2 py-0.5 rounded-full ${TYPE_STYLES[event.event_type] ?? 'bg-gray-100 text-gray-600'}`}>
+        <span className={`text-[11px] px-2 py-0.5 rounded-full ${TYPE_STYLES[event.event_type] ?? 'bg-surface text-ink-mute'}`}>
           {event.event_type}
         </span>
-        <span className="text-sm font-medium text-gray-900">{event.title}</span>
+        <span className="text-sm font-medium text-ink">{event.title}</span>
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-ink-mute">
         {dateDisplay}{loc ? ` · ${loc}` : ''}
       </p>
       {event.people?.length > 0 && peopleById && (
@@ -372,20 +380,20 @@ function EventActionCard({ action, event, peopleById }) {
   return (
     <Link
       to={`/events/${event._id}`}
-      className={`block mt-3 rounded-lg border-l-4 px-3 py-2.5 bg-gray-50 hover:bg-gray-100 transition-colors ${
-        isCreated ? 'border-green-500' : 'border-blue-500'
+      className={`block mt-3 rounded-lg border-l-4 px-3 py-2.5 bg-surface hover:bg-surface transition-colors ${
+        isCreated ? 'border-emerald-500' : 'border-accent'
       }`}
     >
       <div className="flex items-center gap-2 mb-1">
-        <span className={`text-xs font-semibold uppercase tracking-wide ${isCreated ? 'text-green-600' : 'text-blue-600'}`}>
+        <span className={`text-xs font-semibold uppercase tracking-wide ${isCreated ? 'text-emerald-600' : 'text-accent'}`}>
           {isCreated ? '✓ Event created' : '✓ Event updated'}
         </span>
-        <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_STYLES[event.event_type] ?? 'bg-gray-100 text-gray-600'}`}>
+        <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_STYLES[event.event_type] ?? 'bg-surface text-ink-mute'}`}>
           {event.event_type}
         </span>
       </div>
-      <p className="text-sm font-medium text-gray-900">{event.title}</p>
-      <p className="text-xs text-gray-500 mt-0.5">
+      <p className="text-sm font-medium text-ink">{event.title}</p>
+      <p className="text-xs text-ink-mute mt-0.5">
         {dateDisplay}{locationDisplay(event.location) ? ` · ${locationDisplay(event.location)}` : ''}
       </p>
       {event.people?.length > 0 && peopleById && (
@@ -393,7 +401,7 @@ function EventActionCard({ action, event, peopleById }) {
           <PeopleChips peopleIds={event.people} peopleById={peopleById} />
         </div>
       )}
-      <p className="text-xs text-blue-500 mt-1">View or edit →</p>
+      <p className="text-xs text-accent mt-1">View or edit →</p>
     </Link>
   )
 }
@@ -401,17 +409,17 @@ function EventActionCard({ action, event, peopleById }) {
 function Sources({ sources }) {
   const [open, setOpen] = useState(false)
   return (
-    <div className="mt-3 pt-2 border-t border-gray-100">
+    <div className="mt-3 pt-2 border-t border-ink-line">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+        className="text-xs text-ink-faint hover:text-ink-mute flex items-center gap-1"
       >
         {open ? '▾' : '▸'} Sources ({sources.length})
       </button>
       {open && (
         <ul className="mt-1.5 space-y-0.5">
           {sources.map((s, i) => (
-            <li key={i} className="text-xs text-gray-500">&bull; {s}</li>
+            <li key={i} className="text-xs text-ink-mute">&bull; {s}</li>
           ))}
         </ul>
       )}

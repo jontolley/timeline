@@ -1,5 +1,29 @@
 import { colorClasses } from '../utils/colors'
 
+const TYPES = [
+  { value: '',          label: 'All' },
+  { value: 'career',    label: 'Career' },
+  { value: 'travel',    label: 'Travel' },
+  { value: 'milestone', label: 'Milestone' },
+  { value: 'family',    label: 'Family' },
+]
+
+function Pill({ active, onClick, children }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-xs font-medium px-2.5 py-1 rounded-full transition-colors ${
+        active
+          ? 'bg-ink text-paper'
+          : 'text-ink-mute ring-1 ring-ink-line bg-paper hover:bg-surface'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
+
 export default function FilterBar({ filters, tags, people, onChange }) {
   const togglePerson = (id) => {
     const current = filters.person_ids || []
@@ -10,35 +34,38 @@ export default function FilterBar({ filters, tags, people, onChange }) {
   }
 
   return (
-    <div className="space-y-3 mb-6">
-      <div className="flex flex-wrap gap-3">
-        <select
-          value={filters.event_type || ''}
-          onChange={(e) => onChange({ event_type: e.target.value })}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700"
-        >
-          <option value="">All Types</option>
-          <option value="career">Career</option>
-          <option value="travel">Travel</option>
-          <option value="milestone">Milestone</option>
-          <option value="family">Family</option>
-        </select>
-        <select
-          value={filters.tag || ''}
-          onChange={(e) => onChange({ tag: e.target.value })}
-          className="border border-gray-300 rounded-md px-3 py-1.5 text-sm bg-white text-gray-700"
-        >
-          <option value="">All Tags</option>
-          {tags.map((tag) => (
-            <option key={tag} value={tag}>
-              #{tag}
-            </option>
-          ))}
-        </select>
+    <div className="space-y-3 mb-8">
+      <div className="flex flex-wrap items-center gap-1.5">
+        {TYPES.map((t) => (
+          <Pill
+            key={t.value || 'all'}
+            active={filters.event_type === t.value}
+            onClick={() => onChange({ event_type: t.value })}
+          >
+            {t.label}
+          </Pill>
+        ))}
       </div>
+
+      {tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <Pill active={!filters.tag} onClick={() => onChange({ tag: '' })}>
+            All tags
+          </Pill>
+          {tags.map((tag) => (
+            <Pill
+              key={tag}
+              active={filters.tag === tag}
+              onClick={() => onChange({ tag: filters.tag === tag ? '' : tag })}
+            >
+              #{tag}
+            </Pill>
+          ))}
+        </div>
+      )}
+
       {people.length > 0 && (
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs uppercase tracking-wide text-gray-500 mr-1">People:</span>
+        <div className="flex flex-wrap items-center gap-1.5">
           {people.map((p) => {
             const c = colorClasses(p.color)
             const selected = (filters.person_ids || []).includes(p._id)
@@ -47,13 +74,13 @@ export default function FilterBar({ filters, tags, people, onChange }) {
                 key={p._id}
                 type="button"
                 onClick={() => togglePerson(p._id)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
                   selected
-                    ? `${c.chip} border-transparent`
-                    : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                    ? `${c.chip} ring-1 ring-transparent`
+                    : 'bg-paper text-ink-mute ring-1 ring-ink-line hover:bg-surface'
                 }`}
               >
-                <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+                <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                 {p.name}
               </button>
             )
@@ -62,7 +89,7 @@ export default function FilterBar({ filters, tags, people, onChange }) {
             <button
               type="button"
               onClick={() => onChange({ person_ids: [] })}
-              className="text-xs text-gray-500 hover:text-gray-700 underline ml-1"
+              className="text-xs text-ink-mute hover:text-ink underline"
             >
               clear
             </button>
