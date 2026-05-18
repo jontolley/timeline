@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { listEvents } from '../api/events'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
@@ -34,15 +35,26 @@ export default function TimelineView() {
 
   return (
     <div>
-      <div className="mb-6 sm:mb-8">
-        <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink">
-          Timeline
-        </h1>
-        {!loading && events.length > 0 && (
-          <p className="text-sm text-ink-mute mt-2 num">
-            {events.length} {events.length === 1 ? 'event' : 'events'}
-          </p>
-        )}
+      <div className="mb-6 sm:mb-8 flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink">
+            Timeline
+          </h1>
+          {!loading && events.length > 0 && (
+            <p className="text-sm text-ink-mute mt-2 num">
+              {events.length} {events.length === 1 ? 'event' : 'events'}
+            </p>
+          )}
+        </div>
+        <Link
+          to="/events/new"
+          className="inline-flex items-center gap-1.5 bg-ink text-paper rounded-md px-3 py-1.5 text-sm font-medium hover:bg-ink-soft transition-colors shrink-0"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M12 5v14M5 12h14" />
+          </svg>
+          Add event
+        </Link>
       </div>
 
       <FilterBar filters={filters} tags={allTags} people={people} onChange={handleFilterChange} />
