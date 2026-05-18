@@ -29,6 +29,17 @@ def _iso(val):
     return val
 
 
+def _json_default(o):
+    """Fallback encoder for json.dumps so any datetime / ObjectId we forgot to
+    convert at the document level (e.g. nested inside photos) still serializes
+    cleanly instead of 500ing the whole backup."""
+    if isinstance(o, datetime):
+        return _iso(o)
+    if isinstance(o, ObjectId):
+        return str(o)
+    raise TypeError(f"Object of type {o.__class__.__name__} is not JSON serializable")
+
+
 def _serialize_event(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
@@ -66,7 +77,7 @@ async def backup_json():
         "people": people,
         "events": events,
     }
-    body = json.dumps(payload, indent=2, ensure_ascii=False)
+    body = json.dumps(payload, indent=2, ensure_ascii=False, default=_json_default)
     filename = f"timeline-backup-{_today()}.json"
     return Response(
         content=body,
