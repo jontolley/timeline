@@ -1,4 +1,7 @@
+import hashlib
+import hmac
 import os
+import secrets
 from typing import Optional
 
 import httpx
@@ -20,6 +23,9 @@ AUTH_DISABLED = os.getenv("AUTH_DISABLED", "").lower() in {"1", "true", "yes"}
 SESSION_COOKIE_NAME = "timeline_session"
 MAGIC_LINK_TTL_SECONDS = 60 * 15
 SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
+LOGIN_CODE_TTL_SECONDS = 60 * 15
+LOGIN_CODE_RESEND_INTERVAL_SECONDS = 60
+LOGIN_CODE_MAX_ATTEMPTS = 5
 
 _signer = URLSafeTimedSerializer(SESSION_SECRET, salt="timeline-auth")
 
@@ -56,6 +62,45 @@ def verify_session_token(token: str) -> Optional[str]:
     return payload.get("email")
 
 
+def generate_login_code() -> str:
+    """Six random digits, zero-padded — for the iOS / API code-exchange flow."""
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def hash_login_code(code: str) -> str:
+    """SHA256 of the code peppered with SESSION_SECRET. The pepper means a Mongo dump alone can't brute-force the code space without also stealing the app secret."""
+    return hashlib.sha256(f"{code}:{SESSION_SECRET}".encode("utf-8")).hexdigest()
+
+
+def verify_login_code(code: str, expected_hash: str) -> bool:
+    return hmac.compare_digest(hash_login_code(code), expected_hash)
+
+
+async def send_login_code(email: str, code: str) -> None:
+    """Email a one-time login code via Resend; in dev (no RESEND_API_KEY) print to stdout so it surfaces in `docker compose logs backend`."""
+    if not RESEND_API_KEY:
+        print(f"[auth] Login code for {email}: {code}", flush=True)
+        return
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.post(
+            "https://api.resend.com/emails",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": RESEND_FROM,
+                "to": [email],
+                "subject": "Your timeline login code",
+                "html": (
+                    f"<p>Your sign-in code is <strong>{code}</strong>. "
+                    f"It expires in 15 minutes.</p>"
+                ),
+            },
+        )
+        resp.raise_for_status()
+
+
 async def send_magic_link(email: str, link: str) -> None:
     """In dev (no RESEND_API_KEY) write the link to stdout so you can grab it
     from `docker compose logs backend`. In prod, send via Resend."""
@@ -83,10 +128,16 @@ async def send_magic_link(email: str, link: str) -> None:
 
 
 async def require_auth(request: Request) -> str:
-    """FastAPI dependency. Returns the authenticated user's email or raises 401."""
+    """FastAPI dependency. Accepts `Authorization: Bearer <token>` (API clients) or the session cookie (web). Returns the user's email or raises 401."""
     if AUTH_DISABLED:
         return next(iter(ALLOWED_EMAILS), "dev@local")
-    token = request.cookies.get(SESSION_COOKIE_NAME)
+
+    token: Optional[str] = None
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip() or None
+    if not token:
+        token = request.cookies.get(SESSION_COOKIE_NAME)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
     email = verify_session_token(token)

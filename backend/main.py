@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import events_collection
+from database import auth_codes_collection, events_collection
 from embeddings import EmbeddingService, COLLECTION_NAME
 from routes.events import router as events_router
 from routes.chat import router as chat_router
@@ -75,6 +75,21 @@ def _serialize_doc(doc: dict) -> dict:
     return doc
 
 
+async def _ensure_auth_indexes():
+    """TTL index so expired login codes self-delete; unique index on email so concurrent request-code calls can't create duplicates."""
+    existing = await auth_codes_collection.index_information()
+    if "auth_codes_ttl" not in existing:
+        await auth_codes_collection.create_index(
+            "expires_at",
+            expireAfterSeconds=0,
+            name="auth_codes_ttl",
+        )
+    if "auth_codes_email_unique" not in existing:
+        await auth_codes_collection.create_index(
+            "email", unique=True, name="auth_codes_email_unique"
+        )
+
+
 async def _ensure_text_index():
     """Create the Mongo full-text index used by the chat keyword search if it
     doesn't already exist. Field weights make title hits dominate, then tags,
@@ -107,6 +122,7 @@ async def lifespan(app: FastAPI):
     try:
         await embedding_service.ensure_collection()
         await _ensure_text_index()
+        await _ensure_auth_indexes()
 
         count = await events_collection.count_documents({})
         if count == 0:
