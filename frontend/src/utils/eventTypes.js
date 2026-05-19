@@ -1,15 +1,12 @@
-// Per-event-type styling. Spelled out as literal class names so Tailwind JIT
-// keeps them in the bundle.
+export const EVENT_TYPES = [
+  { value: 'career',    label: 'Career' },
+  { value: 'travel',    label: 'Travel' },
+  { value: 'milestone', label: 'Milestone' },
+  { value: 'family',    label: 'Family' },
+]
 
-const STYLES = {
-  career:    { label: 'text-indigo-700',  ring: 'ring-indigo-500'  },
-  travel:    { label: 'text-emerald-700', ring: 'ring-emerald-500' },
-  milestone: { label: 'text-violet-700',  ring: 'ring-violet-500'  },
-  family:    { label: 'text-amber-700',   ring: 'ring-amber-500'   },
-}
+const KNOWN = new Set(EVENT_TYPES.map((t) => t.value))
 
-const FALLBACK = { label: 'text-ink-mute', ring: 'ring-ink-line' }
-
-export function eventTypeStyles(type) {
-  return STYLES[type] ?? FALLBACK
+export function categoryClass(type) {
+  return KNOWN.has(type) ? `cat-${type}` : ''
 }

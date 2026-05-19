@@ -15,26 +15,27 @@ export default function TagInput({ tags, onChange }) {
 
   return (
     <div>
-      <div className="flex flex-wrap gap-2 mb-2">
-        {tags.map((tag) => (
-          <span
-            key={tag}
-            className="inline-flex items-center gap-1 bg-surface text-ink-soft ring-1 ring-ink-line px-2 py-0.5 rounded-full text-[11px]"
-          >
-            #{tag}
-            <button
-              type="button"
-              onClick={() => removeTag(tag)}
-              className="text-ink-faint hover:text-ink leading-none"
-            >
-              &times;
-            </button>
-          </span>
-        ))}
-      </div>
-      <div className="flex gap-2">
+      {tags.length > 0 && (
+        <div className="tag-list">
+          {tags.map((tag) => (
+            <span key={tag} className="tag">
+              #{tag}
+              <button
+                type="button"
+                className="tag-remove"
+                onClick={() => removeTag(tag)}
+                aria-label={`Remove ${tag}`}
+              >
+                &times;
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="tag-input">
         <input
           type="text"
+          className="input"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
@@ -44,15 +45,8 @@ export default function TagInput({ tags, onChange }) {
             }
           }}
           placeholder="Add tag and press Enter"
-          className="border border-ink-line rounded-md px-3 py-1.5 text-sm flex-1 focus:outline-none focus:ring-2 focus:ring-accent-ring"
         />
-        <button
-          type="button"
-          onClick={addTag}
-          className="px-3 py-1.5 bg-surface hover:bg-ink-line/40 ring-1 ring-ink-line rounded-md text-sm text-ink-soft"
-        >
-          Add
-        </button>
+        <button type="button" className="btn" onClick={addTag}>Add</button>
       </div>
     </div>
   )

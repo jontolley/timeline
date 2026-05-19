@@ -19,7 +19,6 @@ function LocationPickerInner({ value, onChange }) {
     setQuery(value?.address || value?.name || '')
   }, [value?.address, value?.name])
 
-  // On mount: if value has a name/address but no coords, geocode automatically
   useEffect(() => {
     if (autoGeocodedRef.current) return
     if (!value || value.lat != null || !(value.name || value.address)) return
@@ -27,7 +26,7 @@ function LocationPickerInner({ value, onChange }) {
     const q = value.address || value.name
     fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
-      { headers: { 'Accept-Language': 'en' } }
+      { headers: { 'Accept-Language': 'en' } },
     )
       .then((r) => r.json())
       .then((data) => {
@@ -47,7 +46,7 @@ function LocationPickerInner({ value, onChange }) {
       try {
         const res = await fetch(
           `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=5`,
-          { headers: { 'Accept-Language': 'en' } }
+          { headers: { 'Accept-Language': 'en' } },
         )
         const data = await res.json()
         setResults(data)
@@ -82,7 +81,7 @@ function LocationPickerInner({ value, onChange }) {
     try {
       const res = await fetch(
         `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
-        { headers: { 'Accept-Language': 'en' } }
+        { headers: { 'Accept-Language': 'en' } },
       )
       const data = await res.json()
       const addr = data.display_name || ''
@@ -105,27 +104,21 @@ function LocationPickerInner({ value, onChange }) {
   const mapCenter = markerPos ?? DEFAULT_CENTER
 
   return (
-    <div className="space-y-2">
-      <div className="relative">
+    <div className="location-picker">
+      <div className="location-search">
         <input
           type="text"
+          className="input"
           value={query}
           onChange={handleQueryChange}
           placeholder="Search for a place or address…"
-          className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
         />
-        {searching && (
-          <span className="absolute right-3 top-2 text-xs text-ink-faint">Searching…</span>
-        )}
+        {searching && <span className="location-searching">Searching…</span>}
         {results.length > 0 && (
-          <ul className="absolute z-[1000] left-0 right-0 mt-1 bg-white border border-ink-line rounded-md shadow-lg max-h-52 overflow-y-auto">
+          <ul className="location-results" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {results.map((r) => (
               <li key={r.place_id}>
-                <button
-                  type="button"
-                  onClick={() => selectResult(r)}
-                  className="w-full text-left px-3 py-2 text-sm text-ink-soft hover:bg-accent-soft truncate"
-                >
+                <button type="button" onClick={() => selectResult(r)}>
                   {r.display_name}
                 </button>
               </li>
@@ -136,14 +129,14 @@ function LocationPickerInner({ value, onChange }) {
 
       <button
         type="button"
+        className="location-pick-toggle"
         onClick={() => setShowMap((s) => !s)}
-        className="text-sm text-accent hover:text-ink flex items-center gap-1"
       >
         {showMap ? '▾ Hide map' : '▸ Pick on map'}
       </button>
 
       {showMap && (
-        <div className="rounded-lg overflow-hidden border border-ink-line" style={{ height: 280 }}>
+        <div className="location-map">
           <MapContainer
             center={mapCenter}
             zoom={13}
@@ -161,22 +154,18 @@ function LocationPickerInner({ value, onChange }) {
       )}
 
       {value && (value.name || value.address || value.lat != null) && (
-        <div className="flex items-start justify-between bg-surface border border-ink-line rounded-md px-3 py-2 text-sm">
-          <div className="min-w-0">
+        <div className="location-summary">
+          <div>
             {(value.name || value.address) && (
-              <p className="font-medium text-ink truncate">{value.name || value.address}</p>
+              <div className="name">{value.name || value.address}</div>
             )}
             {value.lat != null && (
-              <p className="text-xs text-ink-faint mt-0.5 font-mono">
+              <div className="coords">
                 {value.lat.toFixed(6)}, {value.lng.toFixed(6)}
-              </p>
+              </div>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleClear}
-            className="text-ink-faint hover:text-ink-mute ml-3 shrink-0 text-xs"
-          >
+          <button type="button" className="clear" onClick={handleClear}>
             Clear
           </button>
         </div>

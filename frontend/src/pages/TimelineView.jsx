@@ -1,18 +1,27 @@
-import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
 import { listEvents } from '../api/events'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
-import { eventTypeStyles } from '../utils/eventTypes'
+import QuickCapture from '../components/QuickCapture'
 import { usePeopleStore } from '../store'
+import { yearOf } from '../utils/date'
+
+function PlusIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
+      <line x1="6.5" y1="1.5" x2="6.5" y2="11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <line x1="1.5" y1="6.5" x2="11.5" y2="6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  )
+}
 
 export default function TimelineView() {
   const [events, setEvents] = useState([])
-  const [filters, setFilters] = useState({ event_type: '', tag: '', person_ids: [] })
+  const [filters, setFilters] = useState({ event_type: '', person_ids: [] })
   const [loading, setLoading] = useState(true)
+  const [quickOpen, setQuickOpen] = useState(false)
+  const [reloadKey, setReloadKey] = useState(0)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
-
-  const allTags = [...new Set(events.flatMap((e) => e.tags ?? []))]
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -22,63 +31,90 @@ export default function TimelineView() {
     setLoading(true)
     const params = {}
     if (filters.event_type) params.event_type = filters.event_type
-    if (filters.tag) params.tag = filters.tag
     if (filters.person_ids?.length) params.person_id = filters.person_ids
     listEvents(params)
       .then(setEvents)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [filters])
+  }, [filters, reloadKey])
 
-  const handleFilterChange = (change) =>
-    setFilters((f) => ({ ...f, ...change }))
+  // The API returns events ascending by date; the redesign reads newest-first.
+  const sorted = useMemo(
+    () => [...events].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
+    [events],
+  )
+
+  const groups = useMemo(() => {
+    const out = []
+    let current = null
+    for (const ev of sorted) {
+      const y = yearOf(ev.date)
+      if (!current || current.year !== y) {
+        current = { year: y, items: [] }
+        out.push(current)
+      }
+      current.items.push(ev)
+    }
+    return out
+  }, [sorted])
+
+  const isFiltered = filters.event_type !== '' || (filters.person_ids?.length || 0) > 0
+  const handleFilterChange = (change) => setFilters((f) => ({ ...f, ...change }))
 
   return (
-    <div>
-      <div className="mb-6 sm:mb-8 flex items-start justify-between gap-4">
+    <div className="page">
+      <div className="page-head">
         <div>
-          <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink">
-            Timeline
-          </h1>
-          {!loading && events.length > 0 && (
-            <p className="text-sm text-ink-mute mt-2 num">
-              {events.length} {events.length === 1 ? 'event' : 'events'}
-            </p>
+          <h1 className="page-title">Timeline</h1>
+          {!loading && (
+            <div className="page-sub">
+              <span className="mono num">
+                {String(sorted.length).padStart(2, '0')} {sorted.length === 1 ? 'event' : 'events'}
+              </span>
+              {isFiltered ? <span> · filtered</span> : null}
+            </div>
           )}
         </div>
-        <Link
-          to="/events/new"
-          className="inline-flex items-center gap-1.5 bg-ink text-paper rounded-md px-3 py-1.5 text-sm font-medium hover:bg-ink-soft transition-colors shrink-0"
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => setQuickOpen(true)}
         >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M12 5v14M5 12h14" />
-          </svg>
+          <PlusIcon />
           Add event
-        </Link>
+        </button>
       </div>
 
-      <FilterBar filters={filters} tags={allTags} people={people} onChange={handleFilterChange} />
+      <FilterBar filters={filters} people={people} onChange={handleFilterChange} />
 
-      {loading ? (
-        <p className="text-ink-faint text-center py-12">Loading…</p>
-      ) : events.length === 0 ? (
-        <p className="text-ink-faint text-center py-12">No events found.</p>
-      ) : (
-        <ol className="relative">
-          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-ink-line" />
-          {events.map((event) => {
-            const t = eventTypeStyles(event.event_type)
-            return (
-              <li key={event._id} className="relative pl-8 pb-8 last:pb-2">
-                <span
-                  className={`absolute left-0 top-[26px] w-[15px] h-[15px] rounded-full bg-paper ring-2 ${t.ring}`}
-                />
-                <EventCard event={event} />
-              </li>
-            )
-          })}
-        </ol>
-      )}
+      <div className="timeline">
+        {loading ? (
+          <div className="empty">loading…</div>
+        ) : groups.length === 0 ? (
+          <div className="empty">
+            {isFiltered ? 'no events match — clear filters?' : 'nothing here yet — capture a moment'}
+          </div>
+        ) : (
+          groups.map((g) => (
+            <div key={g.year}>
+              <div className="year-marker">
+                <span className="year">
+                  <strong>{g.year}</strong>
+                </span>
+              </div>
+              {g.items.map((ev) => (
+                <EventCard key={ev._id} event={ev} />
+              ))}
+            </div>
+          ))
+        )}
+      </div>
+
+      <QuickCapture
+        open={quickOpen}
+        onClose={() => setQuickOpen(false)}
+        onSaved={() => setReloadKey((k) => k + 1)}
+      />
     </div>
   )
 }

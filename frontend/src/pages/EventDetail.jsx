@@ -3,11 +3,11 @@ import { useParams, useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
 import { getEvent, deleteEvent, attachPhoto, removePhoto } from '../api/events'
 import { uploadPhoto } from '../api/uploads'
-import { formatDateRange } from '../utils/date'
+import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
-import { eventTypeStyles } from '../utils/eventTypes'
+import { categoryClass } from '../utils/eventTypes'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -15,7 +15,7 @@ async function geocodeLocation(loc) {
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
-      { headers: { 'Accept-Language': 'en' } }
+      { headers: { 'Accept-Language': 'en' } },
     )
     const data = await res.json()
     if (data[0]) {
@@ -82,115 +82,169 @@ export default function EventDetail() {
     }
   }
 
-  if (loading) return <p className="text-ink-faint py-12 text-center">Loading…</p>
-  if (!event) return <p className="text-rose-600 py-12 text-center">Event not found.</p>
+  if (loading) return <div className="page-narrow"><p className="muted small">Loading…</p></div>
+  if (!event) return <div className="page-narrow"><p className="form-error">Event not found.</p></div>
 
   const dateRange = formatDateRange(event.date, event.end_date)
-  const t = eventTypeStyles(event.event_type)
+  const location = locationDisplay(event.location)
+  const mapUrl = locationMapUrl(event.location)
+  const cls = categoryClass(event.event_type)
+
+  return (
+    <div className={`page-narrow ${cls}`}>
+      <Link to="/" className="back-link">← Back to timeline</Link>
+
+      <div className="event-meta" style={{ marginBottom: 8 }}>
+        <span className="cat-tag">{event.event_type}</span>
+        <span className="event-range">· {dateRange}</span>
+      </div>
+      <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>
+        {event.title}
+      </h1>
+
+      {location && (
+        <p className="event-location" style={{ marginBottom: 16 }}>
+          {mapUrl ? (
+            <a href={mapUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)' }}>
+              {location}
+            </a>
+          ) : location}
+          {displayLocation?.lat != null && (
+            <span className="mono muted" style={{ marginLeft: 8 }}>
+              ({displayLocation.lat.toFixed(5)}, {displayLocation.lng.toFixed(5)})
+            </span>
+          )}
+        </p>
+      )}
+
+      {displayLocation?.lat != null && (
+        <div className="location-map" style={{ height: 220, marginBottom: 24 }}>
+          <MapContainer
+            center={[displayLocation.lat, displayLocation.lng]}
+            zoom={13}
+            style={{ height: '100%', width: '100%' }}
+            dragging={false}
+            zoomControl={false}
+            scrollWheelZoom={false}
+            doubleClickZoom={false}
+            touchZoom={false}
+            attributionControl={false}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={[displayLocation.lat, displayLocation.lng]} />
+          </MapContainer>
+        </div>
+      )}
+
+      {event.description && (
+        <p className="event-body" style={{ marginBottom: 24 }}>{event.description}</p>
+      )}
+
+      {event.people?.length > 0 && (
+        <div className="event-people" style={{ marginBottom: 18 }}>
+          <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+        </div>
+      )}
+
+      {event.tags?.length > 0 && (
+        <div className="tag-list" style={{ marginBottom: 24 }}>
+          {event.tags.map((tag) => (
+            <span key={tag} className="tag">#{tag}</span>
+          ))}
+        </div>
+      )}
+
+      <PhotoSection
+        photos={event.photos || []}
+        onSelect={handlePhotosSelected}
+        onDelete={handlePhotoDelete}
+        onOpen={setLightboxIndex}
+      />
+
+      {lightboxIndex !== null && event.photos?.[lightboxIndex] && (
+        <Lightbox
+          photos={event.photos}
+          index={lightboxIndex}
+          onClose={() => setLightboxIndex(null)}
+          onChange={setLightboxIndex}
+        />
+      )}
+
+      <div className="divider" style={{ margin: '32px 0 20px' }} />
+      <div className="form-actions">
+        <Link to={`/events/${id}/edit`} className="btn btn-primary">Edit</Link>
+        <button type="button" className="btn btn-danger" onClick={handleDelete}>Delete</button>
+      </div>
+    </div>
+  )
+}
+
+function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
+  const fileInputRef = useRef(null)
+  const [uploading, setUploading] = useState(false)
+
+  const handleChange = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setUploading(true)
+    try {
+      await onSelect(files)
+    } finally {
+      setUploading(false)
+    }
+  }
 
   return (
     <div>
-      <Link to="/" className="text-ink-mute hover:text-ink text-sm mb-4 inline-block">
-        &larr; Back to Timeline
-      </Link>
-      <div>
-        <div className="flex items-baseline gap-2 mb-1">
-          <span className={`text-[11px] font-medium tracking-wide uppercase ${t.label}`}>
-            {event.event_type}
-          </span>
-          <span className="text-[11px] text-ink-faint num">· {dateRange}</span>
-        </div>
-        <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-tight text-ink mb-4">
-          {event.title}
-        </h1>
-        {locationDisplay(event.location) && (
-          <p className="text-sm text-ink-mute mb-3">
-            {locationMapUrl(event.location) ? (
-              <a
-                href={locationMapUrl(event.location)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-accent hover:underline"
-              >
-                {locationDisplay(event.location)}
-              </a>
-            ) : (
-              locationDisplay(event.location)
-            )}
-            {displayLocation?.lat != null && (
-              <span className="ml-2 text-xs text-ink-faint font-mono num">
-                ({displayLocation.lat.toFixed(5)}, {displayLocation.lng.toFixed(5)})
-              </span>
-            )}
-          </p>
-        )}
-        {displayLocation?.lat != null && (
-          <div className="rounded-lg overflow-hidden ring-1 ring-ink-line mb-5" style={{ height: 200 }}>
-            <MapContainer
-              center={[displayLocation.lat, displayLocation.lng]}
-              zoom={13}
-              style={{ height: '100%', width: '100%' }}
-              dragging={false}
-              zoomControl={false}
-              scrollWheelZoom={false}
-              doubleClickZoom={false}
-              touchZoom={false}
-              attributionControl={false}
-            >
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <Marker position={[displayLocation.lat, displayLocation.lng]} />
-            </MapContainer>
-          </div>
-        )}
-        {event.description && (
-          <p className="text-[15px] text-ink-soft mb-5 leading-relaxed whitespace-pre-wrap">{event.description}</p>
-        )}
-        {event.people?.length > 0 && (
-          <div className="mb-4">
-            <PeopleChips peopleIds={event.people} peopleById={peopleById} size="md" />
-          </div>
-        )}
-        {event.tags?.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mb-6">
-            {event.tags.map((tag) => (
-              <span
-                key={tag}
-                className="text-[11px] text-ink-mute bg-surface ring-1 ring-ink-line px-2 py-0.5 rounded-full"
-              >
-                #{tag}
-              </span>
-            ))}
-          </div>
-        )}
-        <PhotoSection
-          photos={event.photos || []}
-          onSelect={handlePhotosSelected}
-          onDelete={handlePhotoDelete}
-          onOpen={setLightboxIndex}
+      <div className="photo-toolbar">
+        <span className="label">
+          Photos{photos.length > 0 ? ` · ${photos.length}` : ''}
+        </span>
+        <button
+          type="button"
+          className="btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploading}
+        >
+          {uploading ? 'Uploading…' : '+ Add photos'}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          multiple
+          style={{ display: 'none' }}
+          onChange={handleChange}
         />
-        {lightboxIndex !== null && event.photos?.[lightboxIndex] && (
-          <Lightbox
-            photos={event.photos}
-            index={lightboxIndex}
-            onClose={() => setLightboxIndex(null)}
-            onChange={setLightboxIndex}
-          />
-        )}
-        <div className="flex gap-3 pt-6 border-t border-ink-line">
-          <Link
-            to={`/events/${id}/edit`}
-            className="px-4 py-2 bg-ink text-paper rounded-md text-sm font-medium hover:bg-ink-soft transition-colors"
-          >
-            Edit
-          </Link>
-          <button
-            onClick={handleDelete}
-            className="px-4 py-2 bg-paper text-rose-600 ring-1 ring-rose-200 rounded-md text-sm font-medium hover:bg-rose-50 transition-colors"
-          >
-            Delete
-          </button>
-        </div>
       </div>
+      {photos.length === 0 ? (
+        <p className="detail-photos-empty">No photos yet.</p>
+      ) : (
+        <div className="detail-photos">
+          {photos.map((p, i) => (
+            <div key={p.key} className="detail-photo">
+              {p.url ? (
+                <button type="button" className="tile" onClick={() => onOpen(i)}>
+                  <img src={p.url} alt="" loading="lazy" />
+                </button>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 12, color: 'var(--ink-mute)' }}>
+                  Unavailable
+                </div>
+              )}
+              <button
+                type="button"
+                className="delete"
+                onClick={() => onDelete(p.key)}
+                aria-label="Remove photo"
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -217,129 +271,36 @@ function Lightbox({ photos, index, onClose, onChange }) {
   }, [index, count]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      onClick={onClose}
-      className="fixed inset-0 z-[1000] bg-black/90 flex items-center justify-center select-none"
-    >
-      <img
-        src={photo.url}
-        alt=""
-        onClick={(e) => e.stopPropagation()}
-        className="max-w-[95vw] max-h-[90vh] object-contain"
-      />
-
+    <div className="lightbox" role="dialog" aria-modal="true" onClick={onClose}>
+      <img src={photo.url} alt="" onClick={(e) => e.stopPropagation()} />
       <button
         type="button"
+        className="lightbox-close"
         onClick={(e) => { e.stopPropagation(); onClose() }}
         aria-label="Close"
-        className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-xl backdrop-blur"
       >
         ✕
       </button>
-
       {count > 1 && (
         <>
           <button
             type="button"
+            className="lightbox-prev"
             onClick={(e) => { e.stopPropagation(); goPrev() }}
             aria-label="Previous photo"
-            className="absolute left-2 sm:left-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-2xl backdrop-blur"
           >
             ‹
           </button>
           <button
             type="button"
+            className="lightbox-next"
             onClick={(e) => { e.stopPropagation(); goNext() }}
             aria-label="Next photo"
-            className="absolute right-2 sm:right-6 top-1/2 -translate-y-1/2 w-12 h-12 rounded-full bg-white/10 text-white hover:bg-white/20 flex items-center justify-center text-2xl backdrop-blur"
           >
             ›
           </button>
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-white/80 text-xs num bg-white/10 rounded-full px-3 py-1 backdrop-blur">
-            {index + 1} / {count}
-          </div>
+          <div className="lightbox-count">{index + 1} / {count}</div>
         </>
-      )}
-    </div>
-  )
-}
-
-function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
-  const fileInputRef = useRef(null)
-  const [uploading, setUploading] = useState(false)
-
-  const handleChange = async (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
-    if (!files.length) return
-    setUploading(true)
-    try {
-      await onSelect(files)
-    } finally {
-      setUploading(false)
-    }
-  }
-
-  return (
-    <div className="mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-sm font-medium text-ink-soft">
-          Photos {photos.length > 0 && <span className="text-ink-faint">({photos.length})</span>}
-        </h2>
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          className="text-xs px-3 py-1.5 bg-white border border-ink-line text-ink-soft rounded-md hover:bg-surface disabled:opacity-50 transition-colors"
-        >
-          {uploading ? 'Uploading…' : '+ Add photos'}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          multiple
-          className="hidden"
-          onChange={handleChange}
-        />
-      </div>
-      {photos.length === 0 ? (
-        <p className="text-xs text-ink-faint italic">No photos yet.</p>
-      ) : (
-        <div className="grid grid-cols-3 gap-2">
-          {photos.map((p, i) => (
-            <div key={p.key} className="relative group aspect-square overflow-hidden rounded-md border border-ink-line bg-surface">
-              {p.url ? (
-                <button
-                  type="button"
-                  onClick={() => onOpen(i)}
-                  className="block w-full h-full"
-                >
-                  <img
-                    src={p.url}
-                    alt=""
-                    loading="lazy"
-                    className="w-full h-full object-cover hover:opacity-90 transition-opacity"
-                  />
-                </button>
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-xs text-ink-faint">
-                  Unavailable
-                </div>
-              )}
-              <button
-                type="button"
-                onClick={() => onDelete(p.key)}
-                title="Remove photo"
-                className="absolute top-1 right-1 bg-white/90 text-rose-600 rounded-full w-6 h-6 flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity shadow"
-              >
-                ✕
-              </button>
-            </div>
-          ))}
-        </div>
       )}
     </div>
   )

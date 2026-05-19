@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { colorClasses } from '../utils/colors'
+import { personColor } from '../utils/colors'
 
 export default function PeoplePicker({ people, selectedIds, onChange }) {
   const toggle = (id) => {
@@ -9,9 +9,9 @@ export default function PeoplePicker({ people, selectedIds, onChange }) {
 
   if (people.length === 0) {
     return (
-      <p className="text-sm text-ink-mute">
+      <p className="small muted">
         No people yet.{' '}
-        <Link to="/people" className="text-accent hover:underline">
+        <Link to="/people" style={{ color: 'var(--accent)', borderBottom: '1px solid currentColor' }}>
           Add some
         </Link>{' '}
         to associate with this event.
@@ -20,22 +20,20 @@ export default function PeoplePicker({ people, selectedIds, onChange }) {
   }
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="people-picker">
       {people.map((p) => {
-        const c = colorClasses(p.color)
+        const color = personColor(p.color)
         const selected = selectedIds.includes(p._id)
         return (
           <button
             key={p._id}
             type="button"
+            className="chip chip-people"
+            style={{ '--person-color': color }}
+            aria-pressed={selected}
             onClick={() => toggle(p._id)}
-            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border transition-all ${
-              selected
-                ? `${c.chip} border-transparent`
-                : 'bg-paper text-ink-mute border-ink-line hover:border-ink-faint'
-            }`}
           >
-            <span className={`w-2 h-2 rounded-full ${c.dot}`} />
+            <span className="dot" />
             {p.name}
           </button>
         )

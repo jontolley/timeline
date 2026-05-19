@@ -102,42 +102,41 @@ export default function EventForm() {
     }
   }
 
-  if (loading) return <p className="text-ink-faint py-12 text-center">Loading...</p>
+  if (loading) return <div className="page-narrow"><p className="muted small">Loading…</p></div>
 
   return (
-    <div>
-      <Link to={id ? `/events/${id}` : '/'} className="text-ink-mute hover:text-ink text-sm mb-4 inline-block">
-        &larr; {id ? 'Back to Event' : 'Back to Timeline'}
+    <div className="page-narrow">
+      <Link to={id ? `/events/${id}` : '/'} className="back-link">
+        ← {id ? 'Back to event' : 'Back to timeline'}
       </Link>
-      <h1 className="text-[28px] sm:text-[34px] font-semibold tracking-tighter2 leading-none text-ink mb-6">
-        {id ? 'Edit Event' : 'New Event'}
+      <h1 className="page-title" style={{ fontSize: 40, marginBottom: 28 }}>
+        {id ? 'Edit event' : 'New event'}
       </h1>
-      {error && (
-        <p className="text-rose-600 text-sm mb-4 bg-rose-50 ring-1 ring-rose-200 rounded-md px-3 py-2">
-          {error}
-        </p>
-      )}
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">
-            Title <span className="text-rose-500">*</span>
+      {error && <p className="form-error" style={{ marginBottom: 18 }}>{error}</p>}
+
+      <form className="form" onSubmit={handleSubmit}>
+        <div className="field">
+          <label className="field-label" htmlFor="ef-title">
+            Title<span className="field-required">*</span>
           </label>
           <input
+            id="ef-title"
+            className="input"
             required
             value={form.title}
             onChange={set('title')}
-            className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">
-            Type <span className="text-rose-500">*</span>
+        <div className="field">
+          <label className="field-label" htmlFor="ef-type">
+            Type<span className="field-required">*</span>
           </label>
           <select
+            id="ef-type"
+            className="select"
             value={form.event_type}
             onChange={set('event_type')}
-            className="w-full border border-ink-line rounded-md px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-accent-ring"
           >
             <option value="career">Career</option>
             <option value="travel">Travel</option>
@@ -146,23 +145,23 @@ export default function EventForm() {
           </select>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">
-            Date <span className="text-rose-500">*</span>
+        <div className="field">
+          <label className="field-label" htmlFor="ef-date">
+            Date<span className="field-required">*</span>
           </label>
           <input
-            required
+            id="ef-date"
+            className="input"
             type="date"
+            required
             value={form.date}
             onChange={set('date')}
-            className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
           />
         </div>
 
-        <div className="flex items-center gap-2">
+        <label className="checkbox-row">
           <input
             type="checkbox"
-            id="includeTime"
             checked={form.includeTime}
             onChange={(e) =>
               setForm((f) => ({
@@ -171,29 +170,26 @@ export default function EventForm() {
                 time: e.target.checked ? f.time : '',
               }))
             }
-            className="w-4 h-4 rounded border-ink-line text-accent focus:ring-accent-ring"
           />
-          <label htmlFor="includeTime" className="text-sm text-ink-soft select-none">
-            Include time
-          </label>
-        </div>
+          Include time
+        </label>
 
         {form.includeTime && (
-          <div>
-            <label className="block text-sm font-medium text-ink-soft mb-1">Time</label>
+          <div className="field">
+            <label className="field-label" htmlFor="ef-time">Time</label>
             <input
+              id="ef-time"
+              className="input"
               type="time"
               value={form.time}
               onChange={set('time')}
-              className="border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
             />
           </div>
         )}
 
-        <div className="flex items-center gap-2">
+        <label className="checkbox-row">
           <input
             type="checkbox"
-            id="includeEndDate"
             checked={form.includeEndDate}
             onChange={(e) =>
               setForm((f) => ({
@@ -204,29 +200,26 @@ export default function EventForm() {
                 end_time: e.target.checked ? f.end_time : '',
               }))
             }
-            className="w-4 h-4 rounded border-ink-line text-accent focus:ring-accent-ring"
           />
-          <label htmlFor="includeEndDate" className="text-sm text-ink-soft select-none">
-            Include end date
-          </label>
-        </div>
+          Include end date
+        </label>
 
         {form.includeEndDate && (
           <>
-            <div>
-              <label className="block text-sm font-medium text-ink-soft mb-1">End Date</label>
+            <div className="field">
+              <label className="field-label" htmlFor="ef-end-date">End date</label>
               <input
+                id="ef-end-date"
+                className="input"
                 type="date"
                 value={form.end_date}
                 onChange={set('end_date')}
                 min={form.date || undefined}
-                className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
               />
             </div>
-            <div className="flex items-center gap-2">
+            <label className="checkbox-row">
               <input
                 type="checkbox"
-                id="includeEndTime"
                 checked={form.includeEndTime}
                 onChange={(e) =>
                   setForm((f) => ({
@@ -235,56 +228,57 @@ export default function EventForm() {
                     end_time: e.target.checked ? f.end_time : '',
                   }))
                 }
-                className="w-4 h-4 rounded border-ink-line text-accent focus:ring-accent-ring"
               />
-              <label htmlFor="includeEndTime" className="text-sm text-ink-soft select-none">
-                Include end time
-              </label>
-            </div>
+              Include end time
+            </label>
             {form.includeEndTime && (
-              <div>
-                <label className="block text-sm font-medium text-ink-soft mb-1">End Time</label>
+              <div className="field">
+                <label className="field-label" htmlFor="ef-end-time">End time</label>
                 <input
+                  id="ef-end-time"
+                  className="input"
                   type="time"
                   value={form.end_time}
                   onChange={set('end_time')}
-                  className="border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
                 />
               </div>
             )}
           </>
         )}
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">Location</label>
+        <div className="field">
+          <label className="field-label">Location</label>
           <LocationPicker
             value={form.location}
             onChange={(loc) => setForm((f) => ({ ...f, location: loc }))}
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">Description</label>
+        <div className="field">
+          <label className="field-label" htmlFor="ef-desc">Description</label>
           <textarea
-            value={form.description}
-            onChange={set('description')}
+            id="ef-desc"
+            className="textarea"
             rows={3}
             spellCheck="true"
-            className="w-full border border-ink-line rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-accent-ring"
+            value={form.description}
+            onChange={set('description')}
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">Tags</label>
+        <div className="field">
+          <label className="field-label">Tags</label>
           <TagInput
             tags={form.tags}
             onChange={(tags) => setForm((f) => ({ ...f, tags }))}
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-ink-soft mb-1">People</label>
-          <p className="text-xs text-ink-mute mb-2">Leave empty for events not tied to a specific person.</p>
+        <div className="field">
+          <label className="field-label">People</label>
+          <p className="field-hint" style={{ marginBottom: 10 }}>
+            Leave empty for events not tied to a specific person.
+          </p>
           <PeoplePicker
             people={people}
             selectedIds={form.people}
@@ -292,19 +286,11 @@ export default function EventForm() {
           />
         </div>
 
-        <div className="flex gap-3 pt-2">
-          <button
-            type="submit"
-            disabled={saving}
-            className="px-4 py-2 bg-ink text-paper rounded-md text-sm font-medium hover:bg-ink-soft disabled:opacity-50 transition-colors"
-          >
-            {saving ? 'Saving...' : 'Save Event'}
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={saving}>
+            {saving ? 'Saving…' : 'Save event'}
           </button>
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="px-4 py-2 bg-surface text-ink-soft ring-1 ring-ink-line rounded-md text-sm font-medium hover:bg-ink-line/40 transition-colors"
-          >
+          <button type="button" className="btn" onClick={() => navigate(-1)}>
             Cancel
           </button>
         </div>

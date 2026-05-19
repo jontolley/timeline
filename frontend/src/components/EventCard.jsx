@@ -1,93 +1,67 @@
 import { Link } from 'react-router-dom'
-import { formatDateRange } from '../utils/date'
+import { shortDate, formatRangeCompact } from '../utils/date'
 import { locationDisplay } from '../utils/location'
-import { eventTypeStyles } from '../utils/eventTypes'
+import { categoryClass } from '../utils/eventTypes'
 import { usePeopleStore } from '../store'
 import PeopleChips from './PeopleChips'
 
-const MAX_THUMBS = 4
+const MAX_PHOTOS = 4
 
 export default function EventCard({ event }) {
   const peopleById = usePeopleStore((s) => s.peopleById)
-  const t = eventTypeStyles(event.event_type)
+  const photos = event.photos ?? []
+  const shown = photos.slice(0, MAX_PHOTOS)
+  const extra = Math.max(0, photos.length - shown.length)
+  const cls = categoryClass(event.event_type)
+  const location = locationDisplay(event.location)
 
   return (
-    <Link
-      to={`/events/${event._id}`}
-      className="block group bg-surface rounded-lg p-4 hover:bg-ink-line/40 transition-colors"
-    >
-      <div className="flex items-baseline gap-2 mb-1">
-        <span className={`text-[11px] font-medium tracking-wide uppercase ${t.label}`}>
-          {event.event_type}
-        </span>
-        <span className="text-[11px] text-ink-faint num">
-          · {formatDateRange(event.date, event.end_date)}
-        </span>
+    <article className={`event ${cls}`}>
+      <span className="event-node" aria-hidden="true" />
+      <div className="event-date-stub">
+        <strong>{shortDate(event.date)}</strong>
+        {event.end_date ? <span>{shortDate(event.end_date)}</span> : null}
       </div>
 
-      <h3 className="text-[17px] font-semibold tracking-tightish text-ink leading-snug group-hover:text-accent transition-colors">
-        {event.title}
-      </h3>
-
-      {locationDisplay(event.location) && (
-        <p className="text-sm text-ink-mute mt-1">{locationDisplay(event.location)}</p>
-      )}
-
-      {event.description && (
-        <p className="text-[15px] text-ink-soft mt-3 leading-relaxed line-clamp-3">
-          {event.description}
-        </p>
-      )}
-
-      {event.photos?.length > 0 && <PhotoStrip photos={event.photos} />}
-
-      {(event.people?.length > 0 || event.tags?.length > 0) && (
-        <div className="flex flex-wrap items-center gap-1.5 mt-4">
-          {event.people?.length > 0 && (
-            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
-          )}
-          {event.tags?.map((tag) => (
-            <span
-              key={tag}
-              className="text-[11px] text-ink-mute bg-surface ring-1 ring-ink-line px-2 py-0.5 rounded-full"
-            >
-              #{tag}
-            </span>
-          ))}
+      <Link to={`/events/${event._id}`} className="card">
+        <div className="event-meta">
+          <span className="cat-tag">{event.event_type}</span>
+          <span className="event-range">
+            · {formatRangeCompact(event.date, event.end_date)}
+          </span>
         </div>
-      )}
-    </Link>
-  )
-}
 
-function PhotoStrip({ photos }) {
-  const shown = photos.slice(0, MAX_THUMBS)
-  const extra = photos.length - shown.length
-  return (
-    <div className="grid grid-cols-4 gap-1.5 mt-4 max-w-sm">
-      {shown.map((p, i) => {
-        const src = p.thumb_url || p.url
-        if (!src) return null
-        const isLast = i === shown.length - 1
-        return (
-          <div
-            key={p.key}
-            className="relative aspect-square rounded-md overflow-hidden ring-1 ring-ink-line bg-surface"
-          >
-            <img
-              src={src}
-              alt=""
-              loading="lazy"
-              className="w-full h-full object-cover"
-            />
-            {isLast && extra > 0 && (
-              <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-xs font-semibold">
-                +{extra}
-              </div>
-            )}
+        <h3 className="event-title">{event.title}</h3>
+
+        {location && <div className="event-location">{location}</div>}
+
+        {event.description && (
+          <p className="event-body">{event.description}</p>
+        )}
+
+        {shown.length > 0 && (
+          <div className="event-photos">
+            {shown.map((p, i) => {
+              const src = p.thumb_url || p.url
+              const isLast = i === shown.length - 1
+              return (
+                <div key={p.key ?? i} className="photo">
+                  {src ? <img src={src} alt="" loading="lazy" /> : null}
+                  {isLast && extra > 0 && (
+                    <div className="photo-more">+{extra}</div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-        )
-      })}
-    </div>
+        )}
+
+        {event.people?.length > 0 && (
+          <div className="event-people">
+            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+          </div>
+        )}
+      </Link>
+    </article>
   )
 }
