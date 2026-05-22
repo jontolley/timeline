@@ -47,9 +47,12 @@ export default function EventCard({ event }) {
               const isLast = i === shown.length - 1
               return (
                 <div key={m.key ?? i} className={`photo media-tile media-${kind}`}>
-                  {src ? <img src={src} alt="" loading="lazy" /> : null}
-                  {kind === 'video' && <span className="media-badge" aria-hidden="true">▶</span>}
-                  {kind === 'audio' && <span className="media-badge" aria-hidden="true">♪</span>}
+                  {src ? (
+                    <img src={src} alt="" loading="lazy" />
+                  ) : kind === 'audio' ? (
+                    <span className="audio-placeholder-icon" aria-hidden="true">♪</span>
+                  ) : null}
+                  {kind === 'video' && src && <span className="media-badge" aria-hidden="true">▶</span>}
                   {isLast && extra > 0 && (
                     <div className="photo-more">+{extra}</div>
                   )}

@@ -180,6 +180,18 @@ async function captureVideoPoster(video) {
   })
 }
 
+// Public helper for previewing a video before upload — returns an object URL of
+// a single frame. Caller is responsible for revoking the URL when done.
+export async function extractVideoPosterUrl(file) {
+  const { video, url } = await loadVideo(file)
+  try {
+    const { file: posterFile } = await captureVideoPoster(video)
+    return URL.createObjectURL(posterFile)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
 async function uploadVideo(file) {
   const { video, url } = await loadVideo(file)
   try {
@@ -207,28 +219,139 @@ async function uploadVideo(file) {
   }
 }
 
-async function uploadAudio(file) {
-  // Read duration via a transient <audio> so the saved metadata is useful.
-  const url = URL.createObjectURL(file)
-  let duration = null
+// Decode + sample an audio file and render a waveform thumbnail with the
+// duration overlaid. Returns { file, width, height, duration } so the caller
+// can both upload the thumb and pick up the duration without a second pass.
+async function generateAudioWaveformThumb(file) {
+  const arrayBuffer = await file.arrayBuffer()
+  const Ctx = window.AudioContext || window.webkitAudioContext
+  if (!Ctx) throw new Error('AudioContext unavailable')
+  const ctx = new Ctx()
+  let audioBuffer
   try {
-    const audio = document.createElement('audio')
-    audio.preload = 'metadata'
-    audio.src = url
-    await new Promise((resolve) => {
-      audio.onloadedmetadata = resolve
-      audio.onerror = resolve
-    })
-    if (Number.isFinite(audio.duration)) duration = audio.duration
+    audioBuffer = await ctx.decodeAudioData(arrayBuffer.slice(0))
   } finally {
-    URL.revokeObjectURL(url)
+    ctx.close()
   }
-  const meta = await putToR2({ file, width: null, height: null })
+
+  const duration = audioBuffer.duration
+  const channel = audioBuffer.getChannelData(0)
+
+  const BARS = 80
+  const samplesPerBar = Math.max(1, Math.floor(channel.length / BARS))
+  const peaks = new Array(BARS)
+  let globalMax = 0
+  for (let i = 0; i < BARS; i++) {
+    const start = i * samplesPerBar
+    const end = Math.min(start + samplesPerBar, channel.length)
+    let max = 0
+    for (let j = start; j < end; j++) {
+      const v = Math.abs(channel[j])
+      if (v > max) max = v
+    }
+    peaks[i] = max
+    if (max > globalMax) globalMax = max
+  }
+
+  const size = 400
+  const canvas = document.createElement('canvas')
+  canvas.width = size
+  canvas.height = size
+  const c = canvas.getContext('2d')
+
+  // Cream background to match the Hearth palette.
+  c.fillStyle = '#f1ece2'
+  c.fillRect(0, 0, size, size)
+
+  // Waveform bars in the accent slate.
+  const slot = size / BARS
+  const barW = slot * 0.6
+  const midY = size / 2
+  const maxBarH = size * 0.55
+  c.fillStyle = '#5a7390'
+  for (let i = 0; i < BARS; i++) {
+    const norm = globalMax > 0 ? peaks[i] / globalMax : 0
+    const h = Math.max(2, norm * maxBarH)
+    const x = i * slot + (slot - barW) / 2
+    c.fillRect(x, midY - h / 2, barW, h)
+  }
+
+  // Duration text along the bottom in dark ink.
+  const mins = Math.floor(duration / 60)
+  const secs = Math.floor(duration % 60)
+  const durText = `${mins}:${String(secs).padStart(2, '0')}`
+  c.fillStyle = '#1f2a35'
+  c.font = '600 44px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif'
+  c.textAlign = 'center'
+  c.textBaseline = 'alphabetic'
+  c.fillText(durText, size / 2, size - 36)
+
+  const blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (b) => (b ? resolve(b) : reject(new Error('Waveform encoding failed'))),
+      'image/jpeg',
+      0.85,
+    )
+  })
+
+  return {
+    file: new File([blob], 'waveform.jpg', { type: 'image/jpeg' }),
+    width: size,
+    height: size,
+    duration: Number.isFinite(duration) ? duration : null,
+  }
+}
+
+// Preview helper for the EventForm queue — same rendering, returns just an
+// object URL. Caller revokes when done.
+export async function extractAudioWaveformUrl(file) {
+  const { file: thumbFile } = await generateAudioWaveformThumb(file)
+  return URL.createObjectURL(thumbFile)
+}
+
+async function uploadAudio(file) {
+  // Try the waveform path first — gets duration AND a visual thumb in one pass.
+  let thumb = null
+  try {
+    thumb = await generateAudioWaveformThumb(file)
+  } catch {
+    // Decode can fail (DRM, unsupported codec). Fall back to <audio> metadata.
+  }
+
+  let duration = thumb?.duration ?? null
+  if (duration === null) {
+    const url = URL.createObjectURL(file)
+    try {
+      const audio = document.createElement('audio')
+      audio.preload = 'metadata'
+      audio.src = url
+      await new Promise((resolve) => {
+        audio.onloadedmetadata = resolve
+        audio.onerror = resolve
+      })
+      if (Number.isFinite(audio.duration)) duration = audio.duration
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
+  // Upload the original file, plus the waveform thumb if we got one.
+  const fullPromise = putToR2({ file, width: null, height: null })
+  let thumbMeta = null
+  if (thumb) {
+    try {
+      thumbMeta = await putToR2({ file: thumb.file, width: thumb.width, height: thumb.height })
+    } catch {
+      // Best-effort — audio still attaches without the thumb.
+    }
+  }
+  const fullMeta = await fullPromise
+
   return {
     kind: 'audio',
-    key: meta.key,
-    thumb_key: null,
-    content_type: meta.content_type,
+    key: fullMeta.key,
+    thumb_key: thumbMeta?.key || null,
+    content_type: fullMeta.content_type,
     duration_seconds: duration,
   }
 }

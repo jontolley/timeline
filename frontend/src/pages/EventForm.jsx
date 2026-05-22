@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { attachMedia, createEvent, getEvent, updateEvent } from '../api/events'
-import { uploadMedia } from '../api/uploads'
+import { extractAudioWaveformUrl, extractVideoPosterUrl, uploadMedia } from '../api/uploads'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
@@ -50,6 +50,9 @@ export default function EventForm() {
     const initial = consumePendingPhoto()
     return initial ? [initial] : []
   })
+  // Parallel array of video poster URLs (null for non-video files). Populated
+  // asynchronously as files are added; revoked when files are removed.
+  const [pendingPosters, setPendingPosters] = useState(() => pendingMedia.map(() => null))
   const mediaInputRef = useRef(null)
   const [photoNotice] = useState(() => {
     if (id || !prefill) return null
@@ -75,11 +78,46 @@ export default function EventForm() {
   const handleAddMedia = (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (files.length) setPendingMedia((arr) => [...arr, ...files])
+    if (!files.length) return
+    // Add immediately with null posters; extract video posters / audio
+    // waveforms in the background and patch them into pendingPosters.
+    setPendingMedia((arr) => {
+      const baseIdx = arr.length
+      files.forEach((file, i) => {
+        const type = file.type || ''
+        const extractor = type.startsWith('video/')
+          ? extractVideoPosterUrl
+          : type.startsWith('audio/')
+            ? extractAudioWaveformUrl
+            : null
+        if (!extractor) return
+        extractor(file)
+          .then((url) => {
+            setPendingPosters((posters) => {
+              const next = [...posters]
+              next[baseIdx + i] = url
+              return next
+            })
+          })
+          .catch(() => {})
+      })
+      return [...arr, ...files]
+    })
+    setPendingPosters((arr) => [...arr, ...files.map(() => null)])
   }
   const handleRemovePendingMedia = (idx) => {
     setPendingMedia((arr) => arr.filter((_, i) => i !== idx))
+    setPendingPosters((arr) => {
+      const removed = arr[idx]
+      if (removed) URL.revokeObjectURL(removed)
+      return arr.filter((_, i) => i !== idx)
+    })
   }
+
+  // Revoke any lingering poster URLs when the page unmounts.
+  useEffect(() => () => {
+    pendingPosters.forEach((u) => u && URL.revokeObjectURL(u))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -427,15 +465,28 @@ export default function EventForm() {
                 {pendingMedia.map((file, i) => {
                   const t = file.type || ''
                   const kind = t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : 'photo'
+                  const posterUrl = pendingPosters[i]
                   return (
                     <div key={`${file.name}-${i}`} className={`detail-photo media-${kind}`}>
                       {kind === 'photo' ? (
                         <div className="tile">
                           <img src={pendingMediaUrls[i]} alt="" loading="lazy" />
                         </div>
+                      ) : kind === 'video' && posterUrl ? (
+                        <div className="tile">
+                          <img src={posterUrl} alt="" loading="lazy" />
+                          <span className="media-play" aria-hidden="true">▶</span>
+                        </div>
+                      ) : kind === 'audio' && posterUrl ? (
+                        <div className="tile">
+                          <img src={posterUrl} alt="" loading="lazy" />
+                        </div>
                       ) : (
-                        <div className="media-fallback">
-                          {kind === 'video' ? '▶ Video' : '♪ Audio'}
+                        <div className="audio-placeholder">
+                          <span className="audio-placeholder-icon" aria-hidden="true">♪</span>
+                          <span className="audio-placeholder-label">
+                            {kind === 'video' ? 'Video' : 'Audio'}
+                          </span>
                         </div>
                       )}
                       <button
