@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listEvents } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
@@ -7,6 +7,19 @@ import FilterBar from '../components/FilterBar'
 import { setPendingCaption, setPendingPhoto } from '../lib/photoHandoff'
 import { usePeopleStore } from '../store'
 import { yearOf } from '../utils/date'
+
+const PAGE_SIZE = 20
+
+function buildListParams(filters, cursor) {
+  const params = { limit: PAGE_SIZE }
+  if (filters.event_type) params.event_type = filters.event_type
+  if (filters.person_ids?.length) params.person_id = filters.person_ids
+  if (cursor) {
+    params.before_date = cursor.date
+    params.before_id = cursor.id
+  }
+  return params
+}
 
 function PlusIcon() {
   return (
@@ -41,26 +54,73 @@ export default function TimelineView() {
   const [events, setEvents] = useState([])
   const [filters, setFilters] = useState({ event_type: '', person_ids: [] })
   const [loading, setLoading] = useState(true)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [hasMore, setHasMore] = useState(true)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [aiPhotoBusy, setAiPhotoBusy] = useState(false)
   const photoInputRef = useRef(null)
   const aiPhotoInputRef = useRef(null)
+  const sentinelRef = useRef(null)
+  // Guards loadMore from stale-state re-entry and from racing the initial load.
+  const fetchingRef = useRef(false)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
   }, [peopleLoaded, loadPeople])
 
+  // Initial load + reload on filter change.
   useEffect(() => {
+    let cancelled = false
+    fetchingRef.current = true
     setLoading(true)
-    const params = {}
-    if (filters.event_type) params.event_type = filters.event_type
-    if (filters.person_ids?.length) params.person_id = filters.person_ids
-    listEvents(params)
-      .then(setEvents)
+    setEvents([])
+    setHasMore(true)
+    listEvents(buildListParams(filters, null))
+      .then((page) => {
+        if (cancelled) return
+        setEvents(page)
+        setHasMore(page.length === PAGE_SIZE)
+      })
       .catch(console.error)
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (cancelled) return
+        setLoading(false)
+        fetchingRef.current = false
+      })
+    return () => { cancelled = true }
   }, [filters])
+
+  const loadMore = useCallback(async () => {
+    if (fetchingRef.current || loadingMore || !hasMore || events.length === 0) return
+    fetchingRef.current = true
+    setLoadingMore(true)
+    const last = events[events.length - 1]
+    try {
+      const page = await listEvents(buildListParams(filters, { date: last.date, id: last._id }))
+      setEvents((prev) => [...prev, ...page])
+      setHasMore(page.length === PAGE_SIZE)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setLoadingMore(false)
+      fetchingRef.current = false
+    }
+  }, [events, filters, hasMore, loadingMore])
+
+  // IntersectionObserver pages the next batch when the sentinel scrolls into view.
+  useEffect(() => {
+    const node = sentinelRef.current
+    if (!node || !hasMore || loading) return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) loadMore()
+      },
+      { rootMargin: '400px' }, // trigger a bit before the user actually hits the bottom
+    )
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [loadMore, hasMore, loading])
 
   const handlePhotoPicked = async (e) => {
     const file = e.target.files?.[0]
@@ -97,16 +157,11 @@ export default function TimelineView() {
     }
   }
 
-  // The API returns events ascending by date; the redesign reads newest-first.
-  const sorted = useMemo(
-    () => [...events].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)),
-    [events],
-  )
-
+  // The API returns events newest-first when paginated, so no client-side sort.
   const groups = useMemo(() => {
     const out = []
     let current = null
-    for (const ev of sorted) {
+    for (const ev of events) {
       const y = yearOf(ev.date)
       if (!current || current.year !== y) {
         current = { year: y, items: [] }
@@ -115,7 +170,7 @@ export default function TimelineView() {
       current.items.push(ev)
     }
     return out
-  }, [sorted])
+  }, [events])
 
   const isFiltered = filters.event_type !== '' || (filters.person_ids?.length || 0) > 0
   const handleFilterChange = (change) => setFilters((f) => ({ ...f, ...change }))
@@ -128,7 +183,9 @@ export default function TimelineView() {
           {!loading && (
             <div className="page-sub">
               <span className="mono num">
-                {String(sorted.length).padStart(2, '0')} {sorted.length === 1 ? 'event' : 'events'}
+                {String(events.length).padStart(2, '0')}
+                {hasMore ? '+' : ''}{' '}
+                {events.length === 1 ? 'event' : 'events'}
               </span>
               {isFiltered ? <span> · filtered</span> : null}
             </div>
@@ -188,18 +245,25 @@ export default function TimelineView() {
             {isFiltered ? 'no events match — clear filters?' : 'nothing here yet — capture a moment'}
           </div>
         ) : (
-          groups.map((g) => (
-            <div key={g.year}>
-              <div className="year-marker">
-                <span className="year">
-                  <strong>{g.year}</strong>
-                </span>
+          <>
+            {groups.map((g) => (
+              <div key={g.year}>
+                <div className="year-marker">
+                  <span className="year">
+                    <strong>{g.year}</strong>
+                  </span>
+                </div>
+                {g.items.map((ev) => (
+                  <EventCard key={ev._id} event={ev} />
+                ))}
               </div>
-              {g.items.map((ev) => (
-                <EventCard key={ev._id} event={ev} />
-              ))}
-            </div>
-          ))
+            ))}
+            <div ref={sentinelRef} className="timeline-sentinel" aria-hidden="true" />
+            {loadingMore && <div className="empty">loading more…</div>}
+            {!hasMore && events.length > 0 && (
+              <div className="timeline-end">end of timeline</div>
+            )}
+          </>
         )}
       </div>
 

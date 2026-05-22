@@ -60,20 +60,72 @@ async def _serialize(doc: dict) -> dict:
     return doc
 
 
+_MAX_PAGE_SIZE = 200
+
+
 @router.get("")
 async def list_events(
     event_type: Optional[str] = None,
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
+    limit: Optional[int] = None,
+    before_date: Optional[str] = None,
+    before_id: Optional[str] = None,
 ):
-    query = {}
+    """List events.
+
+    Default (no `limit`) — returns every event ascending by date, matching
+    the original contract used by the backup script and the Day One importer.
+
+    With `limit` — returns at most `limit` events descending by date (newest
+    first), suitable for infinite-scroll on the timeline. `before_date` +
+    `before_id` form a cursor: pass the date/_id of the oldest event you've
+    already loaded to fetch the next page. `_id` is the tiebreaker for
+    events that share a second.
+    """
+    query: dict = {}
     if event_type:
         query["event_type"] = event_type
     if tag:
         query["tags"] = tag
     if person_id:
         query["people"] = {"$in": person_id}
-    cursor = events_collection.find(query).sort("date", 1)
+
+    if limit is None:
+        cursor = events_collection.find(query).sort("date", 1)
+        return [await _serialize(doc) async for doc in cursor]
+
+    capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
+
+    if before_date:
+        try:
+            cursor_dt = datetime.fromisoformat(before_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid before_date")
+        if before_id:
+            try:
+                cursor_oid = ObjectId(before_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid before_id")
+            query = {
+                "$and": [
+                    query,
+                    {
+                        "$or": [
+                            {"date": {"$lt": cursor_dt}},
+                            {"date": cursor_dt, "_id": {"$lt": cursor_oid}},
+                        ]
+                    },
+                ]
+            }
+        else:
+            query = {"$and": [query, {"date": {"$lt": cursor_dt}}]}
+
+    cursor = (
+        events_collection.find(query)
+        .sort([("date", -1), ("_id", -1)])
+        .limit(capped_limit)
+    )
     return [await _serialize(doc) async for doc in cursor]
 
 

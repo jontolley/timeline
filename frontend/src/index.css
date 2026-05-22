@@ -619,6 +619,18 @@ a.card { text-decoration: none; }
   font-size: 13px;
 }
 
+.timeline-sentinel { height: 1px; }
+
+.timeline-end {
+  padding: 40px 0 80px;
+  color: var(--ink-mute);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* =====================================================================
    Landing page
    ===================================================================== */
