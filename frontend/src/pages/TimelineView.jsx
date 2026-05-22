@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listEvents } from '../api/events'
-import { extractExif } from '../api/uploads'
+import { describePhoto, extractExif } from '../api/uploads'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
-import { setPendingPhoto } from '../lib/photoHandoff'
+import { setPendingCaption, setPendingPhoto } from '../lib/photoHandoff'
 import { usePeopleStore } from '../store'
 import { yearOf } from '../utils/date'
 
@@ -27,13 +27,24 @@ function PhotoIcon() {
   )
 }
 
+function SparkleIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 1 L9.2 6 L14 7.2 L9.2 8.4 L8 13.4 L6.8 8.4 L2 7.2 L6.8 6 Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+      <path d="M13 11 L13.6 12.8 L15.4 13.4 L13.6 14 L13 15.8 L12.4 14 L10.6 13.4 L12.4 12.8 Z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export default function TimelineView() {
   const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [filters, setFilters] = useState({ event_type: '', person_ids: [] })
   const [loading, setLoading] = useState(true)
   const [photoBusy, setPhotoBusy] = useState(false)
+  const [aiPhotoBusy, setAiPhotoBusy] = useState(false)
   const photoInputRef = useRef(null)
+  const aiPhotoInputRef = useRef(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   useEffect(() => {
@@ -64,6 +75,25 @@ export default function TimelineView() {
       window.alert(err.message || 'Could not read photo')
     } finally {
       setPhotoBusy(false)
+    }
+  }
+
+  const handleAiPhotoPicked = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setAiPhotoBusy(true)
+    try {
+      // Kick the AI call off first so it runs in parallel with the EXIF call.
+      const captionPromise = describePhoto(file).catch((err) => ({ error: err.message }))
+      const exif = await extractExif(file)
+      setPendingPhoto(file)
+      setPendingCaption(captionPromise)
+      navigate('/events/new', { state: { prefill: { ...exif, aiCaption: true } } })
+    } catch (err) {
+      window.alert(err.message || 'Could not read photo')
+    } finally {
+      setAiPhotoBusy(false)
     }
   }
 
@@ -108,6 +138,15 @@ export default function TimelineView() {
           <button
             type="button"
             className="btn"
+            onClick={() => aiPhotoInputRef.current?.click()}
+            disabled={aiPhotoBusy}
+          >
+            <SparkleIcon />
+            {aiPhotoBusy ? 'Reading…' : 'Photo with AI captions'}
+          </button>
+          <button
+            type="button"
+            className="btn"
             onClick={() => photoInputRef.current?.click()}
             disabled={photoBusy}
           >
@@ -128,6 +167,13 @@ export default function TimelineView() {
             accept="image/*"
             hidden
             onChange={handlePhotoPicked}
+          />
+          <input
+            ref={aiPhotoInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handleAiPhotoPicked}
           />
         </div>
       </div>

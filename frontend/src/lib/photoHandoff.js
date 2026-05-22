@@ -1,16 +1,27 @@
-// One-shot handoff for the "Event from photo" flow.
-// File objects don't round-trip cleanly through history.state, so the
-// TimelineView stashes the picked File here and the EventForm consumes it
-// on mount. Cleared after consume so a refresh doesn't re-attach it.
+// One-shot handoff for the "Event from photo" / "Photo with AI captions" flows.
+// File objects (and in-flight AI promises) don't round-trip cleanly through
+// history.state, so TimelineView stashes them here and EventForm consumes
+// them on mount. Cleared after consume so a refresh doesn't re-attach.
 
-let pending = null
+let pendingFile = null
+let pendingCaption = null
 
 export function setPendingPhoto(file) {
-  pending = file
+  pendingFile = file
 }
 
 export function consumePendingPhoto() {
-  const f = pending
-  pending = null
+  const f = pendingFile
+  pendingFile = null
   return f
+}
+
+export function setPendingCaption(promise) {
+  pendingCaption = promise
+}
+
+export function consumePendingCaption() {
+  const p = pendingCaption
+  pendingCaption = null
+  return p
 }

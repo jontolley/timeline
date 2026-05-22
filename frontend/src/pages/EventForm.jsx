@@ -5,7 +5,7 @@ import { uploadPhoto } from '../api/uploads'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
-import { consumePendingPhoto } from '../lib/photoHandoff'
+import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
 
@@ -56,6 +56,11 @@ export default function EventForm() {
     if (prefill.has_exif) return 'Pre-filled from photo. Edit anything you like.'
     return "Couldn't read metadata from this photo — please fill manually."
   })
+  const [captionPromise] = useState(() => (id ? null : consumePendingCaption()))
+  const [captionStatus, setCaptionStatus] = useState(() => (captionPromise ? 'pending' : 'idle'))
+  // Lets us decide whether to auto-fill: only do so if the user hasn't typed.
+  const titleTouchedRef = useRef(false)
+  const descriptionTouchedRef = useRef(false)
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
@@ -116,6 +121,35 @@ export default function EventForm() {
   }, [id])
 
   const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
+
+  const setTitle = (e) => {
+    titleTouchedRef.current = true
+    setForm((f) => ({ ...f, title: e.target.value }))
+  }
+  const setDescription = (e) => {
+    descriptionTouchedRef.current = true
+    setForm((f) => ({ ...f, description: e.target.value }))
+  }
+
+  useEffect(() => {
+    if (!captionPromise) return
+    let cancelled = false
+    captionPromise.then((result) => {
+      if (cancelled) return
+      if (!result || result.error) {
+        setCaptionStatus('error')
+        return
+      }
+      setForm((f) => ({
+        ...f,
+        title: titleTouchedRef.current || f.title ? f.title : result.title || '',
+        description:
+          descriptionTouchedRef.current || f.description ? f.description : result.description || '',
+      }))
+      setCaptionStatus('done')
+    })
+    return () => { cancelled = true }
+  }, [captionPromise])
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -179,14 +213,19 @@ export default function EventForm() {
         <div className="field">
           <label className="field-label" htmlFor="ef-title">
             Title<span className="field-required">*</span>
+            {captionStatus === 'pending' && (
+              <span className="field-hint-inline"> · AI is captioning…</span>
+            )}
           </label>
-          <input
-            id="ef-title"
-            className="input"
-            required
-            value={form.title}
-            onChange={set('title')}
-          />
+          <div className={captionStatus === 'pending' ? 'skeleton-wrap' : ''}>
+            <input
+              id="ef-title"
+              className="input"
+              required
+              value={form.title}
+              onChange={setTitle}
+            />
+          </div>
         </div>
 
         <div className="field">
@@ -316,15 +355,25 @@ export default function EventForm() {
         </div>
 
         <div className="field">
-          <label className="field-label" htmlFor="ef-desc">Description</label>
-          <textarea
-            id="ef-desc"
-            className="textarea"
-            rows={3}
-            spellCheck="true"
-            value={form.description}
-            onChange={set('description')}
-          />
+          <label className="field-label" htmlFor="ef-desc">
+            Description
+            {captionStatus === 'pending' && (
+              <span className="field-hint-inline"> · AI is captioning…</span>
+            )}
+            {captionStatus === 'error' && (
+              <span className="field-hint-inline"> · auto-caption failed — please write one</span>
+            )}
+          </label>
+          <div className={captionStatus === 'pending' ? 'skeleton-wrap' : ''}>
+            <textarea
+              id="ef-desc"
+              className="textarea"
+              rows={3}
+              spellCheck="true"
+              value={form.description}
+              onChange={setDescription}
+            />
+          </div>
         </div>
 
         <div className="field">

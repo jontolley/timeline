@@ -54,6 +54,14 @@ export async function extractExif(file) {
   return res.json()
 }
 
+export async function describePhoto(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await http('/api/uploads/describe-photo', { method: 'POST', body: fd })
+  if (!res.ok) throw new Error('Could not generate caption')
+  return res.json()
+}
+
 async function presignUpload(contentType) {
   const res = await http('/api/uploads/presign', {
     method: 'POST',

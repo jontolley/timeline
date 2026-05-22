@@ -1199,6 +1199,41 @@ a.card { text-decoration: none; }
   padding: 10px 14px;
 }
 
+.field-hint-inline {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  font-weight: 400;
+  text-transform: none;
+  margin-left: 8px;
+}
+
+.skeleton-wrap {
+  position: relative;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.skeleton-wrap::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--surface) 60%, transparent) 0%,
+    color-mix(in oklab, var(--line) 40%, transparent) 50%,
+    color-mix(in oklab, var(--surface) 60%, transparent) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: inherit;
+}
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .form-actions {
   display: flex;
   gap: 12px;
