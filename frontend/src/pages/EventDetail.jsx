@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
-import { getEvent, deleteEvent, attachPhoto, removePhoto } from '../api/events'
-import { uploadPhoto } from '../api/uploads'
+import { getEvent, deleteEvent, attachMedia, removeMedia } from '../api/events'
+import { uploadMedia } from '../api/uploads'
 import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { usePeopleStore } from '../store'
@@ -59,12 +59,12 @@ export default function EventDetail() {
     navigate('/')
   }
 
-  const handlePhotosSelected = async (files) => {
+  const handleMediaSelected = async (files) => {
     if (!files?.length) return
     for (const file of files) {
       try {
-        const meta = await uploadPhoto(file)
-        const updated = await attachPhoto(id, meta)
+        const meta = await uploadMedia(file)
+        const updated = await attachMedia(id, meta)
         setEvent(updated)
       } catch (err) {
         window.alert(`Failed to upload ${file.name}: ${err.message}`)
@@ -72,13 +72,13 @@ export default function EventDetail() {
     }
   }
 
-  const handlePhotoDelete = async (key) => {
-    if (!window.confirm('Remove this photo?')) return
+  const handleMediaDelete = async (key) => {
+    if (!window.confirm('Remove this item?')) return
     try {
-      const updated = await removePhoto(id, key)
+      const updated = await removeMedia(id, key)
       setEvent(updated)
     } catch (err) {
-      window.alert(`Failed to remove photo: ${err.message}`)
+      window.alert(`Failed to remove: ${err.message}`)
     }
   }
 
@@ -154,16 +154,16 @@ export default function EventDetail() {
         </div>
       )}
 
-      <PhotoSection
-        photos={event.photos || []}
-        onSelect={handlePhotosSelected}
-        onDelete={handlePhotoDelete}
+      <MediaSection
+        media={event.media || event.photos || []}
+        onSelect={handleMediaSelected}
+        onDelete={handleMediaDelete}
         onOpen={setLightboxIndex}
       />
 
-      {lightboxIndex !== null && event.photos?.[lightboxIndex] && (
+      {lightboxIndex !== null && (
         <Lightbox
-          photos={event.photos}
+          items={(event.media || event.photos || []).filter((m) => (m.kind || 'photo') !== 'audio')}
           index={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onChange={setLightboxIndex}
@@ -179,9 +179,23 @@ export default function EventDetail() {
   )
 }
 
-function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
+// Include both MIME types AND extensions — some browsers (Safari especially)
+// match only on extension for files like .m4a that report as audio/x-m4a.
+const MEDIA_ACCEPT = [
+  'image/jpeg', 'image/png', 'image/webp',
+  'video/mp4', 'video/quicktime',
+  'audio/mpeg', 'audio/mp4',
+  '.jpg', '.jpeg', '.png', '.webp',
+  '.mp4', '.mov',
+  '.mp3', '.m4a',
+].join(',')
+
+function MediaSection({ media, onSelect, onDelete, onOpen }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
+
+  const visual = media.filter((m) => (m.kind || 'photo') !== 'audio')
+  const audio = media.filter((m) => m.kind === 'audio')
 
   const handleChange = async (e) => {
     const files = Array.from(e.target.files || [])
@@ -199,7 +213,7 @@ function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
     <div>
       <div className="photo-toolbar">
         <span className="label">
-          Photos{photos.length > 0 ? ` · ${photos.length}` : ''}
+          Media{media.length > 0 ? ` · ${media.length}` : ''}
         </span>
         <button
           type="button"
@@ -207,51 +221,83 @@ function PhotoSection({ photos, onSelect, onDelete, onOpen }) {
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
         >
-          {uploading ? 'Uploading…' : '+ Add photos'}
+          {uploading ? 'Uploading…' : '+ Add media'}
         </button>
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/jpeg,image/png,image/webp"
+          accept={MEDIA_ACCEPT}
           multiple
           style={{ display: 'none' }}
           onChange={handleChange}
         />
       </div>
-      {photos.length === 0 ? (
-        <p className="detail-photos-empty">No photos yet.</p>
+      {media.length === 0 ? (
+        <p className="detail-photos-empty">No media yet.</p>
       ) : (
-        <div className="detail-photos">
-          {photos.map((p, i) => (
-            <div key={p.key} className="detail-photo">
-              {p.url ? (
-                <button type="button" className="tile" onClick={() => onOpen(i)}>
-                  <img src={p.url} alt="" loading="lazy" />
-                </button>
-              ) : (
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', fontSize: 12, color: 'var(--ink-mute)' }}>
-                  Unavailable
-                </div>
-              )}
-              <button
-                type="button"
-                className="delete"
-                onClick={() => onDelete(p.key)}
-                aria-label="Remove photo"
-              >
-                ✕
-              </button>
+        <>
+          {visual.length > 0 && (
+            <div className="detail-photos">
+              {visual.map((m, i) => {
+                const kind = m.kind || 'photo'
+                const poster = m.thumb_url || (kind === 'photo' ? m.url : null)
+                return (
+                  <div key={m.key} className={`detail-photo media-${kind}`}>
+                    {poster || kind === 'photo' ? (
+                      <button type="button" className="tile" onClick={() => onOpen(i)}>
+                        {poster ? <img src={poster} alt="" loading="lazy" /> : null}
+                        {kind === 'video' && (
+                          <span className="media-play" aria-hidden="true">▶</span>
+                        )}
+                      </button>
+                    ) : (
+                      <div className="media-fallback">Unavailable</div>
+                    )}
+                    <button
+                      type="button"
+                      className="delete"
+                      onClick={() => onDelete(m.key)}
+                      aria-label="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                )
+              })}
             </div>
-          ))}
-        </div>
+          )}
+          {audio.length > 0 && (
+            <div className="detail-audio-list">
+              {audio.map((m) => (
+                <div key={m.key} className="detail-audio-row">
+                  <span className="media-badge audio" aria-hidden="true">♪</span>
+                  {m.url ? (
+                    <audio controls src={m.url} preload="metadata" />
+                  ) : (
+                    <span className="media-fallback">Unavailable</span>
+                  )}
+                  <button
+                    type="button"
+                    className="audio-remove"
+                    onClick={() => onDelete(m.key)}
+                    aria-label="Remove audio"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   )
 }
 
-function Lightbox({ photos, index, onClose, onChange }) {
-  const count = photos.length
-  const photo = photos[index]
+function Lightbox({ items, index, onClose, onChange }) {
+  const count = items.length
+  const item = items[index]
+  const kind = item?.kind || 'photo'
   const goPrev = () => onChange((index - 1 + count) % count)
   const goNext = () => onChange((index + 1) % count)
 
@@ -270,9 +316,23 @@ function Lightbox({ photos, index, onClose, onChange }) {
     }
   }, [index, count]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (!item) return null
+
   return (
     <div className="lightbox" role="dialog" aria-modal="true" onClick={onClose}>
-      <img src={photo.url} alt="" onClick={(e) => e.stopPropagation()} />
+      {kind === 'video' ? (
+        <video
+          key={item.key}
+          src={item.url}
+          poster={item.thumb_url || undefined}
+          controls
+          autoPlay
+          playsInline
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <img src={item.url} alt="" onClick={(e) => e.stopPropagation()} />
+      )}
       <button
         type="button"
         className="lightbox-close"
@@ -287,7 +347,7 @@ function Lightbox({ photos, index, onClose, onChange }) {
             type="button"
             className="lightbox-prev"
             onClick={(e) => { e.stopPropagation(); goPrev() }}
-            aria-label="Previous photo"
+            aria-label="Previous"
           >
             ‹
           </button>
@@ -295,7 +355,7 @@ function Lightbox({ photos, index, onClose, onChange }) {
             type="button"
             className="lightbox-next"
             onClick={(e) => { e.stopPropagation(); goNext() }}
-            aria-label="Next photo"
+            aria-label="Next"
           >
             ›
           </button>

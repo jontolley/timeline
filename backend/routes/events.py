@@ -15,7 +15,8 @@ embedding_service = EmbeddingService()
 
 async def _serialize(doc: dict) -> dict:
     """Serialize an event doc for the API. Generates fresh presigned GET URLs
-    for any attached photos on every read (signing is local and cheap)."""
+    for any attached media on every read (signing is local and cheap).
+    Tolerates legacy docs that still have `photos` instead of `media`."""
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
     for field in ("date", "end_date", "created_at", "updated_at"):
@@ -30,29 +31,32 @@ async def _serialize(doc: dict) -> dict:
     if doc.get("people") is None:
         doc["people"] = []
 
-    photos = doc.get("photos") or []
+    raw_media = doc.get("media")
+    if raw_media is None:
+        # Fall back to legacy field for any doc the migration hasn't touched yet.
+        raw_media = doc.get("photos") or []
     enriched = []
-    for p in photos:
-        p = dict(p)
-        uploaded = p.get("uploaded_at")
+    for m in raw_media:
+        m = dict(m)
+        m.setdefault("kind", "photo")  # legacy items had no kind
+        uploaded = m.get("uploaded_at")
         if isinstance(uploaded, datetime):
             if uploaded.tzinfo is None:
                 uploaded = uploaded.replace(tzinfo=timezone.utc)
-            p["uploaded_at"] = uploaded.isoformat()
-        if storage.is_configured() and p.get("key"):
+            m["uploaded_at"] = uploaded.isoformat()
+        if storage.is_configured() and m.get("key"):
             try:
-                p["url"] = await storage.presign_get(p["key"])
+                m["url"] = await storage.presign_get(m["key"])
             except Exception:
-                p["url"] = None
-            # Sign the thumbnail too if one exists. Older photos won't have
-            # a thumb_key — frontend falls back to `url` in that case.
-            if p.get("thumb_key"):
+                m["url"] = None
+            if m.get("thumb_key"):
                 try:
-                    p["thumb_url"] = await storage.presign_get(p["thumb_key"])
+                    m["thumb_url"] = await storage.presign_get(m["thumb_key"])
                 except Exception:
-                    p["thumb_url"] = None
-        enriched.append(p)
-    doc["photos"] = enriched
+                    m["thumb_url"] = None
+        enriched.append(m)
+    doc["media"] = enriched
+    doc.pop("photos", None)
     return doc
 
 
@@ -117,8 +121,9 @@ async def delete_event(event_id: str):
 
     # Best-effort: clean up any R2 objects attached to this event
     if storage.is_configured():
-        for p in (doc.get("photos") or []):
-            for k in (p.get("key"), p.get("thumb_key")):
+        attached = doc.get("media") or doc.get("photos") or []
+        for m in attached:
+            for k in (m.get("key"), m.get("thumb_key")):
                 if not k:
                     continue
                 try:
@@ -131,44 +136,53 @@ async def delete_event(event_id: str):
     return {"deleted": True}
 
 
-class PhotoAttachRequest(BaseModel):
+class MediaAttachRequest(BaseModel):
+    kind: str = "photo"  # photo | video | audio
     key: str
     thumb_key: Optional[str] = None
     content_type: str
     width: Optional[int] = None
     height: Optional[int] = None
+    duration_seconds: Optional[float] = None
 
 
-@router.post("/{event_id}/photos")
-async def attach_photo(event_id: str, photo: PhotoAttachRequest):
+@router.post("/{event_id}/media")
+async def attach_media(event_id: str, media: MediaAttachRequest):
     if not storage.is_configured():
         raise HTTPException(status_code=503, detail="Storage backend not configured")
 
+    if media.kind not in {"photo", "video", "audio"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported media kind: {media.kind}")
+
     # The key was just presigned + PUT by the client — confirm the object
     # actually exists before recording it on the event.
-    if not await storage.object_exists(photo.key):
+    if not await storage.object_exists(media.key):
         raise HTTPException(
             status_code=400,
             detail="Uploaded object not found in storage",
         )
 
     now = datetime.now(timezone.utc)
-    photo_doc = {
-        "key": photo.key,
-        "thumb_key": photo.thumb_key,
-        "content_type": photo.content_type,
-        "width": photo.width,
-        "height": photo.height,
+    media_doc = {
+        "kind": media.kind,
+        "key": media.key,
+        "thumb_key": media.thumb_key,
+        "content_type": media.content_type,
+        "width": media.width,
+        "height": media.height,
+        "duration_seconds": media.duration_seconds,
         "uploaded_at": now,
     }
     result = await events_collection.update_one(
         {"_id": ObjectId(event_id)},
-        {"$push": {"photos": photo_doc}, "$set": {"updated_at": now}},
+        {"$push": {"media": media_doc}, "$set": {"updated_at": now}},
     )
     if result.matched_count == 0:
         # Object is now orphaned in R2 — delete it so the bucket stays clean.
         try:
-            await storage.delete_object(photo.key)
+            await storage.delete_object(media.key)
+            if media.thumb_key:
+                await storage.delete_object(media.thumb_key)
         except Exception:
             pass
         raise HTTPException(status_code=404, detail="Event not found")
@@ -177,21 +191,20 @@ async def attach_photo(event_id: str, photo: PhotoAttachRequest):
     return await _serialize(updated)
 
 
-@router.delete("/{event_id}/photos/{key:path}")
-async def remove_photo(event_id: str, key: str):
-    # Look up the photo first so we know its thumb_key (if any) before $pull.
+@router.delete("/{event_id}/media/{key:path}")
+async def remove_media(event_id: str, key: str):
+    # Look up the item first so we know its thumb_key (if any) before $pull.
     doc = await events_collection.find_one({"_id": ObjectId(event_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Event not found")
-    target = next(
-        (p for p in (doc.get("photos") or []) if p.get("key") == key),
-        None,
-    )
+    attached = doc.get("media") or doc.get("photos") or []
+    target = next((m for m in attached if m.get("key") == key), None)
 
     await events_collection.update_one(
         {"_id": ObjectId(event_id)},
         {
-            "$pull": {"photos": {"key": key}},
+            # Pull from whichever field is present.
+            "$pull": {"media": {"key": key}, "photos": {"key": key}},
             "$set": {"updated_at": datetime.now(timezone.utc)},
         },
     )

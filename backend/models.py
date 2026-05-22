@@ -18,12 +18,20 @@ class LocationDetail(BaseModel):
     lng: Optional[float] = None
 
 
-class PhotoRef(BaseModel):
+class MediaKind(str, Enum):
+    photo = "photo"
+    video = "video"
+    audio = "audio"
+
+
+class MediaRef(BaseModel):
+    kind: MediaKind = MediaKind.photo
     key: str
-    thumb_key: Optional[str] = None
+    thumb_key: Optional[str] = None  # photo thumbnail or video poster frame; absent for audio
     content_type: str
     width: Optional[int] = None
     height: Optional[int] = None
+    duration_seconds: Optional[float] = None  # set for video/audio
     uploaded_at: Optional[datetime] = None
 
 
@@ -36,7 +44,7 @@ class EventBase(BaseModel):
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = []
     people: Optional[list[str]] = []
-    photos: Optional[list[PhotoRef]] = []
+    media: Optional[list[MediaRef]] = []
 
 
 class EventCreate(EventBase):

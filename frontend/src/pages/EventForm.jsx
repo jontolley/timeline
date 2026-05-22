@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
-import { attachPhoto, createEvent, getEvent, updateEvent } from '../api/events'
-import { uploadPhoto } from '../api/uploads'
+import { attachMedia, createEvent, getEvent, updateEvent } from '../api/events'
+import { uploadMedia } from '../api/uploads'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
@@ -45,12 +45,12 @@ export default function EventForm() {
   const location = useLocation()
   const prefill = !id ? location.state?.prefill : null
   const [form, setForm] = useState(() => buildInitialForm(prefill))
-  const [pendingPhotos, setPendingPhotos] = useState(() => {
+  const [pendingMedia, setPendingMedia] = useState(() => {
     if (id) return []
     const initial = consumePendingPhoto()
     return initial ? [initial] : []
   })
-  const photoInputRef = useRef(null)
+  const mediaInputRef = useRef(null)
   const [photoNotice] = useState(() => {
     if (id || !prefill) return null
     if (prefill.has_exif) return 'Pre-filled from photo. Edit anything you like.'
@@ -66,19 +66,19 @@ export default function EventForm() {
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
-  const pendingPhotoUrls = useMemo(
-    () => pendingPhotos.map((f) => URL.createObjectURL(f)),
-    [pendingPhotos],
+  const pendingMediaUrls = useMemo(
+    () => pendingMedia.map((f) => URL.createObjectURL(f)),
+    [pendingMedia],
   )
-  useEffect(() => () => pendingPhotoUrls.forEach(URL.revokeObjectURL), [pendingPhotoUrls])
+  useEffect(() => () => pendingMediaUrls.forEach(URL.revokeObjectURL), [pendingMediaUrls])
 
-  const handleAddPhotos = (e) => {
+  const handleAddMedia = (e) => {
     const files = Array.from(e.target.files || [])
     e.target.value = ''
-    if (files.length) setPendingPhotos((arr) => [...arr, ...files])
+    if (files.length) setPendingMedia((arr) => [...arr, ...files])
   }
-  const handleRemovePendingPhoto = (idx) => {
-    setPendingPhotos((arr) => arr.filter((_, i) => i !== idx))
+  const handleRemovePendingMedia = (idx) => {
+    setPendingMedia((arr) => arr.filter((_, i) => i !== idx))
   }
 
   useEffect(() => {
@@ -172,16 +172,16 @@ export default function EventForm() {
       } else {
         const created = await createEvent(payload)
         const failed = []
-        for (const file of pendingPhotos) {
+        for (const file of pendingMedia) {
           try {
-            const meta = await uploadPhoto(file)
-            await attachPhoto(created._id, meta)
-          } catch (photoErr) {
-            failed.push(`${file.name}: ${photoErr.message}`)
+            const meta = await uploadMedia(file)
+            await attachMedia(created._id, meta)
+          } catch (mediaErr) {
+            failed.push(`${file.name}: ${mediaErr.message}`)
           }
         }
         if (failed.length) {
-          window.alert(`Event saved, but some photos failed:\n${failed.join('\n')}`)
+          window.alert(`Event saved, but some media failed:\n${failed.join('\n')}`)
         }
         navigate(`/events/${created._id}`)
       }
@@ -400,45 +400,55 @@ export default function EventForm() {
           <div className="field">
             <div className="photo-toolbar">
               <label className="field-label" style={{ margin: 0 }}>
-                Photos{pendingPhotos.length > 0 ? ` · ${pendingPhotos.length}` : ''}
+                Media{pendingMedia.length > 0 ? ` · ${pendingMedia.length}` : ''}
               </label>
               <button
                 type="button"
                 className="btn"
-                onClick={() => photoInputRef.current?.click()}
+                onClick={() => mediaInputRef.current?.click()}
               >
-                + Add photos
+                + Add media
               </button>
               <input
-                ref={photoInputRef}
+                ref={mediaInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp"
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/mp4,.jpg,.jpeg,.png,.webp,.mp4,.mov,.mp3,.m4a"
                 multiple
                 style={{ display: 'none' }}
-                onChange={handleAddPhotos}
+                onChange={handleAddMedia}
               />
             </div>
-            {pendingPhotos.length === 0 ? (
+            {pendingMedia.length === 0 ? (
               <p className="field-hint" style={{ marginTop: 10 }}>
-                Photos you add here will attach when you save.
+                Photos, videos, or audio you add here will attach when you save.
               </p>
             ) : (
               <div className="detail-photos" style={{ marginTop: 10 }}>
-                {pendingPhotos.map((file, i) => (
-                  <div key={`${file.name}-${i}`} className="detail-photo">
-                    <div className="tile">
-                      <img src={pendingPhotoUrls[i]} alt="" loading="lazy" />
+                {pendingMedia.map((file, i) => {
+                  const t = file.type || ''
+                  const kind = t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : 'photo'
+                  return (
+                    <div key={`${file.name}-${i}`} className={`detail-photo media-${kind}`}>
+                      {kind === 'photo' ? (
+                        <div className="tile">
+                          <img src={pendingMediaUrls[i]} alt="" loading="lazy" />
+                        </div>
+                      ) : (
+                        <div className="media-fallback">
+                          {kind === 'video' ? '▶ Video' : '♪ Audio'}
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        className="delete"
+                        onClick={() => handleRemovePendingMedia(i)}
+                        aria-label="Remove"
+                      >
+                        ✕
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="delete"
-                      onClick={() => handleRemovePendingPhoto(i)}
-                      aria-label="Remove photo"
-                    >
-                      ✕
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </div>

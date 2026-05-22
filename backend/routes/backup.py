@@ -28,7 +28,7 @@ def _iso(val):
 
 def _json_default(o):
     """Fallback encoder for json.dumps so any datetime / ObjectId we forgot to
-    convert at the document level (e.g. nested inside photos) still serializes
+    convert at the document level (e.g. nested inside media) still serializes
     cleanly instead of 500ing the whole backup."""
     if isinstance(o, datetime):
         return _iso(o)
@@ -134,22 +134,31 @@ def _normalize_person(p: dict) -> dict | None:
     return out
 
 
-def _normalize_photo(p: dict) -> dict | None:
-    key = (p.get("key") or "").strip()
-    content_type = (p.get("content_type") or "").strip()
+_VALID_KINDS = {"photo", "video", "audio"}
+
+
+def _normalize_media(m: dict) -> dict | None:
+    key = (m.get("key") or "").strip()
+    content_type = (m.get("content_type") or "").strip()
     if not key or not content_type:
         return None
-    out: dict = {"key": key, "content_type": content_type}
-    thumb_key = (p.get("thumb_key") or "").strip()
+    kind = (m.get("kind") or "photo").strip()
+    if kind not in _VALID_KINDS:
+        kind = "photo"
+    out: dict = {"kind": kind, "key": key, "content_type": content_type}
+    thumb_key = (m.get("thumb_key") or "").strip()
     if thumb_key:
         out["thumb_key"] = thumb_key
     for dim in ("width", "height"):
-        val = p.get(dim)
+        val = m.get(dim)
         if isinstance(val, int):
             out[dim] = val
         elif isinstance(val, str) and val.isdigit():
             out[dim] = int(val)
-    uploaded = _parse_iso(p.get("uploaded_at"))
+    duration = m.get("duration_seconds")
+    if isinstance(duration, (int, float)):
+        out["duration_seconds"] = float(duration)
+    uploaded = _parse_iso(m.get("uploaded_at"))
     if uploaded is not None:
         out["uploaded_at"] = uploaded
     return out
@@ -171,10 +180,13 @@ def _normalize_event(e: dict) -> dict | None:
     people = e.get("people") or []
     if not isinstance(people, list):
         people = []
-    raw_photos = e.get("photos") or []
-    if not isinstance(raw_photos, list):
-        raw_photos = []
-    photos = [p for p in (_normalize_photo(p) for p in raw_photos if isinstance(p, dict)) if p]
+    # Prefer the new `media` field; fall back to legacy `photos` from older backups.
+    raw_media = e.get("media")
+    if not isinstance(raw_media, list):
+        raw_media = e.get("photos") or []
+    if not isinstance(raw_media, list):
+        raw_media = []
+    media = [m for m in (_normalize_media(m) for m in raw_media if isinstance(m, dict)) if m]
     out = {
         "title": title,
         "description": e.get("description"),
@@ -184,7 +196,7 @@ def _normalize_event(e: dict) -> dict | None:
         "location": location,
         "tags": [str(t) for t in tags if t],
         "people": [str(p) for p in people if p],
-        "photos": photos,
+        "media": media,
         "created_at": _parse_iso(e.get("created_at")) or now,
         "updated_at": _parse_iso(e.get("updated_at")) or now,
     }

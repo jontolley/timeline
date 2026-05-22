@@ -14,7 +14,7 @@ from pydantic import BaseModel
 
 from auth import require_auth
 from storage import (
-    ALLOWED_IMAGE_TYPES,
+    ALLOWED_MEDIA_TYPES,
     EXT_FOR_TYPE,
     is_configured,
     presign_put,
@@ -51,7 +51,7 @@ class PresignRequest(BaseModel):
 async def presign(req: PresignRequest):
     if not is_configured():
         raise HTTPException(status_code=503, detail="Storage backend not configured")
-    if req.content_type not in ALLOWED_IMAGE_TYPES:
+    if req.content_type not in ALLOWED_MEDIA_TYPES:
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported content type: {req.content_type}",

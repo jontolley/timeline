@@ -50,20 +50,20 @@ export async function deleteEvent(id) {
   return res.json()
 }
 
-export async function attachPhoto(eventId, photo) {
-  const res = await http(`${BASE}/${eventId}/photos`, {
+export async function attachMedia(eventId, media) {
+  const res = await http(`${BASE}/${eventId}/media`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(photo),
+    body: JSON.stringify(media),
   })
-  if (!res.ok) throw new Error('Failed to attach photo')
+  if (!res.ok) throw new Error('Failed to attach media')
   return res.json()
 }
 
-export async function removePhoto(eventId, key) {
-  const res = await http(`${BASE}/${eventId}/photos/${encodeURIComponent(key)}`, {
+export async function removeMedia(eventId, key) {
+  const res = await http(`${BASE}/${eventId}/media/${encodeURIComponent(key)}`, {
     method: 'DELETE',
   })
-  if (!res.ok) throw new Error('Failed to remove photo')
+  if (!res.ok) throw new Error('Failed to remove media')
   return res.json()
 }

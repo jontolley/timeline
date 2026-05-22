@@ -75,6 +75,32 @@ def _serialize_doc(doc: dict) -> dict:
     return doc
 
 
+async def _migrate_photos_to_media():
+    """One-shot rename of `photos[]` → `media[]` with each entry tagged
+    kind:"photo". Idempotent: only acts on docs that have `photos` and no
+    `media`. Safe to run on startup of every process."""
+    cursor = events_collection.find(
+        {"photos": {"$exists": True}, "media": {"$exists": False}},
+        projection={"_id": 1, "photos": 1},
+    )
+    migrated = 0
+    async for doc in cursor:
+        photos = doc.get("photos") or []
+        media = []
+        for p in photos:
+            if isinstance(p, dict):
+                item = dict(p)
+                item.setdefault("kind", "photo")
+                media.append(item)
+        await events_collection.update_one(
+            {"_id": doc["_id"]},
+            {"$set": {"media": media}, "$unset": {"photos": ""}},
+        )
+        migrated += 1
+    if migrated:
+        print(f"[startup] Migrated {migrated} event(s) photos→media")
+
+
 async def _ensure_auth_indexes():
     """TTL index so expired login codes self-delete; unique index on email so concurrent request-code calls can't create duplicates."""
     existing = await auth_codes_collection.index_information()
@@ -123,6 +149,7 @@ async def lifespan(app: FastAPI):
         await embedding_service.ensure_collection()
         await _ensure_text_index()
         await _ensure_auth_indexes()
+        await _migrate_photos_to_media()
 
         count = await events_collection.count_documents({})
         if count == 0:

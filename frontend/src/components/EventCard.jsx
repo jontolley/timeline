@@ -5,13 +5,13 @@ import { categoryClass } from '../utils/eventTypes'
 import { usePeopleStore } from '../store'
 import PeopleChips from './PeopleChips'
 
-const MAX_PHOTOS = 4
+const MAX_MEDIA = 4
 
 export default function EventCard({ event }) {
   const peopleById = usePeopleStore((s) => s.peopleById)
-  const photos = event.photos ?? []
-  const shown = photos.slice(0, MAX_PHOTOS)
-  const extra = Math.max(0, photos.length - shown.length)
+  const media = event.media ?? event.photos ?? []
+  const shown = media.slice(0, MAX_MEDIA)
+  const extra = Math.max(0, media.length - shown.length)
   const cls = categoryClass(event.event_type)
   const location = locationDisplay(event.location)
 
@@ -41,12 +41,15 @@ export default function EventCard({ event }) {
 
         {shown.length > 0 && (
           <div className="event-photos">
-            {shown.map((p, i) => {
-              const src = p.thumb_url || p.url
+            {shown.map((m, i) => {
+              const kind = m.kind || 'photo'
+              const src = m.thumb_url || (kind === 'photo' ? m.url : null)
               const isLast = i === shown.length - 1
               return (
-                <div key={p.key ?? i} className="photo">
+                <div key={m.key ?? i} className={`photo media-tile media-${kind}`}>
                   {src ? <img src={src} alt="" loading="lazy" /> : null}
+                  {kind === 'video' && <span className="media-badge" aria-hidden="true">▶</span>}
+                  {kind === 'audio' && <span className="media-badge" aria-hidden="true">♪</span>}
                   {isLast && extra > 0 && (
                     <div className="photo-more">+{extra}</div>
                   )}

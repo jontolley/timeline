@@ -19,10 +19,33 @@ ALLOWED_IMAGE_TYPES = {
     "image/webp",
 }
 
+ALLOWED_VIDEO_TYPES = {
+    "video/mp4",
+    "video/quicktime",  # .mov
+}
+
+ALLOWED_AUDIO_TYPES = {
+    "audio/mpeg",  # .mp3
+    "audio/mp4",   # .m4a
+}
+
+ALLOWED_MEDIA_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES | ALLOWED_AUDIO_TYPES
+
 EXT_FOR_TYPE = {
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
+    "video/mp4": "mp4",
+    "video/quicktime": "mov",
+    "audio/mpeg": "mp3",
+    "audio/mp4": "m4a",
+}
+
+# Maps MIME type → MediaKind value (kept here so frontend/backend agree).
+KIND_FOR_TYPE = {
+    **{t: "photo" for t in ALLOWED_IMAGE_TYPES},
+    **{t: "video" for t in ALLOWED_VIDEO_TYPES},
+    **{t: "audio" for t in ALLOWED_AUDIO_TYPES},
 }
 
 _session = aioboto3.Session()
