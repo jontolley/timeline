@@ -46,6 +46,14 @@ function renderResized(img, maxDim, quality, filename) {
   })
 }
 
+export async function extractExif(file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await http('/api/uploads/extract-exif', { method: 'POST', body: fd })
+  if (!res.ok) throw new Error('Could not read photo metadata')
+  return res.json()
+}
+
 async function presignUpload(contentType) {
   const res = await http('/api/uploads/presign', {
     method: 'POST',

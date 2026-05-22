@@ -185,6 +185,12 @@ input, select, textarea {
   margin-bottom: 42px;
   gap: 24px;
 }
+.page-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
 .page-title {
   font-size: 64px;
   line-height: 0.95;
@@ -1180,6 +1186,15 @@ a.card { text-decoration: none; }
   font-size: 13px;
   background: color-mix(in oklab, var(--danger) 8%, var(--surface));
   border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--line));
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.form-notice {
+  color: var(--ink-soft);
+  font-size: 13px;
+  background: var(--surface);
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 10px 14px;
 }

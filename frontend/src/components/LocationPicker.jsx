@@ -21,21 +21,48 @@ function LocationPickerInner({ value, onChange }) {
 
   useEffect(() => {
     if (autoGeocodedRef.current) return
-    if (!value || value.lat != null || !(value.name || value.address)) return
+    if (!value) return
+    const hasCoords = value.lat != null && value.lng != null
+    const hasText = !!(value.name || value.address)
+    if (hasCoords && hasText) return
+    if (!hasCoords && !hasText) return
     autoGeocodedRef.current = true
-    const q = value.address || value.name
-    fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
-      { headers: { 'Accept-Language': 'en' } },
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (data[0]) {
-          onChange({ ...value, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) })
-          setShowMap(true)
-        }
-      })
-      .catch(() => {})
+
+    if (!hasCoords) {
+      // Text only → forward geocode to coords.
+      const q = value.address || value.name
+      fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}&limit=1`,
+        { headers: { 'Accept-Language': 'en' } },
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data[0]) {
+            onChange({ ...value, lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) })
+            setShowMap(true)
+          }
+        })
+        .catch(() => {})
+    } else {
+      // Coords only (e.g. from photo EXIF) → reverse geocode to fill name/address.
+      fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${value.lat}&lon=${value.lng}`,
+        { headers: { 'Accept-Language': 'en' } },
+      )
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.display_name) {
+            onChange({
+              ...value,
+              name: value.name || data.name || '',
+              address: data.display_name,
+            })
+            setQuery(data.display_name)
+            setShowMap(true)
+          }
+        })
+        .catch(() => {})
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const search = useCallback((q) => {

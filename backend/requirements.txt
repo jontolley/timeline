@@ -12,3 +12,5 @@ openai
 aioboto3
 itsdangerous
 email-validator
+Pillow
+pillow-heif

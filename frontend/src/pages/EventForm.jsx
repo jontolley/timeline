@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-import { getEvent, createEvent, updateEvent } from '../api/events'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
+import { attachPhoto, createEvent, getEvent, updateEvent } from '../api/events'
+import { uploadPhoto } from '../api/uploads'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
+import { consumePendingPhoto } from '../lib/photoHandoff'
 import { usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
 
@@ -23,14 +25,56 @@ const EMPTY_FORM = {
   people: [],
 }
 
+function buildInitialForm(prefill) {
+  if (!prefill) return EMPTY_FORM
+  const hasCoords = prefill.lat != null && prefill.lng != null
+  return {
+    ...EMPTY_FORM,
+    date: prefill.date || '',
+    includeTime: !!prefill.time,
+    time: prefill.time || '',
+    location: hasCoords
+      ? { name: '', address: '', lat: prefill.lat, lng: prefill.lng }
+      : null,
+  }
+}
+
 export default function EventForm() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const [form, setForm] = useState(EMPTY_FORM)
+  const location = useLocation()
+  const prefill = !id ? location.state?.prefill : null
+  const [form, setForm] = useState(() => buildInitialForm(prefill))
+  const [pendingPhotos, setPendingPhotos] = useState(() => {
+    if (id) return []
+    const initial = consumePendingPhoto()
+    return initial ? [initial] : []
+  })
+  const photoInputRef = useRef(null)
+  const [photoNotice] = useState(() => {
+    if (id || !prefill) return null
+    if (prefill.has_exif) return 'Pre-filled from photo. Edit anything you like.'
+    return "Couldn't read metadata from this photo — please fill manually."
+  })
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+
+  const pendingPhotoUrls = useMemo(
+    () => pendingPhotos.map((f) => URL.createObjectURL(f)),
+    [pendingPhotos],
+  )
+  useEffect(() => () => pendingPhotoUrls.forEach(URL.revokeObjectURL), [pendingPhotoUrls])
+
+  const handleAddPhotos = (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (files.length) setPendingPhotos((arr) => [...arr, ...files])
+  }
+  const handleRemovePendingPhoto = (idx) => {
+    setPendingPhotos((arr) => arr.filter((_, i) => i !== idx))
+  }
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -93,6 +137,18 @@ export default function EventForm() {
         navigate(`/events/${id}`)
       } else {
         const created = await createEvent(payload)
+        const failed = []
+        for (const file of pendingPhotos) {
+          try {
+            const meta = await uploadPhoto(file)
+            await attachPhoto(created._id, meta)
+          } catch (photoErr) {
+            failed.push(`${file.name}: ${photoErr.message}`)
+          }
+        }
+        if (failed.length) {
+          window.alert(`Event saved, but some photos failed:\n${failed.join('\n')}`)
+        }
         navigate(`/events/${created._id}`)
       }
     } catch (err) {
@@ -113,6 +169,11 @@ export default function EventForm() {
         {id ? 'Edit event' : 'New event'}
       </h1>
       {error && <p className="form-error" style={{ marginBottom: 18 }}>{error}</p>}
+      {photoNotice && (
+        <p className="form-notice" style={{ marginBottom: 18 }}>
+          {photoNotice}
+        </p>
+      )}
 
       <form className="form" onSubmit={handleSubmit}>
         <div className="field">
@@ -285,6 +346,54 @@ export default function EventForm() {
             onChange={(ids) => setForm((f) => ({ ...f, people: ids }))}
           />
         </div>
+
+        {!id && (
+          <div className="field">
+            <div className="photo-toolbar">
+              <label className="field-label" style={{ margin: 0 }}>
+                Photos{pendingPhotos.length > 0 ? ` · ${pendingPhotos.length}` : ''}
+              </label>
+              <button
+                type="button"
+                className="btn"
+                onClick={() => photoInputRef.current?.click()}
+              >
+                + Add photos
+              </button>
+              <input
+                ref={photoInputRef}
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                multiple
+                style={{ display: 'none' }}
+                onChange={handleAddPhotos}
+              />
+            </div>
+            {pendingPhotos.length === 0 ? (
+              <p className="field-hint" style={{ marginTop: 10 }}>
+                Photos you add here will attach when you save.
+              </p>
+            ) : (
+              <div className="detail-photos" style={{ marginTop: 10 }}>
+                {pendingPhotos.map((file, i) => (
+                  <div key={`${file.name}-${i}`} className="detail-photo">
+                    <div className="tile">
+                      <img src={pendingPhotoUrls[i]} alt="" loading="lazy" />
+                    </div>
+                    <button
+                      type="button"
+                      className="delete"
+                      onClick={() => handleRemovePendingPhoto(i)}
+                      aria-label="Remove photo"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={saving}>

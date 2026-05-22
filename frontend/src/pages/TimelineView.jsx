@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { listEvents } from '../api/events'
+import { extractExif } from '../api/uploads'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
-import QuickCapture from '../components/QuickCapture'
+import { setPendingPhoto } from '../lib/photoHandoff'
 import { usePeopleStore } from '../store'
 import { yearOf } from '../utils/date'
 
@@ -15,12 +17,23 @@ function PlusIcon() {
   )
 }
 
+function PhotoIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="8" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 3.5 L6 2 L10 2 L11 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 export default function TimelineView() {
+  const navigate = useNavigate()
   const [events, setEvents] = useState([])
   const [filters, setFilters] = useState({ event_type: '', person_ids: [] })
   const [loading, setLoading] = useState(true)
-  const [quickOpen, setQuickOpen] = useState(false)
-  const [reloadKey, setReloadKey] = useState(0)
+  const [photoBusy, setPhotoBusy] = useState(false)
+  const photoInputRef = useRef(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   useEffect(() => {
@@ -36,7 +49,23 @@ export default function TimelineView() {
       .then(setEvents)
       .catch(console.error)
       .finally(() => setLoading(false))
-  }, [filters, reloadKey])
+  }, [filters])
+
+  const handlePhotoPicked = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setPhotoBusy(true)
+    try {
+      const exif = await extractExif(file)
+      setPendingPhoto(file)
+      navigate('/events/new', { state: { prefill: exif } })
+    } catch (err) {
+      window.alert(err.message || 'Could not read photo')
+    } finally {
+      setPhotoBusy(false)
+    }
+  }
 
   // The API returns events ascending by date; the redesign reads newest-first.
   const sorted = useMemo(
@@ -75,14 +104,32 @@ export default function TimelineView() {
             </div>
           )}
         </div>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setQuickOpen(true)}
-        >
-          <PlusIcon />
-          Add event
-        </button>
+        <div className="page-head-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={() => photoInputRef.current?.click()}
+            disabled={photoBusy}
+          >
+            <PhotoIcon />
+            {photoBusy ? 'Reading…' : 'Event from photo'}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => navigate('/events/new')}
+          >
+            <PlusIcon />
+            Add event
+          </button>
+          <input
+            ref={photoInputRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={handlePhotoPicked}
+          />
+        </div>
       </div>
 
       <FilterBar filters={filters} people={people} onChange={handleFilterChange} />
@@ -110,11 +157,6 @@ export default function TimelineView() {
         )}
       </div>
 
-      <QuickCapture
-        open={quickOpen}
-        onClose={() => setQuickOpen(false)}
-        onSaved={() => setReloadKey((k) => k + 1)}
-      />
     </div>
   )
 }
