@@ -16,7 +16,7 @@ export default function EventCard({ event }) {
   const location = locationDisplay(event.location)
 
   return (
-    <article className={`event ${cls}`}>
+    <article className={`event ${cls}`} data-event-id={event._id}>
       <span className="event-node" aria-hidden="true" />
       <div className="event-date-stub">
         <strong>{shortDate(event.date)}</strong>

@@ -28,12 +28,37 @@ export const useAuthStore = create((set, get) => ({
   },
 }))
 
-export const useEventStore = create((set) => ({
+// Timeline list state lives in the store so navigating to an event and back
+// preserves the loaded pages and the user's scroll position. Position is
+// anchored on an event _id (not a pixel offset) so it survives image-load
+// height shifts. Cache is invalidated on event create/update/delete.
+const DEFAULT_FILTERS = { event_type: '', person_ids: [] }
+
+export const useEventStore = create((set, get) => ({
   events: [],
-  filters: { event_type: '', tag: '' },
-  setEvents: (events) => set({ events }),
-  setFilters: (filters) =>
-    set((state) => ({ filters: { ...state.filters, ...filters } })),
+  filters: DEFAULT_FILTERS,
+  hasMore: true,
+  anchorId: null, // _id of the topmost visible event card when leaving
+  loaded: false,
+
+  setFilters: (patch) =>
+    set({
+      filters: { ...get().filters, ...patch },
+      events: [],
+      hasMore: true,
+      anchorId: null,
+      loaded: false,
+    }),
+
+  setInitialPage: (events, hasMore) => set({ events, hasMore, loaded: true }),
+
+  appendPage: (page, hasMore) =>
+    set({ events: [...get().events, ...page], hasMore }),
+
+  setAnchorId: (id) => set({ anchorId: id }),
+
+  invalidate: () =>
+    set({ events: [], hasMore: true, anchorId: null, loaded: false }),
 }))
 
 export const usePeopleStore = create((set, get) => ({

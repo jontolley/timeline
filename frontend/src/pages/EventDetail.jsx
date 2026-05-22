@@ -5,7 +5,7 @@ import { getEvent, deleteEvent, attachMedia, removeMedia } from '../api/events'
 import { uploadMedia } from '../api/uploads'
 import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
-import { usePeopleStore } from '../store'
+import { useEventStore, usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 import { categoryClass } from '../utils/eventTypes'
 
@@ -56,6 +56,7 @@ export default function EventDetail() {
   const handleDelete = async () => {
     if (!window.confirm('Delete this event? This cannot be undone.')) return
     await deleteEvent(id)
+    useEventStore.getState().invalidate()
     navigate('/')
   }
 

@@ -5,7 +5,7 @@ import { describePhoto, extractExif } from '../api/uploads'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
 import { setPendingCaption, setPendingPhoto } from '../lib/photoHandoff'
-import { usePeopleStore } from '../store'
+import { useEventStore, usePeopleStore } from '../store'
 import { yearOf } from '../utils/date'
 
 const PAGE_SIZE = 20
@@ -51,11 +51,19 @@ function SparkleIcon() {
 
 export default function TimelineView() {
   const navigate = useNavigate()
-  const [events, setEvents] = useState([])
-  const [filters, setFilters] = useState({ event_type: '', person_ids: [] })
-  const [loading, setLoading] = useState(true)
+  const {
+    events,
+    filters,
+    hasMore,
+    anchorId,
+    loaded,
+    setFilters: setStoreFilters,
+    setInitialPage,
+    appendPage,
+    setAnchorId,
+  } = useEventStore()
+  const [loading, setLoading] = useState(!loaded)
   const [loadingMore, setLoadingMore] = useState(false)
-  const [hasMore, setHasMore] = useState(true)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [aiPhotoBusy, setAiPhotoBusy] = useState(false)
   const photoInputRef = useRef(null)
@@ -63,24 +71,27 @@ export default function TimelineView() {
   const sentinelRef = useRef(null)
   // Guards loadMore from stale-state re-entry and from racing the initial load.
   const fetchingRef = useRef(false)
+  // One-shot guard: restore anchor only on the first event-render after mount.
+  const anchorRestoredRef = useRef(false)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
   }, [peopleLoaded, loadPeople])
 
-  // Initial load + reload on filter change.
+  // Initial load — skip if the store already has events from a previous mount.
   useEffect(() => {
+    if (loaded) {
+      setLoading(false)
+      return
+    }
     let cancelled = false
     fetchingRef.current = true
     setLoading(true)
-    setEvents([])
-    setHasMore(true)
     listEvents(buildListParams(filters, null))
       .then((page) => {
         if (cancelled) return
-        setEvents(page)
-        setHasMore(page.length === PAGE_SIZE)
+        setInitialPage(page, page.length === PAGE_SIZE)
       })
       .catch(console.error)
       .finally(() => {
@@ -89,7 +100,54 @@ export default function TimelineView() {
         fetchingRef.current = false
       })
     return () => { cancelled = true }
-  }, [filters])
+  }, [filters, loaded, setInitialPage])
+
+  // Restore scroll position by scrolling the anchor element into view.
+  // Robust to image-load height shifts because we anchor on a DOM node, not a
+  // pixel offset.
+  useEffect(() => {
+    if (anchorRestoredRef.current) return
+    if (events.length === 0) return
+    anchorRestoredRef.current = true
+    if (!anchorId) return
+    const el = document.querySelector(`[data-event-id="${anchorId}"]`)
+    if (el) {
+      requestAnimationFrame(() =>
+        el.scrollIntoView({ behavior: 'auto', block: 'start' }),
+      )
+    }
+  }, [events.length, anchorId])
+
+  // Continuously track the topmost visible card while the user scrolls.
+  // The cleanup-on-unmount approach fails because React removes the DOM
+  // before the cleanup runs, so we save eagerly into the store instead.
+  // Throttled with rAF so it costs ~one querySelector pass per frame.
+  useEffect(() => {
+    let rafId = null
+    const update = () => {
+      rafId = null
+      const cards = document.querySelectorAll('[data-event-id]')
+      for (const card of cards) {
+        const top = card.getBoundingClientRect().top
+        if (top >= -64) {
+          const id = card.getAttribute('data-event-id')
+          if (id) setAnchorId(id)
+          return
+        }
+      }
+    }
+    const onScroll = () => {
+      if (rafId !== null) return
+      rafId = requestAnimationFrame(update)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    // Capture an initial anchor too, so a fresh page load sets one immediately.
+    onScroll()
+    return () => {
+      window.removeEventListener('scroll', onScroll)
+      if (rafId !== null) cancelAnimationFrame(rafId)
+    }
+  }, [setAnchorId])
 
   const loadMore = useCallback(async () => {
     if (fetchingRef.current || loadingMore || !hasMore || events.length === 0) return
@@ -98,15 +156,14 @@ export default function TimelineView() {
     const last = events[events.length - 1]
     try {
       const page = await listEvents(buildListParams(filters, { date: last.date, id: last._id }))
-      setEvents((prev) => [...prev, ...page])
-      setHasMore(page.length === PAGE_SIZE)
+      appendPage(page, page.length === PAGE_SIZE)
     } catch (err) {
       console.error(err)
     } finally {
       setLoadingMore(false)
       fetchingRef.current = false
     }
-  }, [events, filters, hasMore, loadingMore])
+  }, [events, filters, hasMore, loadingMore, appendPage])
 
   // IntersectionObserver pages the next batch when the sentinel scrolls into view.
   useEffect(() => {
@@ -173,7 +230,13 @@ export default function TimelineView() {
   }, [events])
 
   const isFiltered = filters.event_type !== '' || (filters.person_ids?.length || 0) > 0
-  const handleFilterChange = (change) => setFilters((f) => ({ ...f, ...change }))
+  const handleFilterChange = (change) => {
+    // Mark anchor as already restored so the new filter's page-1 doesn't
+    // try to jump to a card that's no longer in the result set.
+    anchorRestoredRef.current = true
+    setStoreFilters(change)
+    window.scrollTo(0, 0)
+  }
 
   return (
     <div className="page">

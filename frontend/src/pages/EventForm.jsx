@@ -6,7 +6,7 @@ import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
-import { usePeopleStore } from '../store'
+import { useEventStore, usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
 
 const EMPTY_FORM = {
@@ -206,6 +206,7 @@ export default function EventForm() {
       const payload = { ...rest, date: dateIso, end_date: endDateIso }
       if (id) {
         await updateEvent(id, payload)
+        useEventStore.getState().invalidate()
         navigate(`/events/${id}`)
       } else {
         const created = await createEvent(payload)
@@ -218,6 +219,7 @@ export default function EventForm() {
             failed.push(`${file.name}: ${mediaErr.message}`)
           }
         }
+        useEventStore.getState().invalidate()
         if (failed.length) {
           window.alert(`Event saved, but some media failed:\n${failed.join('\n')}`)
         }
