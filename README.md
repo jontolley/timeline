@@ -8,9 +8,9 @@ A self-hosted timeline for personal life events with AI-powered chat. Add events
 - **Backend:** FastAPI + Uvicorn (Python 3.12)
 - **Database:** MongoDB (events, people)
 - **Vector search:** Qdrant (semantic retrieval for chat)
-- **Chat:** Anthropic Claude (default: Sonnet 4.6)
+- **Chat:** Anthropic Claude (default: Sonnet 4.6 for chat, Haiku 4.5 for photo captions)
 - **Embeddings:** OpenAI `text-embedding-3-small` (1536-dim)
-- **Photo storage:** Cloudflare R2
+- **Media storage:** Cloudflare R2 (photos, videos, audio)
 - **Auth:** magic-link email via Resend
 
 ## Quick start
@@ -39,9 +39,12 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 ## Features
 
 - **Chat-driven event entry.** "Add a trip to Tokyo last March with Sam" creates an event with the right type, date, and people. Relative dates ("3 days ago", "last June") are resolved against today's date.
+- **Photo-driven event entry.** Drop a photo, get an event with the date and GPS pre-filled from EXIF; optionally have Claude vision generate the title and description from the image.
+- **Photo, video, and audio attachments.** Upload to any event; videos get a poster frame and audio gets a waveform thumbnail, both rendered client-side.
 - **Semantic search via chat.** "Where have I travelled in the last two years?" hits a Qdrant nearest-neighbour search and feeds the matches to Claude as context.
 - **People with color coding.** Attach people to events; filter the timeline by who was there.
-- **Photo attachments.** Upload to events; thumbnails generated server-side and stored in R2.
+- **Day One importer.** A standalone script (`tools/import_dayone.py`) ingests a Day One JSON export — entries, locations, photos, videos, audio — with Claude-summarized titles for entries that don't have one.
+- **Paginated timeline.** Loads 20 events at a time; remembers scroll position across event-detail navigation.
 - **Magic-link auth.** Email allowlist + Resend-delivered sign-in links, no passwords.
 - **Backup/restore.** Lossless JSON export, with a confirmation-gated restore.
 - **Mobile-friendly.** Responsive layout tested on phone and desktop.
