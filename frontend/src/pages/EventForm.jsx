@@ -8,7 +8,7 @@ import PeoplePicker from '../components/PeoplePicker'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { useEventStore, usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
-import { EVENT_TYPES } from '../utils/eventTypes'
+import { useEventTypes } from '../utils/eventTypes'
 
 const EMPTY_FORM = {
   title: '',
@@ -69,6 +69,7 @@ export default function EventForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const eventTypes = useEventTypes()
 
   const pendingMediaUrls = useMemo(
     () => pendingMedia.map((f) => URL.createObjectURL(f)),
@@ -279,7 +280,7 @@ export default function EventForm() {
             value={form.event_type}
             onChange={set('event_type')}
           >
-            {EVENT_TYPES.map((t) => (
+            {eventTypes.map((t) => (
               <option key={t.value} value={t.value}>{t.label}</option>
             ))}
           </select>

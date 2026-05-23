@@ -4,7 +4,7 @@ import { createPerson, updatePerson, deletePerson } from '../api/people'
 import { usePeopleStore } from '../store'
 import { PALETTE, personColor } from '../utils/colors'
 
-export default function PeopleView() {
+export default function PeopleView({ embedded = false }) {
   const { people, loaded, load } = usePeopleStore()
   const [error, setError] = useState(null)
   const [editingId, setEditingId] = useState(null)
@@ -68,14 +68,18 @@ export default function PeopleView() {
   }
 
   if (!loaded) {
-    return <div className="page-narrow"><p className="muted small">Loading…</p></div>
+    const loadingMarkup = <p className="muted small">Loading…</p>
+    return embedded ? loadingMarkup : <div className="page-narrow">{loadingMarkup}</div>
   }
 
+  const Wrapper = embedded ? 'div' : 'div'
+  const wrapperClass = embedded ? 'settings-section' : 'page-narrow'
   return (
-    <div className="page-narrow">
-      <Link to="/" className="back-link">← Back to timeline</Link>
+    <Wrapper className={wrapperClass}>
+      {!embedded && <Link to="/" className="back-link">← Back to timeline</Link>}
       <div className="page-head">
-        <h1 className="page-title" style={{ fontSize: 44 }}>People</h1>
+        {!embedded && <h1 className="page-title" style={{ fontSize: 44 }}>People</h1>}
+        {embedded && <h2 className="section-title">People</h2>}
         {editingId !== 'new' && (
           <button type="button" className="btn btn-primary" onClick={startNew}>
             Add person
@@ -130,7 +134,7 @@ export default function PeopleView() {
           busy={busy}
         />
       )}
-    </div>
+    </Wrapper>
   )
 }
 

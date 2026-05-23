@@ -165,6 +165,70 @@ input, select, textarea {
 }
 .signout:hover { color: var(--ink); }
 
+/* Username dropdown menu in the topbar. */
+.user-menu { position: relative; flex-shrink: 0; }
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 13.5px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.user-menu-trigger:hover {
+  color: var(--ink);
+  background: var(--line-soft);
+}
+.user-menu-trigger[aria-expanded="true"] {
+  color: var(--ink);
+  background: var(--line-soft);
+}
+.user-menu-caret { font-size: 10px; opacity: 0.7; }
+.user-menu-email {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user-menu-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  min-width: 180px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(28, 26, 23, 0.12);
+  padding: 4px;
+  z-index: 100;
+}
+.user-menu-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.user-menu-item:hover { background: var(--line-soft); }
+.user-menu-item.danger { color: var(--danger); }
+.user-menu-item.danger:hover { background: color-mix(in oklab, var(--danger) 10%, transparent); }
+.user-menu-divider {
+  height: 1px;
+  background: var(--line);
+  margin: 4px 6px;
+}
+
 /* =====================================================================
    Page shell
    ===================================================================== */
@@ -622,6 +686,33 @@ a.card { text-decoration: none; }
 }
 
 .timeline-sentinel { height: 1px; }
+
+/* Settings page — tab nav + section wrappers shared by People / Categories / Backup. */
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 28px;
+}
+.settings-tab {
+  background: transparent;
+  border: 0;
+  padding: 10px 16px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--ink-mute);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.settings-tab[aria-pressed="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+.settings-tab:hover {
+  color: var(--ink);
+}
+.settings-section { /* No outer container; the tab panel wraps everything. */ }
 
 .timeline-end {
   padding: 40px 0 80px;

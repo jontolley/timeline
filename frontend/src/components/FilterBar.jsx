@@ -1,9 +1,9 @@
 import { personColor } from '../utils/colors'
-import { EVENT_TYPES } from '../utils/eventTypes'
-
-const CATEGORIES = [{ value: '', label: 'All' }, ...EVENT_TYPES]
+import { useEventTypes } from '../utils/eventTypes'
 
 export default function FilterBar({ filters, people, onChange }) {
+  const types = useEventTypes()
+  const CATEGORIES = [{ value: '', label: 'All' }, ...types]
   const togglePerson = (id) => {
     const current = filters.person_ids || []
     const next = current.includes(id)

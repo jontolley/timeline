@@ -11,7 +11,7 @@ from anthropic import AsyncAnthropic
 
 from auth import require_auth
 from embeddings import EmbeddingService
-from database import events_collection, people_collection
+from database import categories_collection, events_collection, people_collection
 
 router = APIRouter(prefix="/api/chat", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
@@ -57,7 +57,7 @@ Schema:
     "title": string or null,
     "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
     "end_date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" or null,
-    "event_type": "career" | "travel" | "milestone" | "family" | "adventure" or null,
+    "event_type": string from the valid list given in the preamble, or null,
     "description": string or null,
     "location": { "name": string or null, "address": string or null } or null,
     "tags": [string] or null,
@@ -77,10 +77,11 @@ Rules:
   * Include "description" ONLY IF: description has not been provided AND the assistant has not already asked for description in this conversation
   * Include "people" ONLY IF: people has not been provided AND the assistant has not already asked for people in this conversation
   * Do NOT re-add "location", "description", or "people" if the assistant already asked and the user skipped or ignored them
-- Infer event_type from context when obvious: job/promotion/startup → career,
-  trip/travel/visit/journey → travel, graduation/marriage/achievement → milestone,
-  wedding/birth/family reunion/parenting → family,
-  hike/climb/raft/backpacking/outdoor expedition → adventure
+- Infer event_type from context using the slug list in the preamble. Examples
+  for the defaults: job/promotion/startup → career, trip/travel/visit/journey
+  → travel, graduation/marriage/achievement → milestone, wedding/birth/family
+  reunion/parenting → family, hike/climb/raft/backpacking/outdoor expedition
+  → adventure. If a user-defined category obviously matches better, prefer it
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
 - tags: split any comma- or space-separated tags into an array
@@ -186,26 +187,37 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-def _system_blocks(static_system: str) -> list[dict]:
+async def _category_names() -> list[str]:
+    """Live list of category slugs — used to build the INTENT prompt
+    preamble so the model picks valid event_type values."""
+    cursor = categories_collection.find({}, {"name": 1, "_id": 0})
+    return sorted([doc["name"] async for doc in cursor])
+
+
+def _system_blocks(static_system: str, dynamic_suffix: str = "") -> list[dict]:
     """Build a system-prompt list with a dynamic date preamble followed by
     the cached static prompt. The preamble must NOT be cached — it changes
-    daily — but the bulk of the prompt still hits the cache."""
+    daily — but the bulk of the prompt still hits the cache. Callers can
+    inject extra non-cached context (e.g. the live category list) via
+    `dynamic_suffix`."""
     today = datetime.now(timezone.utc)
     preamble = f"Today is {today.strftime('%A, %Y-%m-%d')} (UTC)."
+    if dynamic_suffix:
+        preamble = f"{preamble} {dynamic_suffix}"
     return [
         {"type": "text", "text": preamble},
         {"type": "text", "text": static_system, "cache_control": {"type": "ephemeral"}},
     ]
 
 
-async def _anthropic_json(system: str, user_content: str) -> dict:
+async def _anthropic_json(system: str, user_content: str, dynamic_suffix: str = "") -> dict:
     """Non-streaming Anthropic call that returns parsed JSON. The static
     system block is cached via cache_control; a small dynamic preamble with
     today's date sits in front so the model can resolve relative dates."""
     response = await async_anthropic.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=2048,
-        system=_system_blocks(system),
+        system=_system_blocks(system, dynamic_suffix),
         messages=[{"role": "user", "content": user_content}],
     )
     text = next((b.text for b in response.content if b.type == "text"), "")
@@ -466,8 +478,13 @@ async def chat(req: ChatRequest):
             )
 
             # ── Step 1: intent detection (fast, non-streaming JSON call) ──
+            cat_names = await _category_names()
+            cat_suffix = (
+                f"Valid event_type values (use exactly these slugs): {', '.join(cat_names)}."
+                if cat_names else ""
+            )
             try:
-                intent_data = await _anthropic_json(INTENT_SYSTEM, transcript)
+                intent_data = await _anthropic_json(INTENT_SYSTEM, transcript, cat_suffix)
             except Exception as exc:
                 intent_data = {"intent": "query", "fields": {}, "missing_required": []}
 

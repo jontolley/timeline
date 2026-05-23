@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { shortDate, formatRangeCompact } from '../utils/date'
 import { locationDisplay } from '../utils/location'
-import { categoryClass } from '../utils/eventTypes'
+import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { usePeopleStore } from '../store'
 import PeopleChips from './PeopleChips'
 
@@ -13,10 +13,11 @@ export default function EventCard({ event }) {
   const shown = media.slice(0, MAX_MEDIA)
   const extra = Math.max(0, media.length - shown.length)
   const cls = categoryClass(event.event_type)
+  const catStyle = categoryStyle(event.event_type)
   const location = locationDisplay(event.location)
 
   return (
-    <article className={`event ${cls}`} data-event-id={event._id}>
+    <article className={`event ${cls}`} data-event-id={event._id} style={catStyle}>
       <span className="event-node" aria-hidden="true" />
       <div className="event-date-stub">
         <strong>{shortDate(event.date)}</strong>
@@ -25,7 +26,7 @@ export default function EventCard({ event }) {
 
       <Link to={`/events/${event._id}`} className="card">
         <div className="event-meta">
-          <span className="cat-tag">{event.event_type}</span>
+          <span className="cat-tag">{categoryLabel(event.event_type) || event.event_type}</span>
           <span className="event-range">
             · {formatRangeCompact(event.date, event.end_date)}
           </span>

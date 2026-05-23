@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { usePeopleStore } from '../store'
 
-export default function BackupView() {
+export default function BackupView({ embedded = false }) {
   const today = new Date().toISOString().slice(0, 10)
   const [file, setFile] = useState(null)
   const [showConfirm, setShowConfirm] = useState(false)
@@ -59,10 +59,15 @@ export default function BackupView() {
     }
   }
 
+  const wrapperClass = embedded ? 'settings-section' : 'page-narrow'
   return (
-    <div className="page-narrow">
-      <Link to="/" className="back-link">← Back to timeline</Link>
-      <h1 className="page-title" style={{ fontSize: 44, marginBottom: 10 }}>Backup &amp; restore</h1>
+    <div className={wrapperClass}>
+      {!embedded && <Link to="/" className="back-link">← Back to timeline</Link>}
+      {embedded ? (
+        <h2 className="section-title">Backup &amp; restore</h2>
+      ) : (
+        <h1 className="page-title" style={{ fontSize: 44, marginBottom: 10 }}>Backup &amp; restore</h1>
+      )}
       <p className="muted" style={{ marginBottom: 32, fontSize: 14 }}>
         Download a copy of every event and person, or replace your timeline from a previous
         backup file.

@@ -7,7 +7,7 @@ import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { useEventStore, usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
-import { categoryClass } from '../utils/eventTypes'
+import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -90,13 +90,14 @@ export default function EventDetail() {
   const location = locationDisplay(event.location)
   const mapUrl = locationMapUrl(event.location)
   const cls = categoryClass(event.event_type)
+  const catStyle = categoryStyle(event.event_type)
 
   return (
-    <div className={`page-narrow ${cls}`}>
+    <div className={`page-narrow ${cls}`} style={catStyle}>
       <Link to="/" className="back-link">← Back to timeline</Link>
 
       <div className="event-meta" style={{ marginBottom: 8 }}>
-        <span className="cat-tag">{event.event_type}</span>
+        <span className="cat-tag">{categoryLabel(event.event_type) || event.event_type}</span>
         <span className="event-range">· {dateRange}</span>
       </div>
       <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>

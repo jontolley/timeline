@@ -1,11 +1,10 @@
-import { Link, useLocation } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store'
 
 const LINKS = [
-  { to: '/',        label: 'Timeline', end: true },
-  { to: '/chat',    label: 'Chat' },
-  { to: '/people',  label: 'People' },
-  { to: '/backup',  label: 'Backup' },
+  { to: '/',     label: 'Timeline', end: true },
+  { to: '/chat', label: 'Chat' },
 ]
 
 function Brandmark() {
@@ -23,6 +22,62 @@ function Brandmark() {
 function isActive(pathname, to, end) {
   if (end) return pathname === to
   return pathname === to || pathname.startsWith(to + '/')
+}
+
+function UserMenu({ email, onSignOut }) {
+  const [open, setOpen] = useState(false)
+  const menuRef = useRef(null)
+  const navigate = useNavigate()
+
+  // Close on outside-click and on Escape.
+  useEffect(() => {
+    if (!open) return
+    const onClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onClickOutside)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const goToSettings = () => {
+    setOpen(false)
+    navigate('/settings')
+  }
+  const handleSignOut = () => {
+    setOpen(false)
+    onSignOut()
+  }
+
+  return (
+    <div className="user-menu" ref={menuRef}>
+      <button
+        type="button"
+        className="user-menu-trigger"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        aria-haspopup="menu"
+      >
+        <span className="user-menu-email">{email}</span>
+        <span className="user-menu-caret" aria-hidden="true">▾</span>
+      </button>
+      {open && (
+        <div className="user-menu-dropdown" role="menu">
+          <button type="button" className="user-menu-item" onClick={goToSettings} role="menuitem">
+            Settings
+          </button>
+          <div className="user-menu-divider" />
+          <button type="button" className="user-menu-item danger" onClick={handleSignOut} role="menuitem">
+            Sign out
+          </button>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function Topbar() {
@@ -51,10 +106,7 @@ export default function Topbar() {
         })}
       </nav>
       <div className="topbar-spacer" />
-      {email && <span className="topbar-user">{email}</span>}
-      <button type="button" className="signout" onClick={signOut}>
-        Sign out
-      </button>
+      {email && <UserMenu email={email} onSignOut={signOut} />}
     </header>
   )
 }

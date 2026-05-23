@@ -4,13 +4,9 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
-class EventType(str, Enum):
-    career = "career"
-    travel = "travel"
-    milestone = "milestone"
-    family = "family"
-    adventure = "adventure"
-
+# event_type is now a free-form string validated against the categories
+# collection at write time. The five legacy values (career, travel, milestone,
+# family, adventure) are seeded as defaults on startup.
 
 class LocationDetail(BaseModel):
     name: Optional[str] = None
@@ -39,7 +35,7 @@ class MediaRef(BaseModel):
 class EventBase(BaseModel):
     title: str
     description: Optional[str] = None
-    event_type: EventType
+    event_type: str
     date: datetime
     end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
@@ -55,7 +51,7 @@ class EventCreate(EventBase):
 class EventUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
-    event_type: Optional[EventType] = None
+    event_type: Optional[str] = None
     date: Optional[datetime] = None
     end_date: Optional[datetime] = None
     location: Optional[LocationDetail] = None
@@ -86,6 +82,31 @@ class PersonUpdate(BaseModel):
 
 
 class Person(PersonBase):
+    id: str = Field(alias="_id")
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+
+class CategoryBase(BaseModel):
+    # `name` is the slug stored on events as `event_type`. `label` is the
+    # human-readable display name; `color` is a palette key matching colors.js.
+    name: str
+    label: str
+    color: str
+
+
+class CategoryCreate(CategoryBase):
+    pass
+
+
+class CategoryUpdate(BaseModel):
+    label: Optional[str] = None
+    color: Optional[str] = None
+
+
+class Category(CategoryBase):
     id: str = Field(alias="_id")
     created_at: datetime
     updated_at: datetime

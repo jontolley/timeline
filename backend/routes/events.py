@@ -4,10 +4,23 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from bson import ObjectId
 from auth import require_auth
-from database import events_collection
+from database import categories_collection, events_collection
 from models import EventCreate, EventUpdate
 from embeddings import EmbeddingService
 import storage
+
+
+async def _validate_event_type(event_type: Optional[str]):
+    """Reject event_type values that don't match a known category. Skipped when
+    None (PATCH-style updates that don't include the field)."""
+    if event_type is None:
+        return
+    exists = await categories_collection.find_one({"name": event_type})
+    if not exists:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown event_type '{event_type}' — see GET /api/categories",
+        )
 
 router = APIRouter(prefix="/api/events", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
@@ -131,6 +144,7 @@ async def list_events(
 
 @router.post("")
 async def create_event(event: EventCreate):
+    await _validate_event_type(event.event_type)
     now = datetime.now(timezone.utc)
     doc = event.model_dump()
     doc["created_at"] = now
@@ -152,6 +166,7 @@ async def get_event(event_id: str):
 
 @router.put("/{event_id}")
 async def update_event(event_id: str, event: EventUpdate):
+    await _validate_event_type(event.event_type)
     updates = event.model_dump(exclude_unset=True)
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await events_collection.update_one(

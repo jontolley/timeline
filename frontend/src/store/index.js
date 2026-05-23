@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
+import { listCategories } from '../api/categories'
 import { listPeople } from '../api/people'
 import { streamChat } from '../api/chat'
 import { fetchMe, logout as apiLogout } from '../api/auth'
@@ -78,6 +79,30 @@ export const usePeopleStore = create((set, get) => ({
       set({ loading: false })
     }
   },
+}))
+
+// Categories drive event_type slugs + colors on the timeline. Loaded once
+// per session; consumers call `load()` from a useEffect and read the list /
+// byName lookup. Mutators on the Settings page call `invalidate()` then
+// re-`load(true)` so changes flow through immediately.
+export const useCategoryStore = create((set, get) => ({
+  categories: [],
+  byName: {},
+  loaded: false,
+  loading: false,
+  load: async (force = false) => {
+    if (get().loading) return
+    if (get().loaded && !force) return
+    set({ loading: true })
+    try {
+      const categories = await listCategories()
+      const byName = Object.fromEntries(categories.map((c) => [c.name, c]))
+      set({ categories, byName, loaded: true })
+    } finally {
+      set({ loading: false })
+    }
+  },
+  invalidate: () => set({ loaded: false }),
 }))
 
 // Chat session lives in the store (not component state) so it persists when

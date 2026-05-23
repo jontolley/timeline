@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Topbar from './components/Topbar'
 import TimelineView from './pages/TimelineView'
 import EventDetail from './pages/EventDetail'
 import EventForm from './pages/EventForm'
 import ChatView from './pages/ChatView'
-import PeopleView from './pages/PeopleView'
-import BackupView from './pages/BackupView'
+import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
-import { useAuthStore } from './store'
+import { useAuthStore, useCategoryStore } from './store'
 
 function UnauthedShell() {
   const [showLogin, setShowLogin] = useState(false)
@@ -21,10 +20,19 @@ function UnauthedShell() {
 
 export default function App() {
   const { status, check, markUnauthorized } = useAuthStore()
+  const loadCategories = useCategoryStore((s) => s.load)
 
   useEffect(() => {
     check()
   }, [check])
+
+  // Categories drive event colors + the type dropdown, so load them as soon
+  // as the user is authenticated. Pages read from the store synchronously.
+  useEffect(() => {
+    if (status === 'authenticated') {
+      loadCategories().catch(() => {})
+    }
+  }, [status, loadCategories])
 
   useEffect(() => {
     const handler = () => markUnauthorized()
@@ -53,8 +61,10 @@ export default function App() {
         <Route path="/events/:id" element={<EventDetail />} />
         <Route path="/events/:id/edit" element={<EventForm />} />
         <Route path="/chat" element={<ChatView />} />
-        <Route path="/people" element={<PeopleView />} />
-        <Route path="/backup" element={<BackupView />} />
+        <Route path="/settings" element={<SettingsView />} />
+        {/* Old pre-Settings paths redirect to the matching tab. */}
+        <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
+        <Route path="/backup" element={<Navigate to="/settings?tab=backup" replace />} />
       </Routes>
     </BrowserRouter>
   )

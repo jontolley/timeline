@@ -5,11 +5,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import auth_codes_collection, events_collection
+from database import auth_codes_collection, categories_collection, events_collection
 from embeddings import EmbeddingService, COLLECTION_NAME
 from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
+from routes.categories import router as categories_router
 from routes.backup import router as backup_router
 from routes.uploads import router as uploads_router
 from routes.auth import router as auth_router
@@ -73,6 +74,28 @@ def _serialize_doc(doc: dict) -> dict:
     if isinstance(loc, str):
         doc["location"] = {"name": loc, "address": None, "lat": None, "lng": None}
     return doc
+
+
+DEFAULT_CATEGORIES = [
+    {"name": "career",    "label": "Career",    "color": "blue"},
+    {"name": "travel",    "label": "Travel",    "color": "emerald"},
+    {"name": "milestone", "label": "Milestone", "color": "violet"},
+    {"name": "family",    "label": "Family",    "color": "amber"},
+    {"name": "adventure", "label": "Adventure", "color": "cyan"},
+]
+
+
+async def _seed_categories():
+    """Seed the five default categories if the collection is empty.
+    Idempotent: if any categories exist (user has been managing them), we
+    leave them alone."""
+    count = await categories_collection.count_documents({})
+    if count > 0:
+        return
+    now = datetime.now(timezone.utc)
+    docs = [dict(c, created_at=now, updated_at=now) for c in DEFAULT_CATEGORIES]
+    await categories_collection.insert_many(docs)
+    print(f"[startup] Seeded {len(docs)} default categories")
 
 
 async def _migrate_photos_to_media():
@@ -150,6 +173,7 @@ async def lifespan(app: FastAPI):
         await _ensure_text_index()
         await _ensure_auth_indexes()
         await _migrate_photos_to_media()
+        await _seed_categories()
 
         count = await events_collection.count_documents({})
         if count == 0:
@@ -199,6 +223,7 @@ app.include_router(auth_router)
 app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)
+app.include_router(categories_router)
 app.include_router(backup_router)
 app.include_router(uploads_router)
 

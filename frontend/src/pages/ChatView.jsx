@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
-import { categoryClass } from '../utils/eventTypes'
+import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { usePeopleStore, useChatStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 
@@ -227,12 +227,16 @@ function MessageRow({ msg, messageIndex, streaming, peopleById, onConfirm, onCan
 function EventActionCard({ action, event, peopleById }) {
   const isCreated = action === 'created'
   return (
-    <Link to={`/events/${event._id}`} className={`event-receipt ${categoryClass(event.event_type)}`}>
+    <Link
+      to={`/events/${event._id}`}
+      className={`event-receipt ${categoryClass(event.event_type)}`}
+      style={categoryStyle(event.event_type)}
+    >
       <div className="receipt-head">
         <span className={`receipt-status ${isCreated ? '' : 'updated'}`}>
           ✓ event {isCreated ? 'created' : 'updated'}
         </span>
-        <span className="receipt-cat">{event.event_type}</span>
+        <span className="receipt-cat">{categoryLabel(event.event_type) || event.event_type}</span>
       </div>
       <p className="receipt-title">{event.title}</p>
       <div className="receipt-date">
