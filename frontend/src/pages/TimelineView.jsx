@@ -95,9 +95,11 @@ export default function TimelineView() {
       })
       .catch(console.error)
       .finally(() => {
+        // Always release the ref lock — even if cancelled — so the next
+        // loadMore call doesn't bail out on a stale "in-flight" flag.
+        fetchingRef.current = false
         if (cancelled) return
         setLoading(false)
-        fetchingRef.current = false
       })
     return () => { cancelled = true }
   }, [filters, loaded, setInitialPage])
