@@ -3,12 +3,14 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
 import BackupView from './BackupView'
 import CategoriesSettings from '../components/CategoriesSettings'
+import ThreadsSettings from '../components/ThreadsSettings'
 import UsersSettings from '../components/UsersSettings'
 import { useAuthStore } from '../store'
 
 const BASE_TABS = [
   { value: 'people',     label: 'People' },
   { value: 'categories', label: 'Categories' },
+  { value: 'threads',    label: 'Threads' },
   { value: 'backup',     label: 'Backup' },
 ]
 const ADMIN_TABS = [
@@ -55,6 +57,7 @@ export default function SettingsView() {
       <div className="settings-panel">
         {active === 'people' && <PeopleView embedded key={location.search} />}
         {active === 'categories' && <CategoriesSettings />}
+        {active === 'threads' && <ThreadsSettings />}
         {active === 'backup' && <BackupView embedded key={location.search} />}
         {active === 'users' && role === 'admin' && <UsersSettings />}
       </div>

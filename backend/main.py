@@ -11,6 +11,7 @@ from database import (
     categories_collection,
     events_collection,
     people_collection,
+    threads_collection,
     users_collection,
 )
 from embeddings import EmbeddingService, COLLECTION_NAME
@@ -18,6 +19,7 @@ from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
 from routes.categories import router as categories_router
+from routes.threads import router as threads_router
 from routes.users import router as users_router
 from routes.backup import router as backup_router
 from routes.uploads import router as uploads_router
@@ -91,6 +93,51 @@ DEFAULT_CATEGORIES = [
     {"name": "family",    "label": "Family",    "color": "amber"},
     {"name": "adventure", "label": "Adventure", "color": "cyan"},
 ]
+
+
+async def _seed_default_thread_for(owner_id):
+    """Ensure the user has at least one thread. Creates 'My Timeline' as a
+    default if they have none. Returns the user's oldest thread either way."""
+    existing = await threads_collection.find_one(
+        {"owner_id": owner_id}, sort=[("created_at", 1)]
+    )
+    if existing:
+        return existing
+    now = datetime.now(timezone.utc)
+    doc = {
+        "owner_id": owner_id,
+        "name": "My Timeline",
+        "color": "slate",
+        "visibility": "private",
+        "created_at": now,
+        "updated_at": now,
+    }
+    result = await threads_collection.insert_one(doc)
+    print(f"[startup] Seeded default thread for {owner_id}")
+    return await threads_collection.find_one({"_id": result.inserted_id})
+
+
+async def _backfill_event_threads():
+    """For every user, ensure their events all have a thread_id pointing at a
+    thread they own. Events without one get stamped with the user's oldest
+    thread (creating 'My Timeline' for them if necessary). Idempotent."""
+    async for user in users_collection.find():
+        owner_id = user["_id"]
+        # Only do anything if this user has events that lack thread_id.
+        needs = await events_collection.count_documents(
+            {"owner_id": owner_id, "thread_id": {"$exists": False}}
+        )
+        if needs == 0:
+            continue
+        default_thread = await _seed_default_thread_for(owner_id)
+        result = await events_collection.update_many(
+            {"owner_id": owner_id, "thread_id": {"$exists": False}},
+            {"$set": {"thread_id": default_thread["_id"]}},
+        )
+        if result.modified_count:
+            print(
+                f"[startup] Stamped {result.modified_count} event(s) with default thread for {user['email']}"
+            )
 
 
 async def _seed_categories_for(owner_id):
@@ -275,6 +322,9 @@ async def lifespan(app: FastAPI):
         # owner_id on legacy docs, seeds per-user category defaults, and
         # re-indexes Qdrant with owner_id payload.
         await _multiuser_migration()
+        # Threads: seed one default thread per user + backfill thread_id on
+        # any pre-Phase-2 events.
+        await _backfill_event_threads()
 
         # Ensure every event has a Qdrant point. Useful after data restores.
         scroll_result = await embedding_service.qdrant.scroll(
@@ -321,6 +371,7 @@ app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)
 app.include_router(categories_router)
+app.include_router(threads_router)
 app.include_router(users_router)
 app.include_router(backup_router)
 app.include_router(uploads_router)

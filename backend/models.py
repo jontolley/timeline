@@ -42,6 +42,9 @@ class EventBase(BaseModel):
     tags: Optional[list[str]] = []
     people: Optional[list[str]] = []
     media: Optional[list[MediaRef]] = []
+    # thread_id is required for new events; the route layer defaults it to the
+    # user's first thread if the client doesn't specify one.
+    thread_id: Optional[str] = None
 
 
 class EventCreate(EventBase):
@@ -57,6 +60,7 @@ class EventUpdate(BaseModel):
     location: Optional[LocationDetail] = None
     tags: Optional[list[str]] = None
     people: Optional[list[str]] = None
+    thread_id: Optional[str] = None
 
 
 class Event(EventBase):
@@ -137,6 +141,38 @@ class CategoryUpdate(BaseModel):
 
 
 class Category(CategoryBase):
+    id: str = Field(alias="_id")
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+
+# A thread is a private grouping of events owned by one user. In Phase 2,
+# every event belongs to exactly one thread and threads are owner-scoped
+# (no sharing yet — that's Phase 3).
+class ThreadVisibility(str, Enum):
+    private = "private"
+    shared = "shared"
+
+
+class ThreadBase(BaseModel):
+    name: str
+    color: str  # palette key
+    visibility: ThreadVisibility = ThreadVisibility.private
+
+
+class ThreadCreate(ThreadBase):
+    pass
+
+
+class ThreadUpdate(BaseModel):
+    name: Optional[str] = None
+    color: Optional[str] = None
+    visibility: Optional[ThreadVisibility] = None
+
+
+class Thread(ThreadBase):
     id: str = Field(alias="_id")
     created_at: datetime
     updated_at: datetime

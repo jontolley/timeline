@@ -14,6 +14,7 @@ function buildListParams(filters, cursor) {
   const params = { limit: PAGE_SIZE }
   if (filters.event_type) params.event_type = filters.event_type
   if (filters.person_ids?.length) params.person_id = filters.person_ids
+  if (filters.thread_ids?.length) params.thread_id = filters.thread_ids
   if (cursor) {
     params.before_date = cursor.date
     params.before_id = cursor.id
@@ -231,7 +232,10 @@ export default function TimelineView() {
     return out
   }, [events])
 
-  const isFiltered = filters.event_type !== '' || (filters.person_ids?.length || 0) > 0
+  const isFiltered =
+    filters.event_type !== '' ||
+    (filters.person_ids?.length || 0) > 0 ||
+    (filters.thread_ids?.length || 0) > 0
   const handleFilterChange = (change) => {
     // Mark anchor as already restored so the new filter's page-1 doesn't
     // try to jump to a card that's no longer in the result set.

@@ -8,7 +8,7 @@ import ChatView from './pages/ChatView'
 import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
-import { useAuthStore, useCategoryStore } from './store'
+import { useAuthStore, useCategoryStore, useThreadStore } from './store'
 
 function UnauthedShell() {
   const [showLogin, setShowLogin] = useState(false)
@@ -21,6 +21,7 @@ function UnauthedShell() {
 export default function App() {
   const { status, check, markUnauthorized } = useAuthStore()
   const loadCategories = useCategoryStore((s) => s.load)
+  const loadThreads = useThreadStore((s) => s.load)
 
   useEffect(() => {
     check()
@@ -28,11 +29,13 @@ export default function App() {
 
   // Categories drive event colors + the type dropdown, so load them as soon
   // as the user is authenticated. Pages read from the store synchronously.
+  // Threads drive the timeline chip + filter and the EventForm thread picker.
   useEffect(() => {
     if (status === 'authenticated') {
       loadCategories().catch(() => {})
+      loadThreads().catch(() => {})
     }
-  }, [status, loadCategories])
+  }, [status, loadCategories, loadThreads])
 
   useEffect(() => {
     const handler = () => markUnauthorized()

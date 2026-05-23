@@ -6,7 +6,7 @@ import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
-import { useEventStore, usePeopleStore } from '../store'
+import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import { hasTime } from '../utils/date'
 import { useEventTypes } from '../utils/eventTypes'
 
@@ -24,6 +24,7 @@ const EMPTY_FORM = {
   location: null,
   tags: [],
   people: [],
+  thread_id: '',
 }
 
 function buildInitialForm(prefill) {
@@ -69,6 +70,7 @@ export default function EventForm() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const threads = useThreadStore((s) => s.threads)
   const eventTypes = useEventTypes()
 
   const pendingMediaUrls = useMemo(
@@ -125,6 +127,14 @@ export default function EventForm() {
     if (!peopleLoaded) loadPeople().catch(() => {})
   }, [peopleLoaded, loadPeople])
 
+  // On the create path, default the thread picker to the user's oldest thread
+  // once the threads store has loaded. Edit path keeps whatever the event has.
+  useEffect(() => {
+    if (id) return
+    if (!threads.length) return
+    setForm((f) => (f.thread_id ? f : { ...f, thread_id: threads[0]._id }))
+  }, [id, threads])
+
   useEffect(() => {
     if (!id) return
     getEvent(id)
@@ -154,6 +164,7 @@ export default function EventForm() {
             : event.location ?? null,
           tags: event.tags ?? [],
           people: event.people ?? [],
+          thread_id: event.thread_id ?? '',
         })
       })
       .catch(() => setError('Failed to load event.'))
@@ -285,6 +296,24 @@ export default function EventForm() {
             ))}
           </select>
         </div>
+
+        {threads.length > 1 && (
+          <div className="field">
+            <label className="field-label" htmlFor="ef-thread">
+              Thread<span className="field-required">*</span>
+            </label>
+            <select
+              id="ef-thread"
+              className="select"
+              value={form.thread_id}
+              onChange={set('thread_id')}
+            >
+              {threads.map((t) => (
+                <option key={t._id} value={t._id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         <div className="field">
           <label className="field-label" htmlFor="ef-date">

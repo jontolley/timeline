@@ -11,7 +11,7 @@ from anthropic import AsyncAnthropic
 
 from auth import require_auth
 from embeddings import EmbeddingService
-from database import categories_collection, events_collection, people_collection
+from database import categories_collection, events_collection, people_collection, threads_collection
 
 router = APIRouter(prefix="/api/chat", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
@@ -549,6 +549,11 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                     location_val = await _geocode_location(fields.get("location"))
                     people_ids, unknown_people = await _resolve_people(fields.get("people") or [], owner_id)
 
+                    # Chat-created events land in the user's oldest thread.
+                    # Users can move them later via the EventForm.
+                    default_thread = await threads_collection.find_one(
+                        {"owner_id": owner_id}, sort=[("created_at", 1)]
+                    )
                     now = datetime.now(timezone.utc)
                     doc = {
                         "title": fields["title"],
@@ -560,6 +565,7 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                         "tags": fields.get("tags") or [],
                         "people": people_ids,
                         "owner_id": owner_id,
+                        "thread_id": default_thread["_id"] if default_thread else None,
                         "created_at": now,
                         "updated_at": now,
                     }

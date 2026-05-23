@@ -2,13 +2,17 @@ import { Link } from 'react-router-dom'
 import { shortDate, formatRangeCompact } from '../utils/date'
 import { locationDisplay } from '../utils/location'
 import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
-import { usePeopleStore } from '../store'
+import { usePeopleStore, useThreadStore } from '../store'
+import { personColor } from '../utils/colors'
 import PeopleChips from './PeopleChips'
 
 const MAX_MEDIA = 4
 
 export default function EventCard({ event }) {
   const peopleById = usePeopleStore((s) => s.peopleById)
+  const { threads, byId: threadsById } = useThreadStore()
+  const showThreadChip = threads.length > 1
+  const thread = event.thread_id ? threadsById[event.thread_id] : null
   const media = event.media ?? event.photos ?? []
   const shown = media.slice(0, MAX_MEDIA)
   const extra = Math.max(0, media.length - shown.length)
@@ -30,6 +34,15 @@ export default function EventCard({ event }) {
           <span className="event-range">
             · {formatRangeCompact(event.date, event.end_date)}
           </span>
+          {showThreadChip && thread && (
+            <span
+              className="thread-chip"
+              style={{ '--thread-color': personColor(thread.color) }}
+            >
+              <span className="thread-dot" />
+              {thread.name}
+            </span>
+          )}
         </div>
 
         <h3 className="event-title">{event.title}</h3>

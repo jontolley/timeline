@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { listCategories } from '../api/categories'
 import { listPeople } from '../api/people'
+import { listThreads } from '../api/threads'
 import { listUsers } from '../api/users'
 import { streamChat } from '../api/chat'
 import { fetchMe, logout as apiLogout } from '../api/auth'
@@ -34,6 +35,29 @@ export const useAuthStore = create((set, get) => ({
   },
 }))
 
+// Threads — per-user groupings of events. Loaded on auth; the timeline
+// renders a chip + filter when there are 2+ threads. Mutators on the
+// Settings page call load(true) to refresh.
+export const useThreadStore = create((set, get) => ({
+  threads: [],
+  byId: {},
+  loaded: false,
+  loading: false,
+  load: async (force = false) => {
+    if (get().loading) return
+    if (get().loaded && !force) return
+    set({ loading: true })
+    try {
+      const threads = await listThreads()
+      const byId = Object.fromEntries(threads.map((t) => [t._id, t]))
+      set({ threads, byId, loaded: true })
+    } finally {
+      set({ loading: false })
+    }
+  },
+  invalidate: () => set({ loaded: false }),
+}))
+
 // Admin-only — lazy-loaded from the Users tab in Settings.
 export const useUserStore = create((set, get) => ({
   users: [],
@@ -57,7 +81,7 @@ export const useUserStore = create((set, get) => ({
 // preserves the loaded pages and the user's scroll position. Position is
 // anchored on an event _id (not a pixel offset) so it survives image-load
 // height shifts. Cache is invalidated on event create/update/delete.
-const DEFAULT_FILTERS = { event_type: '', person_ids: [] }
+const DEFAULT_FILTERS = { event_type: '', person_ids: [], thread_ids: [] }
 
 export const useEventStore = create((set, get) => ({
   events: [],

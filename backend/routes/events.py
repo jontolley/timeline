@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from bson import ObjectId
 from auth import require_auth
-from database import categories_collection, events_collection
+from database import categories_collection, events_collection, threads_collection
 from models import EventCreate, EventUpdate
 from embeddings import EmbeddingService
 import storage
@@ -26,6 +26,31 @@ async def _validate_event_type(event_type: Optional[str], owner_id: ObjectId):
         )
 
 
+async def _resolve_thread_id(thread_id: Optional[str], owner_id: ObjectId) -> ObjectId:
+    """Validate a thread_id (string) belongs to the current user; if None,
+    fall back to the user's oldest thread. Raises 400 if the user has no
+    threads yet (shouldn't happen post-migration)."""
+    if thread_id:
+        try:
+            oid = ObjectId(thread_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid thread_id")
+        thread = await threads_collection.find_one({"_id": oid, "owner_id": owner_id})
+        if not thread:
+            raise HTTPException(status_code=400, detail="thread_id not found")
+        return oid
+    # Default to the oldest thread this user owns.
+    default_thread = await threads_collection.find_one(
+        {"owner_id": owner_id}, sort=[("created_at", 1)]
+    )
+    if not default_thread:
+        raise HTTPException(
+            status_code=500,
+            detail="No threads exist for this user — migration may not have run",
+        )
+    return default_thread["_id"]
+
+
 async def _serialize(doc: dict) -> dict:
     """Serialize an event doc for the API. Generates fresh presigned GET URLs
     for any attached media on every read (signing is local and cheap).
@@ -33,6 +58,8 @@ async def _serialize(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
     doc.pop("owner_id", None)  # internal field, not surfaced to the client
+    if doc.get("thread_id") is not None:
+        doc["thread_id"] = str(doc["thread_id"])
     for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
@@ -82,6 +109,7 @@ async def list_events(
     event_type: Optional[str] = None,
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
+    thread_id: Optional[list[str]] = Query(None),
     limit: Optional[int] = None,
     before_date: Optional[str] = None,
     before_id: Optional[str] = None,
@@ -99,6 +127,13 @@ async def list_events(
         query["tags"] = tag
     if person_id:
         query["people"] = {"$in": person_id}
+    if thread_id:
+        try:
+            thread_oids = [ObjectId(t) for t in thread_id if t]
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid thread_id filter")
+        if thread_oids:
+            query["thread_id"] = {"$in": thread_oids}
 
     if limit is None:
         cursor = events_collection.find(query).sort("date", 1)
@@ -141,9 +176,11 @@ async def list_events(
 @router.post("")
 async def create_event(event: EventCreate, user: dict = Depends(require_auth)):
     await _validate_event_type(event.event_type, user["_id"])
+    resolved_thread = await _resolve_thread_id(event.thread_id, user["_id"])
     now = datetime.now(timezone.utc)
     doc = event.model_dump()
     doc["owner_id"] = user["_id"]
+    doc["thread_id"] = resolved_thread
     doc["created_at"] = now
     doc["updated_at"] = now
     result = await events_collection.insert_one(doc)
@@ -165,6 +202,9 @@ async def get_event(event_id: str, user: dict = Depends(require_auth)):
 async def update_event(event_id: str, event: EventUpdate, user: dict = Depends(require_auth)):
     await _validate_event_type(event.event_type, user["_id"])
     updates = event.model_dump(exclude_unset=True)
+    # If the caller is changing the thread, validate the new one before write.
+    if "thread_id" in updates and updates["thread_id"] is not None:
+        updates["thread_id"] = await _resolve_thread_id(updates["thread_id"], user["_id"])
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await events_collection.update_one(
         {"_id": ObjectId(event_id), "owner_id": user["_id"]},

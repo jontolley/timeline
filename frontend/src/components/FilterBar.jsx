@@ -1,8 +1,10 @@
 import { personColor } from '../utils/colors'
 import { useEventTypes } from '../utils/eventTypes'
+import { useThreadStore } from '../store'
 
 export default function FilterBar({ filters, people, onChange }) {
   const types = useEventTypes()
+  const threads = useThreadStore((s) => s.threads)
   const CATEGORIES = [{ value: '', label: 'All' }, ...types]
   const togglePerson = (id) => {
     const current = filters.person_ids || []
@@ -10,6 +12,13 @@ export default function FilterBar({ filters, people, onChange }) {
       ? current.filter((x) => x !== id)
       : [...current, id]
     onChange({ person_ids: next })
+  }
+  const toggleThread = (id) => {
+    const current = filters.thread_ids || []
+    const next = current.includes(id)
+      ? current.filter((x) => x !== id)
+      : [...current, id]
+    onChange({ thread_ids: next })
   }
 
   return (
@@ -28,6 +37,38 @@ export default function FilterBar({ filters, people, onChange }) {
           </button>
         ))}
       </div>
+
+      {threads.length > 1 && (
+        <div className="filter-row">
+          <span className="filter-label">Threads</span>
+          {threads.map((t) => {
+            const color = personColor(t.color)
+            const selected = (filters.thread_ids || []).includes(t._id)
+            return (
+              <button
+                key={t._id}
+                type="button"
+                className="chip chip-people"
+                style={{ '--person-color': color }}
+                aria-pressed={selected}
+                onClick={() => toggleThread(t._id)}
+              >
+                <span className="dot" />
+                {t.name}
+              </button>
+            )
+          })}
+          {(filters.thread_ids?.length || 0) > 0 && (
+            <button
+              type="button"
+              className="chip-clear"
+              onClick={() => onChange({ thread_ids: [] })}
+            >
+              clear
+            </button>
+          )}
+        </div>
+      )}
 
       {people.length > 0 && (
         <div className="filter-row">
