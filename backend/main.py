@@ -5,12 +5,20 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import auth_codes_collection, categories_collection, events_collection
+from auth import ALLOWED_EMAILS
+from database import (
+    auth_codes_collection,
+    categories_collection,
+    events_collection,
+    people_collection,
+    users_collection,
+)
 from embeddings import EmbeddingService, COLLECTION_NAME
 from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
 from routes.categories import router as categories_router
+from routes.users import router as users_router
 from routes.backup import router as backup_router
 from routes.uploads import router as uploads_router
 from routes.auth import router as auth_router
@@ -85,17 +93,107 @@ DEFAULT_CATEGORIES = [
 ]
 
 
-async def _seed_categories():
-    """Seed the five default categories if the collection is empty.
-    Idempotent: if any categories exist (user has been managing them), we
-    leave them alone."""
-    count = await categories_collection.count_documents({})
+async def _seed_categories_for(owner_id):
+    """Seed the five default categories for the given user if they have none.
+    Idempotent: called from the multi-user migration and on every new user
+    creation flow."""
+    count = await categories_collection.count_documents({"owner_id": owner_id})
     if count > 0:
         return
     now = datetime.now(timezone.utc)
-    docs = [dict(c, created_at=now, updated_at=now) for c in DEFAULT_CATEGORIES]
+    docs = [
+        dict(c, owner_id=owner_id, created_at=now, updated_at=now)
+        for c in DEFAULT_CATEGORIES
+    ]
     await categories_collection.insert_many(docs)
-    print(f"[startup] Seeded {len(docs)} default categories")
+    print(f"[startup] Seeded {len(docs)} default categories for {owner_id}")
+
+
+async def _multiuser_migration():
+    """Multi-user bootstrap, run on every startup but only acts on first
+    encounter:
+      1. Ensure a user record exists for every email in ALLOWED_EMAILS.
+         The first allowed email is the admin; later ones are normal users.
+      2. Find any events / people / categories without an owner_id and
+         backfill them with the admin user's id.
+      3. Re-index those events in Qdrant so the owner_id ends up in the
+         vector-search payload.
+    """
+    now = datetime.now(timezone.utc)
+
+    # Step 1: seed users from the env allowlist. Idempotent via unique-email.
+    allowed = sorted(ALLOWED_EMAILS)
+    if not allowed:
+        # No allowlist — nothing to seed. Multi-user features just don't work
+        # until at least one user exists.
+        return
+
+    admin_email = allowed[0]
+    for i, email in enumerate(allowed):
+        existing = await users_collection.find_one({"email": email})
+        if existing:
+            continue
+        await users_collection.insert_one({
+            "email": email,
+            "role": "admin" if i == 0 else "user",
+            "created_at": now,
+            "updated_at": now,
+        })
+        print(f"[startup] Seeded {'admin' if i == 0 else 'user'} {email}")
+
+    admin = await users_collection.find_one({"email": admin_email})
+    if not admin:
+        print("[startup] WARNING: failed to seed admin user")
+        return
+    admin_id = admin["_id"]
+
+    # Step 2: backfill owner_id on any pre-multi-user docs.
+    for collection, label in (
+        (events_collection, "events"),
+        (people_collection, "people"),
+        (categories_collection, "categories"),
+    ):
+        result = await collection.update_many(
+            {"owner_id": {"$exists": False}},
+            {"$set": {"owner_id": admin_id, "updated_at": now}},
+        )
+        if result.modified_count:
+            print(f"[startup] Backfilled owner_id on {result.modified_count} {label}")
+
+    # Step 3: seed categories for any user who has none yet.
+    async for user in users_collection.find():
+        await _seed_categories_for(user["_id"])
+
+    # Step 4: re-index every event into Qdrant so the owner_id payload
+    # reaches search. Only does work for points that haven't been re-indexed
+    # under the new schema (we detect by point absence of owner_id payload).
+    # Simpler heuristic: check if any point has owner_id in its payload; if
+    # not, we assume the migration hasn't run yet.
+    try:
+        scroll_result = await embedding_service.qdrant.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1,
+            with_payload=True,
+            with_vectors=False,
+        )
+        first = scroll_result[0]
+        needs_reindex = bool(first) and not (first[0].payload or {}).get("owner_id")
+    except Exception:
+        needs_reindex = False
+
+    if needs_reindex:
+        print("[startup] Re-indexing events in Qdrant with owner_id payload")
+        reindexed = 0
+        async for doc in events_collection.find():
+            try:
+                await embedding_service.upsert_event(
+                    _serialize_doc(doc),
+                    owner_id=str(doc.get("owner_id") or admin_id),
+                )
+                reindexed += 1
+            except Exception as exc:
+                print(f"[startup] Re-index failed for {doc.get('_id')}: {exc}")
+        print(f"[startup] Re-indexed {reindexed} event(s)")
 
 
 async def _migrate_photos_to_media():
@@ -173,28 +271,27 @@ async def lifespan(app: FastAPI):
         await _ensure_text_index()
         await _ensure_auth_indexes()
         await _migrate_photos_to_media()
-        await _seed_categories()
+        # Multi-user bootstrap: seeds users from ALLOWED_EMAILS, backfills
+        # owner_id on legacy docs, seeds per-user category defaults, and
+        # re-indexes Qdrant with owner_id payload.
+        await _multiuser_migration()
 
-        count = await events_collection.count_documents({})
-        if count == 0:
-            now = datetime.now(timezone.utc)
-            docs = [dict(e, created_at=now, updated_at=now) for e in SEED_EVENTS]
-            result = await events_collection.insert_many(docs)
-            async for doc in events_collection.find({"_id": {"$in": result.inserted_ids}}):
-                await embedding_service.upsert_event(_serialize_doc(doc))
-        else:
-            scroll_result = await embedding_service.qdrant.scroll(
-                collection_name=COLLECTION_NAME,
-                limit=10000,
-                with_payload=False,
-                with_vectors=False,
-            )
-            existing_ids = {str(p.id) for p in scroll_result[0]}
-            async for doc in events_collection.find():
-                doc_id = str(doc["_id"])
-                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, doc_id))
-                if point_id not in existing_ids:
-                    await embedding_service.upsert_event(_serialize_doc(doc))
+        # Ensure every event has a Qdrant point. Useful after data restores.
+        scroll_result = await embedding_service.qdrant.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=10000,
+            with_payload=False,
+            with_vectors=False,
+        )
+        existing_ids = {str(p.id) for p in scroll_result[0]}
+        async for doc in events_collection.find():
+            doc_id = str(doc["_id"])
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, doc_id))
+            if point_id not in existing_ids:
+                await embedding_service.upsert_event(
+                    _serialize_doc(doc),
+                    owner_id=str(doc.get("owner_id")) if doc.get("owner_id") else None,
+                )
     except Exception as exc:
         print(f"[startup] Warning: {exc}")
 
@@ -224,6 +321,7 @@ app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)
 app.include_router(categories_router)
+app.include_router(users_router)
 app.include_router(backup_router)
 app.include_router(uploads_router)
 

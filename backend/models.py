@@ -89,6 +89,36 @@ class Person(PersonBase):
     model_config = {"populate_by_name": True}
 
 
+# Multi-user identity. `role` gates admin-only endpoints (Users tab, system
+# config). One admin is seeded on the first multi-user migration; everyone
+# else is created via invite.
+class UserRole(str, Enum):
+    admin = "admin"
+    user = "user"
+
+
+class UserBase(BaseModel):
+    email: str
+    role: UserRole = UserRole.user
+
+
+class UserCreate(BaseModel):
+    email: str
+    role: UserRole = UserRole.user
+
+
+class UserUpdate(BaseModel):
+    role: Optional[UserRole] = None
+
+
+class User(UserBase):
+    id: str = Field(alias="_id")
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"populate_by_name": True}
+
+
 class CategoryBase(BaseModel):
     # `name` is the slug stored on events as `event_type`. `label` is the
     # human-readable display name; `color` is a palette key matching colors.js.

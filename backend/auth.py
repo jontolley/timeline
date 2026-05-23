@@ -8,11 +8,20 @@ import httpx
 from fastapi import HTTPException, Request
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
+# ALLOWED_EMAILS is now only consumed by the startup migration that seeds
+# the first admin user(s). After that, the users collection IS the allowlist.
 ALLOWED_EMAILS: set[str] = {
     e.strip().lower()
     for e in os.getenv("ALLOWED_EMAIL", "").split(",")
     if e.strip()
 }
+
+# Google OAuth — optional; the Sign in with Google button is disabled when
+# unset. Configured in Google Cloud Console; redirect URI must match
+# `{APP_BASE_URL}/api/auth/google/callback` for both dev and prod.
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+OAUTH_STATE_TTL_SECONDS = 60 * 10
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-me-in-production")
 RESEND_API_KEY = os.getenv("RESEND_API_KEY")
 RESEND_FROM = os.getenv("RESEND_FROM", "onboarding@resend.dev")
@@ -30,8 +39,13 @@ LOGIN_CODE_MAX_ATTEMPTS = 5
 _signer = URLSafeTimedSerializer(SESSION_SECRET, salt="timeline-auth")
 
 
-def is_allowed(email: str) -> bool:
-    return email.strip().lower() in ALLOWED_EMAILS
+async def is_allowed(email: str) -> bool:
+    """A user is allowed to log in iff they have a record in the users
+    collection. New users are added by an admin from the Settings → Users tab,
+    or seeded from ALLOWED_EMAILS by the startup migration on first boot."""
+    from database import users_collection
+    doc = await users_collection.find_one({"email": email.strip().lower()})
+    return doc is not None
 
 
 def make_magic_token(email: str) -> str:
@@ -50,6 +64,20 @@ def verify_magic_token(token: str) -> Optional[str]:
 
 def make_session_token(email: str) -> str:
     return _signer.dumps({"email": email.lower(), "purpose": "session"})
+
+
+def make_oauth_state(provider: str) -> str:
+    return _signer.dumps({"provider": provider, "purpose": "oauth_state"})
+
+
+def verify_oauth_state(token: str) -> Optional[str]:
+    try:
+        payload = _signer.loads(token, max_age=OAUTH_STATE_TTL_SECONDS)
+    except (BadSignature, SignatureExpired):
+        return None
+    if payload.get("purpose") != "oauth_state":
+        return None
+    return payload.get("provider")
 
 
 def verify_session_token(token: str) -> Optional[str]:
@@ -171,10 +199,21 @@ async def send_magic_link(email: str, link: str) -> None:
     await _send_email(to=email, subject="Sign in to your timeline", html=html)
 
 
-async def require_auth(request: Request) -> str:
-    """FastAPI dependency. Accepts `Authorization: Bearer <token>` (API clients) or the session cookie (web). Returns the user's email or raises 401."""
+async def require_auth(request: Request) -> dict:
+    """FastAPI dependency. Accepts `Authorization: Bearer <token>` (API clients)
+    or the session cookie (web). Looks the email up in the users collection
+    and returns the user doc (keys: _id, email, role). Raises 401 on missing /
+    invalid token or if the user has been removed since the session was minted.
+    """
+    from database import users_collection
+
     if AUTH_DISABLED:
-        return next(iter(ALLOWED_EMAILS), "dev@local")
+        # In dev with auth disabled, fall back to the first admin.
+        doc = await users_collection.find_one({"role": "admin"})
+        if doc:
+            return doc
+        # No admin yet — synthesize one so dev endpoints still respond.
+        return {"_id": None, "email": "dev@local", "role": "admin"}
 
     token: Optional[str] = None
     auth_header = request.headers.get("authorization")
@@ -187,4 +226,17 @@ async def require_auth(request: Request) -> str:
     email = verify_session_token(token)
     if not email:
         raise HTTPException(status_code=401, detail="Invalid or expired session")
-    return email
+    doc = await users_collection.find_one({"email": email})
+    if not doc:
+        # Session token is valid but the user was removed since.
+        raise HTTPException(status_code=401, detail="User no longer exists")
+    return doc
+
+
+async def require_admin(request: Request) -> dict:
+    """FastAPI dependency for admin-only routes. Returns the admin user doc
+    or raises 403 if the caller isn't an admin."""
+    user = await require_auth(request)
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user

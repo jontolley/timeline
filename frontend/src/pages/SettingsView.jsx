@@ -3,21 +3,31 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
 import BackupView from './BackupView'
 import CategoriesSettings from '../components/CategoriesSettings'
+import UsersSettings from '../components/UsersSettings'
+import { useAuthStore } from '../store'
 
-const TABS = [
+const BASE_TABS = [
   { value: 'people',     label: 'People' },
   { value: 'categories', label: 'Categories' },
   { value: 'backup',     label: 'Backup' },
+]
+const ADMIN_TABS = [
+  { value: 'users',      label: 'Users' },
 ]
 
 export default function SettingsView() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
   const location = useLocation()
+  const role = useAuthStore((s) => s.role)
+  const tabs = useMemo(
+    () => (role === 'admin' ? [...BASE_TABS, ...ADMIN_TABS] : BASE_TABS),
+    [role],
+  )
   const requested = params.get('tab')
   const active = useMemo(
-    () => (TABS.some((t) => t.value === requested) ? requested : 'people'),
-    [requested],
+    () => (tabs.some((t) => t.value === requested) ? requested : 'people'),
+    [requested, tabs],
   )
 
   const setTab = (value) => {
@@ -30,7 +40,7 @@ export default function SettingsView() {
     <div className="page-narrow">
       <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>Settings</h1>
       <div className="settings-tabs">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t.value}
             type="button"
@@ -46,6 +56,7 @@ export default function SettingsView() {
         {active === 'people' && <PeopleView embedded key={location.search} />}
         {active === 'categories' && <CategoriesSettings />}
         {active === 'backup' && <BackupView embedded key={location.search} />}
+        {active === 'users' && role === 'admin' && <UsersSettings />}
       </div>
     </div>
   )

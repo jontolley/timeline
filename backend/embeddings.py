@@ -63,7 +63,8 @@ class EmbeddingService:
         )
         return response.data[0].embedding
 
-    async def upsert_event(self, event: dict):
+    async def upsert_event(self, event: dict, owner_id: str = None):
+        # `owner_id` is also embedded in the payload so search can filter by user.
         date = event.get("date", "")
         if hasattr(date, "isoformat"):
             date = date.isoformat()
@@ -90,9 +91,12 @@ class EmbeddingService:
         )
         vector = await self.embed(text)
         point_id = _point_id(str(event["_id"]))
+        payload = dict(event)
+        if owner_id is not None:
+            payload["owner_id"] = str(owner_id)
         await self.qdrant.upsert(
             collection_name=COLLECTION_NAME,
-            points=[PointStruct(id=point_id, vector=vector, payload=event)],
+            points=[PointStruct(id=point_id, vector=vector, payload=payload)],
         )
 
     async def _people_names_text(self, person_ids: list) -> str:
@@ -120,18 +124,19 @@ class EmbeddingService:
         question: str,
         top_k: int = 5,
         event_type_filter: str = None,
+        owner_id: str = None,
     ) -> list[dict]:
         vector = await self.embed(question)
-        query_filter = None
+        conditions = []
         if event_type_filter and event_type_filter != "all":
-            query_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="event_type",
-                        match=MatchValue(value=event_type_filter),
-                    )
-                ]
-            )
+            conditions.append(FieldCondition(
+                key="event_type", match=MatchValue(value=event_type_filter),
+            ))
+        if owner_id is not None:
+            conditions.append(FieldCondition(
+                key="owner_id", match=MatchValue(value=str(owner_id)),
+            ))
+        query_filter = Filter(must=conditions) if conditions else None
         result = await self.qdrant.query_points(
             collection_name=COLLECTION_NAME,
             query=vector,

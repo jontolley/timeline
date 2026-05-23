@@ -187,10 +187,11 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-async def _category_names() -> list[str]:
-    """Live list of category slugs — used to build the INTENT prompt
-    preamble so the model picks valid event_type values."""
-    cursor = categories_collection.find({}, {"name": 1, "_id": 0})
+async def _category_names(owner_id=None) -> list[str]:
+    """Live list of category slugs for the given user — used to build the
+    INTENT prompt preamble so the model picks valid event_type values."""
+    query = {} if owner_id is None else {"owner_id": owner_id}
+    cursor = categories_collection.find(query, {"name": 1, "_id": 0})
     return sorted([doc["name"] async for doc in cursor])
 
 
@@ -230,6 +231,7 @@ async def _keyword_search(
     query: str,
     limit: int,
     event_type_filter: str = None,
+    owner_id=None,
 ) -> list[dict]:
     """Full-text search via Mongo's $text index (events_text_search, created at
     startup in main.py). Ranks by built-in BM25-style textScore, with field
@@ -237,6 +239,8 @@ async def _keyword_search(
     if not query or not query.strip():
         return []
     mongo_query: dict = {"$text": {"$search": query}}
+    if owner_id is not None:
+        mongo_query["owner_id"] = owner_id
     if event_type_filter and event_type_filter != "all":
         mongo_query["event_type"] = event_type_filter
     cursor = (
@@ -252,15 +256,19 @@ async def _hybrid_event_search(
     query: str,
     top_k: int = 3,
     event_type_filter: str = None,
+    owner_id=None,
 ) -> list[dict]:
     """Combine semantic vector search and keyword text search via reciprocal rank
     fusion. Returns up to top_k event payload dicts."""
     pool_size = max(top_k * 4, 12)
     vector_hits = await embedding_service.search(
-        query, top_k=pool_size, event_type_filter=event_type_filter
+        query,
+        top_k=pool_size,
+        event_type_filter=event_type_filter,
+        owner_id=str(owner_id) if owner_id is not None else None,
     )
     text_hits = await _keyword_search(
-        query, pool_size, event_type_filter=event_type_filter
+        query, pool_size, event_type_filter=event_type_filter, owner_id=owner_id,
     )
 
     k = 60  # RRF dampening constant
@@ -353,20 +361,21 @@ def _assistant_asked_about(messages: list[dict], keywords: tuple) -> bool:
     return False
 
 
-async def _resolve_people(names: list) -> tuple[list, list]:
+async def _resolve_people(names: list, owner_id=None) -> tuple[list, list]:
     """Map a list of person name strings to (matching_ids, unknown_names).
     Matching is case-insensitive and exact on the name field; the order of
-    resulting ids preserves the user's mention order with duplicates removed."""
+    resulting ids preserves the user's mention order with duplicates removed.
+    Restricted to people owned by `owner_id` when provided."""
     if not names:
         return [], []
     cleaned = [n.strip() for n in names if isinstance(n, str) and n.strip()]
     if not cleaned:
         return [], []
     lowered = list({n.lower() for n in cleaned})
-    cursor = people_collection.find(
-        {"$expr": {"$in": [{"$toLower": "$name"}, lowered]}},
-        {"_id": 1, "name": 1},
-    )
+    query: dict = {"$expr": {"$in": [{"$toLower": "$name"}, lowered]}}
+    if owner_id is not None:
+        query = {"$and": [query, {"owner_id": owner_id}]}
+    cursor = people_collection.find(query, {"_id": 1, "name": 1})
     by_lower: dict[str, str] = {}
     async for doc in cursor:
         by_lower[doc["name"].lower()] = str(doc["_id"])
@@ -386,7 +395,7 @@ async def _resolve_people(names: list) -> tuple[list, list]:
     return ids, unknown
 
 
-async def _apply_edit(event_id: str, changes: dict):
+async def _apply_edit(event_id: str, changes: dict, owner_id):
     """Apply changes to an event and stream a confirmation. Yields SSE strings."""
     changes = dict(changes)
     if "date" in changes and isinstance(changes["date"], str):
@@ -398,12 +407,12 @@ async def _apply_edit(event_id: str, changes: dict):
     changes["updated_at"] = datetime.now(timezone.utc)
 
     await events_collection.update_one(
-        {"_id": ObjectId(event_id)},
+        {"_id": ObjectId(event_id), "owner_id": owner_id},
         {"$set": changes},
     )
     updated = await events_collection.find_one({"_id": ObjectId(event_id)})
     serialized = _serialize_doc(updated)
-    await embedding_service.upsert_event(serialized)
+    await embedding_service.upsert_event(serialized, owner_id=str(owner_id))
 
     changed_keys = [k for k in changes if k != "updated_at"]
     confirm_prompt = (
@@ -460,14 +469,15 @@ class ChatRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 @router.post("")
-async def chat(req: ChatRequest):
+async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
     messages = [m.model_dump() for m in req.messages]
+    owner_id = user["_id"]
 
     async def generate():
         try:
             # Direct action dispatch — bypass intent detection for confirmed edits
             if req.action and req.action.type == "confirm_edit":
-                async for chunk in _apply_edit(req.action.event_id, req.action.changes):
+                async for chunk in _apply_edit(req.action.event_id, req.action.changes, owner_id):
                     yield chunk
                 yield _sse({"type": "done"})
                 return
@@ -478,7 +488,7 @@ async def chat(req: ChatRequest):
             )
 
             # ── Step 1: intent detection (fast, non-streaming JSON call) ──
-            cat_names = await _category_names()
+            cat_names = await _category_names(owner_id)
             cat_suffix = (
                 f"Valid event_type values (use exactly these slugs): {', '.join(cat_names)}."
                 if cat_names else ""
@@ -537,7 +547,7 @@ async def chat(req: ChatRequest):
                     date_val = _parse_date(fields["date"])
                     end_date_val = _parse_date(fields["end_date"]) if fields.get("end_date") else None
                     location_val = await _geocode_location(fields.get("location"))
-                    people_ids, unknown_people = await _resolve_people(fields.get("people") or [])
+                    people_ids, unknown_people = await _resolve_people(fields.get("people") or [], owner_id)
 
                     now = datetime.now(timezone.utc)
                     doc = {
@@ -549,13 +559,14 @@ async def chat(req: ChatRequest):
                         "location": location_val,
                         "tags": fields.get("tags") or [],
                         "people": people_ids,
+                        "owner_id": owner_id,
                         "created_at": now,
                         "updated_at": now,
                     }
                     result = await events_collection.insert_one(doc)
                     created = await events_collection.find_one({"_id": result.inserted_id})
                     serialized = _serialize_doc(created)
-                    await embedding_service.upsert_event(serialized)
+                    await embedding_service.upsert_event(serialized, owner_id=str(owner_id))
 
                     saved_people_names = [n for n in (fields.get("people") or []) if n not in unknown_people]
                     confirm_prompt = (
@@ -580,7 +591,7 @@ async def chat(req: ChatRequest):
             # ── EDIT flow ─────────────────────────────────────────────────
             elif intent == "edit":
                 query = event_search or messages[-1]["content"]
-                found = await _hybrid_event_search(query, top_k=3)
+                found = await _hybrid_event_search(query, top_k=3, owner_id=owner_id)
 
                 if not found:
                     async for token in _stream_tokens(
@@ -614,7 +625,7 @@ async def chat(req: ChatRequest):
 
                         unknown_people: list = []
                         if changes.get("people"):
-                            incoming_ids, unknown_people = await _resolve_people(changes["people"])
+                            incoming_ids, unknown_people = await _resolve_people(changes["people"], owner_id)
                             existing_ids = list(target.get("people") or [])
                             merged = existing_ids + [pid for pid in incoming_ids if pid not in existing_ids]
                             if merged:
@@ -649,7 +660,10 @@ async def chat(req: ChatRequest):
                 per_query_top_k = 5 if len(sub_queries) > 1 else 8
                 for q in sub_queries:
                     hits = await _hybrid_event_search(
-                        q, top_k=per_query_top_k, event_type_filter=req.event_filter
+                        q,
+                        top_k=per_query_top_k,
+                        event_type_filter=req.event_filter,
+                        owner_id=owner_id,
                     )
                     for hit in hits:
                         eid = str(hit.get("_id"))

@@ -9,7 +9,7 @@ from auth import require_auth
 from database import events_collection, people_collection
 from embeddings import EmbeddingService
 
-router = APIRouter(prefix="/api/backup", dependencies=[Depends(require_auth)])
+router = APIRouter(prefix="/api/backup")
 embedding_service = EmbeddingService()
 
 ALLOWED_COLORS = {
@@ -65,9 +65,16 @@ def _today() -> str:
 
 
 @router.get("/json")
-async def backup_json():
-    people = [_serialize_person(p) async for p in people_collection.find().sort("name", 1)]
-    events = [_serialize_event(e) async for e in events_collection.find().sort("date", 1)]
+async def backup_json(user: dict = Depends(require_auth)):
+    owner_filter = {"owner_id": user["_id"]}
+    people = [
+        _serialize_person(p)
+        async for p in people_collection.find(owner_filter).sort("name", 1)
+    ]
+    events = [
+        _serialize_event(e)
+        async for e in events_collection.find(owner_filter).sort("date", 1)
+    ]
     payload = {
         "exported_at": datetime.now(timezone.utc).isoformat(),
         "version": 1,
@@ -232,30 +239,53 @@ def _serialize_event_for_index(doc: dict) -> dict:
 
 
 @router.post("/restore")
-async def restore(file: UploadFile = File(...)):
+async def restore(
+    file: UploadFile = File(...),
+    user: dict = Depends(require_auth),
+):
     content = await file.read()
     if not content:
         raise HTTPException(status_code=400, detail="Empty file")
 
     people_docs, event_docs = _parse_json_payload(content)
 
-    # Replace data: drop both collections, insert from backup.
-    await people_collection.delete_many({})
-    await events_collection.delete_many({})
+    # Stamp the current user as the owner on every imported doc; their existing
+    # data is wiped, but other users' data is left alone.
+    owner_id = user["_id"]
+    for doc in people_docs:
+        doc["owner_id"] = owner_id
+    for doc in event_docs:
+        doc["owner_id"] = owner_id
+
+    await people_collection.delete_many({"owner_id": owner_id})
+    await events_collection.delete_many({"owner_id": owner_id})
     if people_docs:
         await people_collection.insert_many(people_docs)
     if event_docs:
         await events_collection.insert_many(event_docs)
 
-    # Rebuild Qdrant from scratch.
-    await embedding_service.reset_collection()
+    # Re-index only the restored events into Qdrant — leaving other users'
+    # points untouched. Delete-by-filter then re-upsert.
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+    try:
+        await embedding_service.qdrant.delete(
+            collection_name="timeline_events",
+            points_selector=FilterSelector(filter=Filter(must=[
+                FieldCondition(key="owner_id", match=MatchValue(value=str(owner_id))),
+            ])),
+        )
+    except Exception:
+        pass
+
     indexed = 0
-    async for doc in events_collection.find():
+    async for doc in events_collection.find({"owner_id": owner_id}):
         try:
-            await embedding_service.upsert_event(_serialize_event_for_index(doc))
+            await embedding_service.upsert_event(
+                _serialize_event_for_index(doc), owner_id=str(owner_id),
+            )
             indexed += 1
         except Exception:
-            # Skip indexing failures so a partial Ollama outage doesn't block restore.
+            # Skip indexing failures so a partial outage doesn't block restore.
             pass
 
     return {

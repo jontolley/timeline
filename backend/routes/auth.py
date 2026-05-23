@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
@@ -8,6 +10,8 @@ from auth import (
     APP_BASE_URL,
     AUTH_DISABLED,
     COOKIE_SECURE,
+    GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET,
     LOGIN_CODE_MAX_ATTEMPTS,
     LOGIN_CODE_RESEND_INTERVAL_SECONDS,
     LOGIN_CODE_TTL_SECONDS,
@@ -17,14 +21,16 @@ from auth import (
     hash_login_code,
     is_allowed,
     make_magic_token,
+    make_oauth_state,
     make_session_token,
     send_login_code,
     send_magic_link,
     verify_login_code,
     verify_magic_token,
+    verify_oauth_state,
     verify_session_token,
 )
-from database import auth_codes_collection
+from database import auth_codes_collection, users_collection
 
 router = APIRouter(prefix="/api/auth")
 
@@ -37,7 +43,7 @@ class LoginRequest(BaseModel):
 async def request_login(body: LoginRequest):
     """Send a magic-link email if the address is on the allowlist. Always
     returns 200 to avoid leaking which emails are allowed."""
-    if is_allowed(body.email):
+    if await is_allowed(body.email):
         token = make_magic_token(body.email)
         link = f"{APP_BASE_URL}/api/auth/verify?token={token}"
         try:
@@ -50,7 +56,7 @@ async def request_login(body: LoginRequest):
 @router.get("/verify")
 async def verify_login(token: str):
     email = verify_magic_token(token)
-    if not email or not is_allowed(email):
+    if not email or not await is_allowed(email):
         raise HTTPException(status_code=400, detail="Invalid or expired token")
     session_token = make_session_token(email)
     response = RedirectResponse(url="/", status_code=302)
@@ -85,7 +91,7 @@ class CodeExchange(BaseModel):
 async def request_code(body: CodeRequest):
     """Email a 6-digit login code if the address is allowlisted. Always returns 200 so callers can't probe the allowlist. Silently throttles re-requests within LOGIN_CODE_RESEND_INTERVAL_SECONDS so a stuck client can't email-bomb a user."""
     email = body.email.lower()
-    if not is_allowed(email):
+    if not await is_allowed(email):
         return {"ok": True}
 
     now = datetime.now(timezone.utc)
@@ -123,7 +129,7 @@ async def exchange_code(body: CodeExchange):
     email = body.email.lower()
     code = (body.code or "").strip()
     invalid = HTTPException(status_code=400, detail="Invalid or expired code")
-    if not is_allowed(email) or not code:
+    if not await is_allowed(email) or not code:
         raise invalid
 
     doc = await auth_codes_collection.find_one({"email": email})
@@ -154,11 +160,123 @@ async def exchange_code(body: CodeExchange):
 @router.get("/me")
 async def me(request: Request):
     if AUTH_DISABLED:
-        return {"authenticated": True, "email": "dev@local"}
+        return {"authenticated": True, "email": "dev@local", "role": "admin"}
     token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        # Also accept the Bearer header so /me works for API clients.
+        auth_header = request.headers.get("authorization")
+        if auth_header and auth_header.lower().startswith("bearer "):
+            token = auth_header[7:].strip() or None
     if not token:
         return {"authenticated": False}
     email = verify_session_token(token)
     if not email:
         return {"authenticated": False}
-    return {"authenticated": True, "email": email}
+    doc = await users_collection.find_one({"email": email})
+    if not doc:
+        return {"authenticated": False}
+    return {
+        "authenticated": True,
+        "email": doc["email"],
+        "role": doc.get("role", "user"),
+        "user_id": str(doc["_id"]),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Google OAuth (web redirect flow)
+# ---------------------------------------------------------------------------
+
+def _google_redirect_uri() -> str:
+    """Backend's own callback URL — must match what's registered in Google
+    Cloud Console for the OAuth client. For local dev this is
+    http://localhost:3000/api/auth/google/callback (frontend nginx proxies
+    /api to backend); for prod it's https://personal-timeline.pages.dev/...
+    (Cloudflare Pages Function proxies to Fly)."""
+    return f"{APP_BASE_URL}/api/auth/google/callback"
+
+
+@router.get("/google/start")
+async def google_start():
+    """Kick off the Google OAuth redirect. Returns 302 to Google's consent
+    screen; on approval Google redirects back to /api/auth/google/callback
+    with a `code` we exchange for an id_token."""
+    if not GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=503, detail="Google sign-in not configured")
+    state = make_oauth_state("google")
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": _google_redirect_uri(),
+        "response_type": "code",
+        "scope": "openid email",
+        "state": state,
+        "access_type": "online",
+        "prompt": "select_account",
+    }
+    url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    return RedirectResponse(url=url, status_code=302)
+
+
+@router.get("/google/callback")
+async def google_callback(code: str = "", state: str = ""):
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google sign-in not configured")
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+    if verify_oauth_state(state) != "google":
+        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+
+    # Exchange the authorization code for tokens, then verify the id_token
+    # via Google's tokeninfo endpoint (simpler than JWKS verification, and
+    # the recommended approach for backend verification).
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        token_res = await client.post(
+            "https://oauth2.googleapis.com/token",
+            data={
+                "code": code,
+                "client_id": GOOGLE_CLIENT_ID,
+                "client_secret": GOOGLE_CLIENT_SECRET,
+                "redirect_uri": _google_redirect_uri(),
+                "grant_type": "authorization_code",
+            },
+        )
+        if token_res.status_code != 200:
+            print(f"[oauth] token exchange failed: {token_res.status_code} {token_res.text}", flush=True)
+            raise HTTPException(status_code=400, detail="Token exchange failed")
+        id_token = token_res.json().get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=400, detail="No id_token returned by Google")
+
+        info_res = await client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": id_token},
+        )
+        if info_res.status_code != 200:
+            raise HTTPException(status_code=400, detail="Token verification failed")
+        claims = info_res.json()
+
+    if claims.get("aud") != GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=400, detail="Token audience mismatch")
+    if claims.get("email_verified") not in ("true", True):
+        raise HTTPException(status_code=400, detail="Google says this email is not verified")
+
+    email = (claims.get("email") or "").strip().lower()
+    if not email:
+        raise HTTPException(status_code=400, detail="No email in Google response")
+    if not await is_allowed(email):
+        # We always issue 403 here (not 404) — the user has authenticated
+        # with Google but hasn't been invited yet.
+        raise HTTPException(status_code=403, detail=f"{email} is not authorized")
+
+    session_token = make_session_token(email)
+    response = RedirectResponse(url=APP_BASE_URL, status_code=302)
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=session_token,
+        httponly=True,
+        secure=COOKIE_SECURE,
+        samesite="lax",
+        max_age=SESSION_TTL_SECONDS,
+        path="/",
+    )
+    return response

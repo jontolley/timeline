@@ -9,21 +9,21 @@ from models import EventCreate, EventUpdate
 from embeddings import EmbeddingService
 import storage
 
+router = APIRouter(prefix="/api/events")
+embedding_service = EmbeddingService()
 
-async def _validate_event_type(event_type: Optional[str]):
-    """Reject event_type values that don't match a known category. Skipped when
-    None (PATCH-style updates that don't include the field)."""
+
+async def _validate_event_type(event_type: Optional[str], owner_id: ObjectId):
+    """Reject event_type values that don't match a category owned by the
+    current user. Skipped when None (PATCH-style updates that don't include the field)."""
     if event_type is None:
         return
-    exists = await categories_collection.find_one({"name": event_type})
+    exists = await categories_collection.find_one({"name": event_type, "owner_id": owner_id})
     if not exists:
         raise HTTPException(
             status_code=400,
             detail=f"Unknown event_type '{event_type}' — see GET /api/categories",
         )
-
-router = APIRouter(prefix="/api/events", dependencies=[Depends(require_auth)])
-embedding_service = EmbeddingService()
 
 
 async def _serialize(doc: dict) -> dict:
@@ -32,6 +32,7 @@ async def _serialize(doc: dict) -> dict:
     Tolerates legacy docs that still have `photos` instead of `media`."""
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
+    doc.pop("owner_id", None)  # internal field, not surfaced to the client
     for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
@@ -84,19 +85,14 @@ async def list_events(
     limit: Optional[int] = None,
     before_date: Optional[str] = None,
     before_id: Optional[str] = None,
+    user: dict = Depends(require_auth),
 ):
-    """List events.
+    """List events owned by the current user.
 
-    Default (no `limit`) — returns every event ascending by date, matching
-    the original contract used by the backup script and the Day One importer.
-
-    With `limit` — returns at most `limit` events descending by date (newest
-    first), suitable for infinite-scroll on the timeline. `before_date` +
-    `before_id` form a cursor: pass the date/_id of the oldest event you've
-    already loaded to fetch the next page. `_id` is the tiebreaker for
-    events that share a second.
+    Default (no `limit`) — returns every event ascending by date. With
+    `limit` — paginated newest-first via the (before_date, before_id) cursor.
     """
-    query: dict = {}
+    query: dict = {"owner_id": user["_id"]}
     if event_type:
         query["event_type"] = event_type
     if tag:
@@ -143,46 +139,50 @@ async def list_events(
 
 
 @router.post("")
-async def create_event(event: EventCreate):
-    await _validate_event_type(event.event_type)
+async def create_event(event: EventCreate, user: dict = Depends(require_auth)):
+    await _validate_event_type(event.event_type, user["_id"])
     now = datetime.now(timezone.utc)
     doc = event.model_dump()
+    doc["owner_id"] = user["_id"]
     doc["created_at"] = now
     doc["updated_at"] = now
     result = await events_collection.insert_one(doc)
     created = await events_collection.find_one({"_id": result.inserted_id})
     serialized = await _serialize(created)
-    await embedding_service.upsert_event(serialized)
+    await embedding_service.upsert_event(serialized, owner_id=str(user["_id"]))
     return serialized
 
 
 @router.get("/{event_id}")
-async def get_event(event_id: str):
-    doc = await events_collection.find_one({"_id": ObjectId(event_id)})
+async def get_event(event_id: str, user: dict = Depends(require_auth)):
+    doc = await events_collection.find_one({"_id": ObjectId(event_id), "owner_id": user["_id"]})
     if not doc:
         raise HTTPException(status_code=404, detail="Event not found")
     return await _serialize(doc)
 
 
 @router.put("/{event_id}")
-async def update_event(event_id: str, event: EventUpdate):
-    await _validate_event_type(event.event_type)
+async def update_event(event_id: str, event: EventUpdate, user: dict = Depends(require_auth)):
+    await _validate_event_type(event.event_type, user["_id"])
     updates = event.model_dump(exclude_unset=True)
     updates["updated_at"] = datetime.now(timezone.utc)
     result = await events_collection.update_one(
-        {"_id": ObjectId(event_id)}, {"$set": updates}
+        {"_id": ObjectId(event_id), "owner_id": user["_id"]},
+        {"$set": updates},
     )
     if result.matched_count == 0:
         raise HTTPException(status_code=404, detail="Event not found")
     updated = await events_collection.find_one({"_id": ObjectId(event_id)})
     serialized = await _serialize(updated)
-    await embedding_service.upsert_event(serialized)
+    await embedding_service.upsert_event(serialized, owner_id=str(user["_id"]))
     return serialized
 
 
 @router.delete("/{event_id}")
-async def delete_event(event_id: str):
-    doc = await events_collection.find_one({"_id": ObjectId(event_id)})
+async def delete_event(event_id: str, user: dict = Depends(require_auth)):
+    doc = await events_collection.find_one(
+        {"_id": ObjectId(event_id), "owner_id": user["_id"]}
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Event not found")
 
@@ -214,20 +214,15 @@ class MediaAttachRequest(BaseModel):
 
 
 @router.post("/{event_id}/media")
-async def attach_media(event_id: str, media: MediaAttachRequest):
+async def attach_media(event_id: str, media: MediaAttachRequest, user: dict = Depends(require_auth)):
     if not storage.is_configured():
         raise HTTPException(status_code=503, detail="Storage backend not configured")
 
     if media.kind not in {"photo", "video", "audio"}:
         raise HTTPException(status_code=400, detail=f"Unsupported media kind: {media.kind}")
 
-    # The key was just presigned + PUT by the client — confirm the object
-    # actually exists before recording it on the event.
     if not await storage.object_exists(media.key):
-        raise HTTPException(
-            status_code=400,
-            detail="Uploaded object not found in storage",
-        )
+        raise HTTPException(status_code=400, detail="Uploaded object not found in storage")
 
     now = datetime.now(timezone.utc)
     media_doc = {
@@ -241,11 +236,10 @@ async def attach_media(event_id: str, media: MediaAttachRequest):
         "uploaded_at": now,
     }
     result = await events_collection.update_one(
-        {"_id": ObjectId(event_id)},
+        {"_id": ObjectId(event_id), "owner_id": user["_id"]},
         {"$push": {"media": media_doc}, "$set": {"updated_at": now}},
     )
     if result.matched_count == 0:
-        # Object is now orphaned in R2 — delete it so the bucket stays clean.
         try:
             await storage.delete_object(media.key)
             if media.thumb_key:
@@ -259,18 +253,18 @@ async def attach_media(event_id: str, media: MediaAttachRequest):
 
 
 @router.delete("/{event_id}/media/{key:path}")
-async def remove_media(event_id: str, key: str):
-    # Look up the item first so we know its thumb_key (if any) before $pull.
-    doc = await events_collection.find_one({"_id": ObjectId(event_id)})
+async def remove_media(event_id: str, key: str, user: dict = Depends(require_auth)):
+    doc = await events_collection.find_one(
+        {"_id": ObjectId(event_id), "owner_id": user["_id"]}
+    )
     if not doc:
         raise HTTPException(status_code=404, detail="Event not found")
     attached = doc.get("media") or doc.get("photos") or []
     target = next((m for m in attached if m.get("key") == key), None)
 
     await events_collection.update_one(
-        {"_id": ObjectId(event_id)},
+        {"_id": ObjectId(event_id), "owner_id": user["_id"]},
         {
-            # Pull from whichever field is present.
             "$pull": {"media": {"key": key}, "photos": {"key": key}},
             "$set": {"updated_at": datetime.now(timezone.utc)},
         },

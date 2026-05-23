@@ -2,31 +2,55 @@ import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
 import { listCategories } from '../api/categories'
 import { listPeople } from '../api/people'
+import { listUsers } from '../api/users'
 import { streamChat } from '../api/chat'
 import { fetchMe, logout as apiLogout } from '../api/auth'
 
 export const useAuthStore = create((set, get) => ({
   status: 'loading',  // 'loading' | 'authenticated' | 'unauthenticated'
   email: null,
+  role: null,         // 'admin' | 'user' | null
+  userId: null,
 
   check: async () => {
     const result = await fetchMe()
     set({
       status: result.authenticated ? 'authenticated' : 'unauthenticated',
       email: result.email || null,
+      role: result.role || null,
+      userId: result.user_id || null,
     })
   },
 
   signOut: async () => {
     try { await apiLogout() } catch { /* clear local state regardless */ }
-    set({ status: 'unauthenticated', email: null })
+    set({ status: 'unauthenticated', email: null, role: null, userId: null })
   },
 
   markUnauthorized: () => {
     if (get().status !== 'unauthenticated') {
-      set({ status: 'unauthenticated', email: null })
+      set({ status: 'unauthenticated', email: null, role: null, userId: null })
     }
   },
+}))
+
+// Admin-only — lazy-loaded from the Users tab in Settings.
+export const useUserStore = create((set, get) => ({
+  users: [],
+  loaded: false,
+  loading: false,
+  load: async (force = false) => {
+    if (get().loading) return
+    if (get().loaded && !force) return
+    set({ loading: true })
+    try {
+      const users = await listUsers()
+      set({ users, loaded: true })
+    } finally {
+      set({ loading: false })
+    }
+  },
+  invalidate: () => set({ loaded: false }),
 }))
 
 // Timeline list state lives in the store so navigating to an event and back
