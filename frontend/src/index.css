@@ -22,6 +22,7 @@
   --cat-family:    #b56224;
   --cat-career:    #3a5fb8;
   --cat-milestone: #8a3eb4;
+  --cat-adventure: #2a7787;
 
   /* Person colors (constant across palettes) */
   --p-blue:    #4b6cb7;
@@ -610,6 +611,7 @@ a.card { text-decoration: none; }
 .cat-family    { --cat-color: var(--cat-family); }
 .cat-career    { --cat-color: var(--cat-career); }
 .cat-milestone { --cat-color: var(--cat-milestone); }
+.cat-adventure { --cat-color: var(--cat-adventure); }
 
 .empty {
   padding: 60px 0;

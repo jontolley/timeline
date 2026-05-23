@@ -8,6 +8,7 @@ import PeoplePicker from '../components/PeoplePicker'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { useEventStore, usePeopleStore } from '../store'
 import { hasTime } from '../utils/date'
+import { EVENT_TYPES } from '../utils/eventTypes'
 
 const EMPTY_FORM = {
   title: '',
@@ -278,10 +279,9 @@ export default function EventForm() {
             value={form.event_type}
             onChange={set('event_type')}
           >
-            <option value="career">Career</option>
-            <option value="travel">Travel</option>
-            <option value="milestone">Milestone</option>
-            <option value="family">Family</option>
+            {EVENT_TYPES.map((t) => (
+              <option key={t.value} value={t.value}>{t.label}</option>
+            ))}
           </select>
         </div>
 

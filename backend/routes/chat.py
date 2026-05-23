@@ -57,7 +57,7 @@ Schema:
     "title": string or null,
     "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
     "end_date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" or null,
-    "event_type": "career" | "travel" | "milestone" | "family" or null,
+    "event_type": "career" | "travel" | "milestone" | "family" | "adventure" or null,
     "description": string or null,
     "location": { "name": string or null, "address": string or null } or null,
     "tags": [string] or null,
@@ -79,7 +79,8 @@ Rules:
   * Do NOT re-add "location", "description", or "people" if the assistant already asked and the user skipped or ignored them
 - Infer event_type from context when obvious: job/promotion/startup → career,
   trip/travel/visit/journey → travel, graduation/marriage/achievement → milestone,
-  wedding/birth/family reunion/parenting → family
+  wedding/birth/family reunion/parenting → family,
+  hike/climb/raft/backpacking/outdoor expedition → adventure
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
 - tags: split any comma- or space-separated tags into an array

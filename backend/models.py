@@ -9,6 +9,7 @@ class EventType(str, Enum):
     travel = "travel"
     milestone = "milestone"
     family = "family"
+    adventure = "adventure"
 
 
 class LocationDetail(BaseModel):

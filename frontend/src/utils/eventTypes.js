@@ -3,6 +3,7 @@ export const EVENT_TYPES = [
   { value: 'travel',    label: 'Travel' },
   { value: 'milestone', label: 'Milestone' },
   { value: 'family',    label: 'Family' },
+  { value: 'adventure', label: 'Adventure' },
 ]
 
 const KNOWN = new Set(EVENT_TYPES.map((t) => t.value))
