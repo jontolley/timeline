@@ -714,6 +714,19 @@ a.card { text-decoration: none; }
 }
 .settings-section { /* No outer container; the tab panel wraps everything. */ }
 
+.footprint-list {
+  list-style: none;
+  margin: 0;
+  padding: 12px 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+.footprint-list li { padding: 2px 0; }
+.footprint-list strong { color: var(--ink); margin-right: 4px; }
+
 .timeline-end {
   padding: 40px 0 80px;
   color: var(--ink-mute);

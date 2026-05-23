@@ -3,11 +3,19 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from fastapi import APIRouter, Depends, HTTPException
 
-from auth import require_admin
-from database import users_collection
+from auth import require_admin, send_invitation
+from database import (
+    categories_collection,
+    events_collection,
+    people_collection,
+    users_collection,
+)
+from embeddings import EmbeddingService, COLLECTION_NAME
 from models import UserCreate, UserUpdate
+import storage
 
 router = APIRouter(prefix="/api/users", dependencies=[Depends(require_admin)])
+embedding_service = EmbeddingService()
 
 
 def _serialize(doc: dict) -> dict:
@@ -29,7 +37,7 @@ async def list_users():
 
 
 @router.post("")
-async def invite_user(body: UserCreate):
+async def invite_user(body: UserCreate, admin=Depends(require_admin)):
     email = body.email.strip().lower()
     if not email or "@" not in email:
         raise HTTPException(status_code=400, detail="Invalid email")
@@ -45,6 +53,13 @@ async def invite_user(body: UserCreate):
     }
     result = await users_collection.insert_one(doc)
     created = await users_collection.find_one({"_id": result.inserted_id})
+    # Send the welcome / sign-in email — best-effort. If Resend is down or the
+    # address bounces, the user record still exists and the admin can resend
+    # later by removing + re-inviting.
+    try:
+        await send_invitation(email, inviter_email=admin.get("email"))
+    except Exception as exc:
+        print(f"[users] Failed to send invitation to {email}: {exc}", flush=True)
     return _serialize(created)
 
 
@@ -73,6 +88,29 @@ async def update_user(user_id: str, body: UserUpdate, admin=Depends(require_admi
     return _serialize(updated)
 
 
+async def _user_footprint(user_oid: ObjectId) -> dict:
+    """Count of every resource owned by the user — used both for the
+    pre-delete confirmation in the UI and for telemetry on cascade delete."""
+    events = await events_collection.count_documents({"owner_id": user_oid})
+    people = await people_collection.count_documents({"owner_id": user_oid})
+    categories = await categories_collection.count_documents({"owner_id": user_oid})
+    media = 0
+    async for doc in events_collection.find(
+        {"owner_id": user_oid}, {"media": 1}
+    ):
+        media += len(doc.get("media") or [])
+    return {"events": events, "people": people, "categories": categories, "media": media}
+
+
+@router.get("/{user_id}/footprint")
+async def user_footprint(user_id: str):
+    target = await users_collection.find_one({"_id": ObjectId(user_id)})
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+    counts = await _user_footprint(target["_id"])
+    return {"email": target["email"], **counts}
+
+
 @router.delete("/{user_id}")
 async def delete_user(user_id: str, admin=Depends(require_admin)):
     target = await users_collection.find_one({"_id": ObjectId(user_id)})
@@ -84,5 +122,54 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
         admin_count = await users_collection.count_documents({"role": "admin"})
         if admin_count <= 1:
             raise HTTPException(status_code=400, detail="Cannot delete the last admin")
-    await users_collection.delete_one({"_id": ObjectId(user_id)})
-    return {"deleted": True}
+
+    owner_id = target["_id"]
+    counts = await _user_footprint(owner_id)
+
+    # 1) Delete every R2 object referenced by this user's events.
+    media_deleted = 0
+    media_failed = 0
+    if storage.is_configured():
+        async for doc in events_collection.find(
+            {"owner_id": owner_id}, {"media": 1}
+        ):
+            for m in doc.get("media") or []:
+                for key in (m.get("key"), m.get("thumb_key")):
+                    if not key:
+                        continue
+                    try:
+                        await storage.delete_object(key)
+                        media_deleted += 1
+                    except Exception:
+                        media_failed += 1
+
+    # 2) Delete this user's Qdrant points by owner_id filter. Best-effort —
+    # a Qdrant outage shouldn't block the Mongo + R2 cleanup.
+    try:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+        await embedding_service.qdrant.delete(
+            collection_name=COLLECTION_NAME,
+            points_selector=FilterSelector(filter=Filter(must=[
+                FieldCondition(key="owner_id", match=MatchValue(value=str(owner_id))),
+            ])),
+        )
+    except Exception as exc:
+        print(f"[users] Qdrant cleanup failed for {target['email']}: {exc}", flush=True)
+
+    # 3) Delete the Mongo docs owned by this user.
+    await events_collection.delete_many({"owner_id": owner_id})
+    await people_collection.delete_many({"owner_id": owner_id})
+    await categories_collection.delete_many({"owner_id": owner_id})
+
+    # 4) Finally, delete the user record itself.
+    await users_collection.delete_one({"_id": owner_id})
+
+    return {
+        "deleted": True,
+        "email": target["email"],
+        "events_deleted": counts["events"],
+        "people_deleted": counts["people"],
+        "categories_deleted": counts["categories"],
+        "media_deleted": media_deleted,
+        "media_failed": media_failed,
+    }

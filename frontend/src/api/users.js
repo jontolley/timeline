@@ -34,6 +34,15 @@ export async function updateUserRole(id, role) {
   return res.json()
 }
 
+export async function getUserFootprint(id) {
+  const res = await http(`${BASE}/${id}/footprint`)
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.detail || 'Failed to load user footprint')
+  }
+  return res.json()
+}
+
 export async function deleteUser(id) {
   const res = await http(`${BASE}/${id}`, { method: 'DELETE' })
   if (!res.ok) {

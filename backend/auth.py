@@ -178,6 +178,38 @@ async def send_login_code(email: str, code: str) -> None:
     await _send_email(to=email, subject="Your timeline sign-in code", html=html)
 
 
+async def send_invitation(email: str, inviter_email: str = None) -> None:
+    """Email a welcome / sign-in link to a newly invited user. In dev (no
+    RESEND_API_KEY) print to stdout so it surfaces in `docker compose logs
+    backend`."""
+    link = APP_BASE_URL.rstrip("/") + "/"
+    if not RESEND_API_KEY:
+        print(f"[auth] Invitation for {email}: {link}", flush=True)
+        return
+    cta = (
+        f'<a href="{link}" style="display:inline-block;background:#1f2a35;'
+        'color:#f1ece2;text-decoration:none;padding:14px 26px;border-radius:999px;'
+        'font-size:15px;font-weight:500;letter-spacing:-0.005em;">'
+        'Sign in to your timeline →'
+        '</a>'
+    )
+    inviter_line = (
+        f"{inviter_email} added you to Timeline. "
+        if inviter_email else "You've been added to Timeline. "
+    )
+    html = _email_html(
+        eyebrow="Welcome",
+        heading="You're invited to Timeline.",
+        lede=(
+            f"{inviter_line}"
+            "Sign in with the button below using your Google account or "
+            "this email address — your own private timeline is waiting."
+        ),
+        cta_html=cta,
+    )
+    await _send_email(to=email, subject="You're invited to Timeline", html=html)
+
+
 async def send_magic_link(email: str, link: str) -> None:
     """Email a magic sign-in link via Resend; in dev (no RESEND_API_KEY) print to stdout so it surfaces in `docker compose logs backend`."""
     if not RESEND_API_KEY:
