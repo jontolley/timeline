@@ -73,4 +73,4 @@ See `CLAUDE.md > Local dev vs. production` for the boundaries between the docker
 
 ## License
 
-Personal project; use at your own risk. No warranty implied.
+[MIT](./LICENSE) — do what you want with the code, just keep the copyright notice and don't hold me liable.
