@@ -11,7 +11,13 @@ from anthropic import AsyncAnthropic
 
 from auth import require_auth
 from embeddings import EmbeddingService
-from database import categories_collection, events_collection, people_collection, threads_collection
+from database import (
+    categories_collection,
+    events_collection,
+    people_collection,
+    thread_subscriptions_collection,
+    threads_collection,
+)
 
 router = APIRouter(prefix="/api/chat", dependencies=[Depends(require_auth)])
 embedding_service = EmbeddingService()
@@ -231,16 +237,18 @@ async def _keyword_search(
     query: str,
     limit: int,
     event_type_filter: str = None,
-    owner_id=None,
+    visible_thread_ids=None,
 ) -> list[dict]:
     """Full-text search via Mongo's $text index (events_text_search, created at
     startup in main.py). Ranks by built-in BM25-style textScore, with field
     weights — title hits outweigh description hits, etc."""
     if not query or not query.strip():
         return []
+    if visible_thread_ids is not None and not visible_thread_ids:
+        return []
     mongo_query: dict = {"$text": {"$search": query}}
-    if owner_id is not None:
-        mongo_query["owner_id"] = owner_id
+    if visible_thread_ids is not None:
+        mongo_query["thread_id"] = {"$in": visible_thread_ids}
     if event_type_filter and event_type_filter != "all":
         mongo_query["event_type"] = event_type_filter
     cursor = (
@@ -252,11 +260,28 @@ async def _keyword_search(
     return [_serialize_doc(doc) async for doc in cursor]
 
 
+async def _visible_thread_ids(viewer_id) -> list:
+    """All thread IDs this user can see — their own + subscribed-and-visible.
+    Returned as a list of ObjectIds (Mongo wants ObjectId, Qdrant filter
+    will be stringified upstream)."""
+    own = [
+        t["_id"] async for t in threads_collection.find(
+            {"owner_id": viewer_id}, {"_id": 1}
+        )
+    ]
+    sub = [
+        s["thread_id"] async for s in thread_subscriptions_collection.find(
+            {"subscriber_user_id": viewer_id, "visible": True}, {"thread_id": 1}
+        )
+    ]
+    return own + sub
+
+
 async def _hybrid_event_search(
     query: str,
     top_k: int = 3,
     event_type_filter: str = None,
-    owner_id=None,
+    visible_thread_ids=None,
 ) -> list[dict]:
     """Combine semantic vector search and keyword text search via reciprocal rank
     fusion. Returns up to top_k event payload dicts."""
@@ -265,10 +290,13 @@ async def _hybrid_event_search(
         query,
         top_k=pool_size,
         event_type_filter=event_type_filter,
-        owner_id=str(owner_id) if owner_id is not None else None,
+        visible_thread_ids=visible_thread_ids,
     )
     text_hits = await _keyword_search(
-        query, pool_size, event_type_filter=event_type_filter, owner_id=owner_id,
+        query,
+        pool_size,
+        event_type_filter=event_type_filter,
+        visible_thread_ids=visible_thread_ids,
     )
 
     k = 60  # RRF dampening constant
@@ -472,6 +500,9 @@ class ChatRequest(BaseModel):
 async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
     messages = [m.model_dump() for m in req.messages]
     owner_id = user["_id"]
+    # Computed once per request and passed into every search call so we
+    # don't hit thread_subscriptions per sub-query.
+    visible_thread_ids = await _visible_thread_ids(owner_id)
 
     async def generate():
         try:
@@ -597,7 +628,16 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
             # ── EDIT flow ─────────────────────────────────────────────────
             elif intent == "edit":
                 query = event_search or messages[-1]["content"]
-                found = await _hybrid_event_search(query, top_k=3, owner_id=owner_id)
+                # Edit is owner-only — restrict the search to threads the
+                # caller owns so they can't edit a shared-only event.
+                own_thread_ids = [
+                    t["_id"] async for t in threads_collection.find(
+                        {"owner_id": owner_id}, {"_id": 1}
+                    )
+                ]
+                found = await _hybrid_event_search(
+                    query, top_k=3, visible_thread_ids=own_thread_ids,
+                )
 
                 if not found:
                     async for token in _stream_tokens(
@@ -669,7 +709,7 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                         q,
                         top_k=per_query_top_k,
                         event_type_filter=req.event_filter,
-                        owner_id=owner_id,
+                        visible_thread_ids=visible_thread_ids,
                     )
                     for hit in hits:
                         eid = str(hit.get("_id"))

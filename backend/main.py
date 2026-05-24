@@ -117,6 +117,43 @@ async def _seed_default_thread_for(owner_id):
     return await threads_collection.find_one({"_id": result.inserted_id})
 
 
+async def _backfill_qdrant_thread_id():
+    """One-shot: ensure every Qdrant point's payload has `thread_id` so
+    chat semantic search can filter by visible threads. Uses set_payload —
+    no re-embedding required, so this completes in a fraction of the time
+    of a full re-index. Idempotent: checks the first point and bails if it
+    already has the field."""
+    try:
+        scroll = await embedding_service.qdrant.scroll(
+            collection_name=COLLECTION_NAME,
+            limit=1,
+            with_payload=True,
+        )
+        first = scroll[0]
+        if first and (first[0].payload or {}).get("thread_id"):
+            return  # migration already ran
+    except Exception:
+        return
+
+    print("[startup] Backfilling thread_id on existing Qdrant points")
+    updated = 0
+    async for doc in events_collection.find(
+        {"thread_id": {"$exists": True}}, {"_id": 1, "thread_id": 1}
+    ):
+        point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, str(doc["_id"])))
+        try:
+            await embedding_service.qdrant.set_payload(
+                collection_name=COLLECTION_NAME,
+                payload={"thread_id": str(doc["thread_id"])},
+                points=[point_id],
+            )
+            updated += 1
+        except Exception:
+            pass
+    if updated:
+        print(f"[startup] Backfilled thread_id on {updated} Qdrant point(s)")
+
+
 async def _backfill_event_threads():
     """For every user, ensure their events all have a thread_id pointing at a
     thread they own. Events without one get stamped with the user's oldest
@@ -323,8 +360,10 @@ async def lifespan(app: FastAPI):
         # re-indexes Qdrant with owner_id payload.
         await _multiuser_migration()
         # Threads: seed one default thread per user + backfill thread_id on
-        # any pre-Phase-2 events.
+        # any pre-Phase-2 events, then make sure existing Qdrant points
+        # carry thread_id so chat search can filter on it.
         await _backfill_event_threads()
+        await _backfill_qdrant_thread_id()
 
         # Ensure every event has a Qdrant point. Useful after data restores.
         scroll_result = await embedding_service.qdrant.scroll(

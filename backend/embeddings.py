@@ -10,6 +10,7 @@ from qdrant_client.models import (
     Filter,
     FieldCondition,
     MatchValue,
+    MatchAny,
     PointIdsList,
 )
 from database import people_collection
@@ -124,17 +125,25 @@ class EmbeddingService:
         question: str,
         top_k: int = 5,
         event_type_filter: str = None,
-        owner_id: str = None,
+        visible_thread_ids: list[str] = None,
     ) -> list[dict]:
+        """Semantic search restricted to a viewer's visible threads (their
+        own + ones they're subscribed to with visible=true). Falls through
+        to no filter when `visible_thread_ids` is None (used by background
+        jobs that index everything)."""
         vector = await self.embed(question)
         conditions = []
         if event_type_filter and event_type_filter != "all":
             conditions.append(FieldCondition(
                 key="event_type", match=MatchValue(value=event_type_filter),
             ))
-        if owner_id is not None:
+        if visible_thread_ids is not None:
+            if not visible_thread_ids:
+                # User has no visible threads — return nothing.
+                return []
             conditions.append(FieldCondition(
-                key="owner_id", match=MatchValue(value=str(owner_id)),
+                key="thread_id",
+                match=MatchAny(any=[str(t) for t in visible_thread_ids]),
             ))
         query_filter = Filter(must=conditions) if conditions else None
         result = await self.qdrant.query_points(
