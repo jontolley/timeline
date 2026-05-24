@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store'
+import { personInitials } from '../utils/colors'
 
 const LINKS = [
   { to: '/',     label: 'Timeline', end: true },
@@ -10,10 +11,10 @@ const LINKS = [
 function Brandmark() {
   return (
     <span className="brand-mark" aria-hidden="true">
-      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
-        <circle cx="11" cy="11" r="9.5" stroke="currentColor" strokeWidth="1.4" />
-        <line x1="11" y1="3" x2="11" y2="11" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-        <line x1="11" y1="11" x2="16" y2="14" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      <svg width="24" height="24" viewBox="0 0 32 32" fill="none">
+        <circle cx="16" cy="16" r="14" stroke="currentColor" strokeWidth="1.6" />
+        <circle cx="16" cy="16" r="2" fill="currentColor" />
+        <path d="M16 6 V 13 M22 24 L 17 17" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     </span>
   )
@@ -53,17 +54,24 @@ function UserMenu({ email, onSignOut }) {
     onSignOut()
   }
 
+  const name = email?.split('@')[0] ?? ''
+  const initial = personInitials(email || '?').charAt(0)
+
   return (
     <div className="user-menu" ref={menuRef}>
       <button
         type="button"
-        className="user-menu-trigger"
+        className="hs-account-trigger"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
       >
-        <span className="user-menu-email">{email}</span>
-        <span className="user-menu-caret" aria-hidden="true">▾</span>
+        <span className="hs-account-avatar" aria-hidden="true">{initial}</span>
+        <span className="hs-account-who">
+          <span className="hs-account-name">{name}</span>
+          <span className="hs-account-email">{email}</span>
+        </span>
+        <span className="hs-account-caret" aria-hidden="true">▾</span>
       </button>
       {open && (
         <div className="user-menu-dropdown" role="menu">
@@ -88,7 +96,7 @@ export default function Topbar() {
     <header className="topbar">
       <Link to="/" className="brand">
         <Brandmark />
-        <span>Timeline</span>
+        <span className="brand-word">Hindsite</span>
       </Link>
       <nav className="nav">
         {LINKS.map((l) => {

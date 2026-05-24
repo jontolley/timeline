@@ -36,8 +36,9 @@ export default function LoginView({ onBack }) {
   return (
     <div className="login">
       <div className="login-card">
-        <h1 className="login-title">Timeline</h1>
-        <p className="login-sub">Sign in to continue.</p>
+        <div className="login-eyebrow"><span className="login-pip" /> Sign in</div>
+        <h1 className="login-title">Welcome <em>back.</em></h1>
+        <p className="login-sub">Pick up wherever you left off.</p>
 
         {submitted ? (
           <div className="stack">

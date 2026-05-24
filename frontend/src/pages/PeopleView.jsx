@@ -2,15 +2,33 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { createPerson, updatePerson, deletePerson } from '../api/people'
 import { usePeopleStore } from '../store'
-import { PALETTE, personColor } from '../utils/colors'
+import { PALETTE, personColor, personInitials } from '../utils/colors'
+import { useConfirm } from '../lib/confirm'
+import Modal from '../components/Modal'
+
+const EMPTY_DRAFT = { name: '', color: 'blue' }
+
+function EditIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none">
+      <path d="M11.5 2.5 L13.5 4.5 L5 13 H3 V11 L11.5 2.5 Z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none">
+      <path d="M3 4 H13 M5 4 V13 H11 V4 M6 4 V3 H10 V4 M6 7 V11 M10 7 V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 export default function PeopleView({ embedded = false }) {
   const { people, loaded, load } = usePeopleStore()
   const [error, setError] = useState(null)
-  const [editingId, setEditingId] = useState(null)
-  const [draft, setDraft] = useState({ name: '', color: 'blue' })
-  const [deleteTarget, setDeleteTarget] = useState(null)
+  const [modalState, setModalState] = useState(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   const refresh = () => load(true).catch((e) => setError(e.message))
 
@@ -18,34 +36,26 @@ export default function PeopleView({ embedded = false }) {
     if (!loaded) load().catch((e) => setError(e.message))
   }, [loaded, load])
 
-  const startNew = () => {
-    setDraft({ name: '', color: 'blue' })
-    setEditingId('new')
-  }
-
-  const startEdit = (person) => {
-    setDraft({ name: person.name, color: person.color })
-    setEditingId(person._id)
-  }
-
-  const cancelEdit = () => {
-    setEditingId(null)
-    setError(null)
-  }
+  const openNew = () => setModalState({ mode: 'new', draft: EMPTY_DRAFT })
+  const openEdit = (person) => setModalState({
+    mode: 'edit',
+    id: person._id,
+    draft: { name: person.name, color: person.color },
+  })
+  const closeModal = () => { setModalState(null); setError(null) }
 
   const save = async (e) => {
     e.preventDefault()
-    if (!draft.name.trim()) return
+    if (!modalState || !modalState.draft.name.trim()) return
     setBusy(true)
     setError(null)
     try {
-      if (editingId === 'new') {
-        await createPerson({ name: draft.name.trim(), color: draft.color })
-      } else {
-        await updatePerson(editingId, { name: draft.name.trim(), color: draft.color })
-      }
+      const { mode, id, draft } = modalState
+      const payload = { name: draft.name.trim(), color: draft.color }
+      if (mode === 'new') await createPerson(payload)
+      else                 await updatePerson(id, payload)
       await refresh()
-      setEditingId(null)
+      closeModal()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -53,13 +63,18 @@ export default function PeopleView({ embedded = false }) {
     }
   }
 
-  const confirmDelete = async () => {
-    if (!deleteTarget) return
+  const remove = async (person) => {
+    const ok = await confirm({
+      title: `Delete ${person.name}?`,
+      body: `This removes ${person.name} from every event they're tagged on. The events themselves stay. Cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
-      await deletePerson(deleteTarget._id)
+      await deletePerson(person._id)
       await refresh()
-      setDeleteTarget(null)
     } catch (err) {
       setError(err.message)
     } finally {
@@ -67,177 +82,155 @@ export default function PeopleView({ embedded = false }) {
     }
   }
 
-  if (!loaded) {
-    const loadingMarkup = <p className="muted small">Loading…</p>
-    return embedded ? loadingMarkup : <div className="page-narrow">{loadingMarkup}</div>
-  }
-
-  const Wrapper = embedded ? 'div' : 'div'
-  const wrapperClass = embedded ? 'settings-section' : 'page-narrow'
-  return (
-    <Wrapper className={wrapperClass}>
-      {!embedded && <Link to="/" className="back-link">← Back to timeline</Link>}
-      <div className="page-head">
-        {!embedded && <h1 className="page-title" style={{ fontSize: 44 }}>People</h1>}
-        {embedded && <h2 className="section-title">People</h2>}
-        {editingId !== 'new' && (
-          <button type="button" className="btn btn-primary" onClick={startNew}>
-            Add person
+  const body = (
+    <>
+      <header className="hs-well-head">
+        <div>
+          <h1 className="hs-well-title">People.</h1>
+          <p className="hs-well-count"><strong>{people.length}</strong> total</p>
+        </div>
+        <div className="hs-well-right">
+          <button type="button" className="btn btn-primary" onClick={openNew}>
+            <span className="hs-plus" aria-hidden="true" />
+            New person
           </button>
+        </div>
+      </header>
+
+      <p className="hs-well-intro">
+        People you tag on events. Delete here to pull them from every event they're on — the events
+        themselves stay.
+      </p>
+
+      {error && <p className="hs-modal-error" style={{ marginBottom: 14 }}>{error}</p>}
+
+      <div className="hs-rows">
+        {!loaded && <p className="muted small">Loading…</p>}
+        {loaded && people.length === 0 && (
+          <div className="hs-row-empty-state">No people yet — click "New person"</div>
         )}
+        {people.map((person) => (
+          <article key={person._id} className="hs-row">
+            <div className="hs-row-head">
+              <span className="hs-swatch" style={{ background: personColor(person.color) }} />
+              <div className="hs-row-id">
+                <span className="hs-row-name">{person.name}</span>
+                <span className="hs-row-slug">{person.color}</span>
+              </div>
+              <div className="hs-row-meta" />
+              <div className="hs-row-actions">
+                <button
+                  type="button"
+                  className="hs-iconbtn"
+                  onClick={() => openEdit(person)}
+                  aria-label="Edit"
+                  title="Edit person"
+                  disabled={busy}
+                ><EditIcon /></button>
+                <button
+                  type="button"
+                  className="hs-iconbtn danger"
+                  onClick={() => remove(person)}
+                  aria-label="Delete"
+                  title="Delete person"
+                  disabled={busy}
+                ><TrashIcon /></button>
+              </div>
+            </div>
+          </article>
+        ))}
       </div>
 
-      {error && <p className="form-error" style={{ marginBottom: 18 }}>{error}</p>}
-
-      {editingId === 'new' && (
-        <PersonForm
-          draft={draft}
-          setDraft={setDraft}
+      {modalState && (
+        <PersonModal
+          modalState={modalState}
+          setDraft={(updater) => setModalState((s) => ({ ...s, draft: updater(s.draft) }))}
+          onClose={closeModal}
           onSubmit={save}
-          onCancel={cancelEdit}
           busy={busy}
-          submitLabel="Create"
+          error={error}
         />
       )}
-
-      <div className="stack">
-        {people.length === 0 && editingId !== 'new' && (
-          <p className="empty">No people yet. Add your first one.</p>
-        )}
-        {people.map((person) =>
-          editingId === person._id ? (
-            <PersonForm
-              key={person._id}
-              draft={draft}
-              setDraft={setDraft}
-              onSubmit={save}
-              onCancel={cancelEdit}
-              busy={busy}
-              submitLabel="Save"
-            />
-          ) : (
-            <PersonRow
-              key={person._id}
-              person={person}
-              onEdit={() => startEdit(person)}
-              onDelete={() => setDeleteTarget(person)}
-            />
-          ),
-        )}
-      </div>
-
-      {deleteTarget && (
-        <DeleteConfirmModal
-          person={deleteTarget}
-          onConfirm={confirmDelete}
-          onCancel={() => setDeleteTarget(null)}
-          busy={busy}
-        />
-      )}
-    </Wrapper>
+    </>
   )
-}
 
-function PersonRow({ person, onEdit, onDelete }) {
-  const color = personColor(person.color)
+  if (embedded) return body
+
+  // Standalone fallback (kept in case anything links directly to /people).
   return (
-    <div className="list-card">
-      <div className="row" style={{ minWidth: 0 }}>
-        <span
-          style={{ width: 18, height: 18, borderRadius: 999, background: color, flexShrink: 0 }}
-        />
-        <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{person.name}</span>
-        <span className="mono muted" style={{ textTransform: 'uppercase' }}>{person.color}</span>
-      </div>
-      <div className="row">
-        <button type="button" className="btn btn-ghost" onClick={onEdit}>Edit</button>
-        <button type="button" className="btn btn-danger" onClick={onDelete}>Delete</button>
-      </div>
+    <div className="page-narrow">
+      <Link to="/" className="back-link">← Back to timeline</Link>
+      {body}
     </div>
   )
 }
 
-function PersonForm({ draft, setDraft, onSubmit, onCancel, busy, submitLabel }) {
+function PersonModal({ modalState, setDraft, onClose, onSubmit, busy, error }) {
+  const { mode, draft } = modalState
+  const isNew = mode === 'new'
+
   return (
-    <form onSubmit={onSubmit} className="card" style={{ padding: 20, marginBottom: 12 }}>
-      <div className="form">
+    <Modal
+      open
+      onClose={onClose}
+      eyebrow={isNew ? 'New · person' : 'Edit · person'}
+      title={isNew ? 'A new' : 'Edit'}
+      titleEm={isNew ? 'person.' : draft.name || 'person.'}
+      sub={isNew
+        ? 'Just a name and color. Tag them on events as you go.'
+        : 'Rename or recolor.'}
+      primary={
+        <button type="submit" form="hs-person-form" className="btn btn-accent" disabled={busy || !draft.name.trim()}>
+          {busy ? 'Saving…' : isNew ? 'Create person' : 'Save'}
+        </button>
+      }
+      secondary={
+        <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+      }
+    >
+      <form id="hs-person-form" onSubmit={onSubmit}>
+        {error && <p className="hs-modal-error">{error}</p>}
+
         <div className="field">
-          <label className="field-label">Name</label>
+          <div className="field-label">
+            <span>Name</span>
+            <span className="hint">required</span>
+          </div>
           <input
-            className="input"
+            className="field-input"
+            type="text"
+            value={draft.name}
+            onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+            placeholder="e.g. Sam Chen"
             autoFocus
             required
-            value={draft.name}
-            onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
         </div>
+
         <div className="field">
-          <label className="field-label">Color</label>
-          <div className="row" style={{ flexWrap: 'wrap', gap: 10 }}>
-            {PALETTE.map((c) => {
-              const active = draft.color === c.key
-              return (
-                <button
-                  key={c.key}
-                  type="button"
-                  onClick={() => setDraft({ ...draft, color: c.key })}
-                  title={c.label}
-                  style={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    background: c.color,
-                    border: active ? '2px solid var(--ink)' : '1px solid var(--line)',
-                    outline: 'none',
-                    cursor: 'pointer',
-                    transition: 'transform .12s ease',
-                    transform: active ? 'scale(1.08)' : 'none',
-                  }}
-                  aria-label={c.label}
-                  aria-pressed={active}
-                />
-              )
-            })}
+          <div className="field-label">
+            <span>Color</span>
+            <span className="hint">avatar accent</span>
+          </div>
+          <div className="hs-color-row">
+            {PALETTE.map((c) => (
+              <button
+                key={c.key}
+                type="button"
+                title={c.label}
+                aria-label={c.label}
+                aria-pressed={draft.color === c.key}
+                className={`sw${draft.color === c.key ? ' on' : ''}`}
+                style={{ background: c.color }}
+                onClick={() => setDraft((d) => ({ ...d, color: c.key }))}
+              />
+            ))}
           </div>
         </div>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? 'Saving…' : submitLabel}
-          </button>
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-        </div>
-      </div>
-    </form>
+      </form>
+    </Modal>
   )
 }
 
-function DeleteConfirmModal({ person, onConfirm, onCancel, busy }) {
-  const color = personColor(person.color)
-  return (
-    <div className="sheet-backdrop" onClick={onCancel} style={{ alignItems: 'center' }}>
-      <div
-        className="card"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: 460, width: '100%', padding: 24, animation: 'slideUp .25s cubic-bezier(.2,.7,.2,1)' }}
-      >
-        <h3 style={{ margin: '0 0 12px', fontSize: 20, fontWeight: 500 }}>Delete person?</h3>
-        <div className="row" style={{ marginBottom: 10 }}>
-          <span style={{ width: 14, height: 14, borderRadius: '50%', background: color }} />
-          <b>{person.name}</b>
-        </div>
-        <p className="muted small" style={{ marginBottom: 20 }}>
-          This will remove <b>{person.name}</b> from every event they're associated with. The
-          events themselves will stay. This cannot be undone.
-        </p>
-        <div className="form-actions" style={{ justifyContent: 'flex-end' }}>
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="btn btn-danger" onClick={onConfirm} disabled={busy}>
-            {busy ? 'Deleting…' : 'Delete'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
+// Keep the helper around in case other code imports it eventually.
+export { personInitials }

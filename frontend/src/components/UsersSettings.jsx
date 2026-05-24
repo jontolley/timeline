@@ -1,12 +1,22 @@
 import { useEffect, useState } from 'react'
 import { deleteUser, getUserFootprint, inviteUser, updateUserRole } from '../api/users'
 import { useAuthStore, useUserStore } from '../store'
+import { personInitials } from '../utils/colors'
+import Modal from './Modal'
+
+function TrashIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none">
+      <path d="M3 4 H13 M5 4 V13 H11 V4 M6 4 V3 H10 V4 M6 7 V11 M10 7 V11" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 export default function UsersSettings() {
   const { users, loaded, load } = useUserStore()
   const currentUserId = useAuthStore((s) => s.userId)
-  const [email, setEmail] = useState('')
-  const [role, setRole] = useState('user')
+  const [inviteOpen, setInviteOpen] = useState(false)
+  const [draft, setDraft] = useState({ email: '', role: 'user' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -19,16 +29,25 @@ export default function UsersSettings() {
 
   const refresh = () => load(true).catch((e) => setError(e.message))
 
-  const handleInvite = async (e) => {
+  const openInvite = () => {
+    setDraft({ email: '', role: 'user' })
+    setError(null)
+    setInviteOpen(true)
+  }
+  const closeInvite = () => { setInviteOpen(false); setError(null) }
+
+  const submitInvite = async (e) => {
     e.preventDefault()
     setBusy(true)
     setError(null)
     try {
-      const newUser = await inviteUser({ email: email.trim().toLowerCase(), role })
+      const newUser = await inviteUser({
+        email: draft.email.trim().toLowerCase(),
+        role: draft.role,
+      })
       await refresh()
       setLastInvited({ email: newUser.email, url: window.location.origin })
-      setEmail('')
-      setRole('user')
+      closeInvite()
     } catch (err) {
       setError(err.message)
     } finally {
@@ -38,9 +57,7 @@ export default function UsersSettings() {
 
   const copyLink = async () => {
     if (!lastInvited) return
-    try {
-      await navigator.clipboard.writeText(lastInvited.url)
-    } catch { /* ignore — user can copy manually */ }
+    try { await navigator.clipboard.writeText(lastInvited.url) } catch { /* user copies manually */ }
   }
 
   const handleRoleChange = async (user, nextRole) => {
@@ -70,15 +87,11 @@ export default function UsersSettings() {
     }
   }
 
-  const cancelDelete = () => {
-    setDeleteTarget(null)
-    setFootprint(null)
-  }
+  const cancelDelete = () => { setDeleteTarget(null); setFootprint(null) }
 
   const confirmDelete = async () => {
     if (!deleteTarget) return
     setBusy(true)
-    setError(null)
     try {
       await deleteUser(deleteTarget._id)
       await refresh()
@@ -90,38 +103,43 @@ export default function UsersSettings() {
     }
   }
 
-  if (!loaded) {
-    return <p className="muted small">Loading…</p>
-  }
+  const adminCount = users.filter((u) => u.role === 'admin').length
 
   return (
-    <div className="settings-section">
-      <div className="page-head">
-        <h2 className="section-title">Users</h2>
-      </div>
+    <>
+      <header className="hs-well-head">
+        <div>
+          <h1 className="hs-well-title">Users.</h1>
+          <p className="hs-well-count">
+            <strong>{users.length}</strong> total
+            {adminCount > 0 && <> · <strong>{adminCount}</strong> admin{adminCount === 1 ? '' : 's'}</>}
+          </p>
+        </div>
+        <div className="hs-well-right">
+          <button type="button" className="btn btn-primary" onClick={openInvite}>
+            <span className="hs-plus" aria-hidden="true" />
+            New user
+          </button>
+        </div>
+      </header>
 
-      <p className="muted small" style={{ marginBottom: 18 }}>
-        Add people by email. After you add them, share the sign-in link below — they'll
-        be able to sign in with Google or the magic-link form. Each user has their own
-        private timeline. Admins manage other users; everyone else can only see their own data.
+      <p className="hs-well-intro">
+        Add people by email. After you add them, share the sign-in link below — they'll be able to
+        sign in with Google or the magic-link form. Each user has their own private timeline.
       </p>
 
-      {error && <p className="form-error" style={{ marginBottom: 18 }}>{error}</p>}
+      {error && !inviteOpen && (
+        <p className="hs-modal-error" style={{ marginBottom: 14 }}>{error}</p>
+      )}
 
       {lastInvited && (
-        <div className="form-notice" style={{ marginBottom: 18 }}>
-          <p style={{ margin: 0, marginBottom: 6 }}>
-            <strong>{lastInvited.email}</strong> can now sign in. Share this link with them:
+        <div className="hs-notice">
+          <p className="hs-notice-title">
+            <strong>{lastInvited.email}</strong> can now sign in. Share this link:
           </p>
-          <div className="row" style={{ gap: 8, alignItems: 'center' }}>
-            <code style={{
-              flex: 1, padding: '6px 10px', background: 'var(--surface)',
-              border: '1px solid var(--line)', borderRadius: 6, fontSize: 12.5,
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {lastInvited.url}
-            </code>
-            <button type="button" className="btn btn-ghost" onClick={copyLink}>Copy</button>
+          <div className="row">
+            <code>{lastInvited.url}</code>
+            <button type="button" className="btn" onClick={copyLink}>Copy</button>
             <button type="button" className="btn btn-ghost" onClick={() => setLastInvited(null)}>
               Dismiss
             </button>
@@ -129,80 +147,129 @@ export default function UsersSettings() {
         </div>
       )}
 
-      <form onSubmit={handleInvite} className="card" style={{ padding: 20, marginBottom: 24 }}>
-        <div className="form">
-          <div className="field">
-            <label className="field-label" htmlFor="invite-email">
-              Email<span className="field-required">*</span>
-            </label>
-            <input
-              id="invite-email"
-              className="input"
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="someone@example.com"
-            />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="invite-role">Role</label>
-            <select
-              id="invite-role"
-              className="select"
-              value={role}
-              onChange={(e) => setRole(e.target.value)}
-            >
-              <option value="user">User</option>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div className="form-actions">
-            <button type="submit" className="btn btn-primary" disabled={busy || !email}>
-              {busy ? 'Adding…' : 'Add user'}
-            </button>
-          </div>
-        </div>
-      </form>
-
-      <div className="stack">
+      <div className="hs-rows">
+        {!loaded && <p className="muted small">Loading…</p>}
+        {loaded && users.length === 0 && (
+          <div className="hs-row-empty-state">No users yet — click "New user"</div>
+        )}
         {users.map((u) => {
           const isSelf = u._id === currentUserId
           return (
-            <div key={u._id} className="list-card">
-              <div className="row" style={{ minWidth: 0 }}>
-                <span style={{ fontWeight: 500, color: 'var(--ink)' }}>{u.email}</span>
-                {isSelf && (
-                  <span className="mono muted" style={{ fontSize: 11, textTransform: 'uppercase' }}>
-                    you
-                  </span>
-                )}
+            <article key={u._id} className="hs-row">
+              <div className="hs-row-head">
+                <span className="hs-shared-avatar" style={{ width: 24, height: 24, fontSize: 13 }}>
+                  {personInitials(u.email).charAt(0)}
+                </span>
+                <div className="hs-row-id">
+                  <span className="hs-row-name">{u.email}</span>
+                  {isSelf && <span className="hs-row-slug">you</span>}
+                </div>
+                <div className="hs-row-meta">
+                  <select
+                    className="hs-badge"
+                    value={u.role}
+                    onChange={(e) => handleRoleChange(u, e.target.value)}
+                    disabled={busy || isSelf}
+                    aria-label={`Role for ${u.email}`}
+                    style={{
+                      cursor: isSelf ? 'not-allowed' : 'pointer',
+                      appearance: 'none',
+                      WebkitAppearance: 'none',
+                      paddingRight: 22,
+                      backgroundImage:
+                        "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='8' height='8' viewBox='0 0 8 8'><path d='M1 2.5 L4 5.5 L7 2.5' stroke='%236c7589' stroke-width='1.2' fill='none' stroke-linecap='round'/></svg>\")",
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 8px center',
+                    }}
+                  >
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div className="hs-row-actions">
+                  <button
+                    type="button"
+                    className="hs-iconbtn danger"
+                    onClick={() => beginDelete(u)}
+                    aria-label="Remove"
+                    title="Remove user"
+                    disabled={busy || isSelf}
+                  ><TrashIcon /></button>
+                </div>
               </div>
-              <div className="row" style={{ gap: 8 }}>
-                <select
-                  className="select"
-                  value={u.role}
-                  onChange={(e) => handleRoleChange(u, e.target.value)}
-                  disabled={busy || isSelf}
-                  style={{ minWidth: 110 }}
-                  aria-label={`Role for ${u.email}`}
-                >
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-                <button
-                  type="button"
-                  className="btn btn-danger"
-                  onClick={() => beginDelete(u)}
-                  disabled={busy || isSelf}
-                >
-                  Remove
-                </button>
-              </div>
-            </div>
+            </article>
           )
         })}
       </div>
+
+      {inviteOpen && (
+        <Modal
+          open
+          onClose={closeInvite}
+          eyebrow="New · user"
+          title="A new"
+          titleEm="user."
+          sub="Add by email. They'll be able to sign in with Google or a magic link."
+          primary={
+            <button
+              type="submit"
+              form="hs-user-form"
+              className="btn btn-accent"
+              disabled={busy || !draft.email.trim()}
+            >
+              {busy ? 'Adding…' : 'Add user'}
+            </button>
+          }
+          secondary={
+            <button type="button" className="btn" onClick={closeInvite} disabled={busy}>Cancel</button>
+          }
+        >
+          <form id="hs-user-form" onSubmit={submitInvite}>
+            {error && <p className="hs-modal-error">{error}</p>}
+
+            <div className="field">
+              <div className="field-label">
+                <span>Email</span>
+                <span className="hint">required</span>
+              </div>
+              <input
+                className="field-input"
+                type="email"
+                required
+                value={draft.email}
+                onChange={(e) => setDraft((d) => ({ ...d, email: e.target.value }))}
+                placeholder="someone@example.com"
+                autoFocus
+              />
+            </div>
+
+            <div className="field">
+              <div className="field-label">
+                <span>Role</span>
+                <span className="hint">you can change this later</span>
+              </div>
+              <div className="hs-visibility">
+                <button
+                  type="button"
+                  className={`hs-v-opt${draft.role === 'user' ? ' on' : ''}`}
+                  onClick={() => setDraft((d) => ({ ...d, role: 'user' }))}
+                >
+                  <div className="t"><span className="dot" /> User</div>
+                  <div className="d">Has their own private timeline.</div>
+                </button>
+                <button
+                  type="button"
+                  className={`hs-v-opt shared${draft.role === 'admin' ? ' on' : ''}`}
+                  onClick={() => setDraft((d) => ({ ...d, role: 'admin' }))}
+                >
+                  <div className="t"><span className="dot" /> Admin</div>
+                  <div className="d">Can manage other users.</div>
+                </button>
+              </div>
+            </div>
+          </form>
+        </Modal>
+      )}
 
       {deleteTarget && (
         <DeleteConfirmModal
@@ -213,7 +280,7 @@ export default function UsersSettings() {
           onConfirm={confirmDelete}
         />
       )}
-    </div>
+    </>
   )
 }
 
@@ -224,43 +291,45 @@ function DeleteConfirmModal({ email, footprint, busy, onCancel, onConfirm }) {
     footprint.people > 0 || footprint.categories > 0
   )
   return (
-    <div className="sheet-backdrop" onClick={onCancel} role="dialog" aria-modal="true">
-      <div className="sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 480 }}>
-        <h3>Remove {email}?</h3>
-        {loading ? (
-          <p className="muted small">Counting their data…</p>
-        ) : (
-          <>
-            <p className="muted small" style={{ marginBottom: 16 }}>
-              This permanently deletes everything this user owns. It cannot be undone.
+    <Modal
+      open
+      onClose={onCancel}
+      eyebrow="Danger · remove user"
+      title="Remove"
+      titleEm={email + '?'}
+      sub="This permanently deletes everything this user owns. It cannot be undone."
+      width={520}
+      primary={
+        <button
+          type="button"
+          className="btn btn-danger"
+          onClick={onConfirm}
+          disabled={busy || loading}
+        >
+          {busy ? 'Deleting…' : 'Delete user & data'}
+        </button>
+      }
+      secondary={
+        <button type="button" className="btn" onClick={onCancel} disabled={busy}>Cancel</button>
+      }
+    >
+      {loading ? (
+        <p className="muted small">Counting their data…</p>
+      ) : (
+        <>
+          <ul className="footprint-list">
+            <li><strong>{footprint.events}</strong> events</li>
+            <li><strong>{footprint.media}</strong> photos / videos / audio (incl. their R2 objects)</li>
+            <li><strong>{footprint.people}</strong> people</li>
+            <li><strong>{footprint.categories}</strong> categories</li>
+          </ul>
+          {!hasData && (
+            <p className="muted small" style={{ marginTop: 12 }}>
+              Nothing to clean up — they have no data yet.
             </p>
-            <ul className="footprint-list">
-              <li><strong>{footprint.events}</strong> events</li>
-              <li><strong>{footprint.media}</strong> photos / videos / audio (incl. their R2 objects)</li>
-              <li><strong>{footprint.people}</strong> people</li>
-              <li><strong>{footprint.categories}</strong> categories</li>
-            </ul>
-            {!hasData && (
-              <p className="muted small" style={{ marginTop: 12 }}>
-                Nothing to clean up — they have no data yet.
-              </p>
-            )}
-          </>
-        )}
-        <div className="form-actions" style={{ justifyContent: 'flex-end', marginTop: 16 }}>
-          <button type="button" className="btn" onClick={onCancel} disabled={busy}>
-            Cancel
-          </button>
-          <button
-            type="button"
-            className="btn btn-danger"
-            onClick={onConfirm}
-            disabled={busy || loading}
-          >
-            {busy ? 'Deleting…' : 'Delete user & data'}
-          </button>
-        </div>
-      </div>
-    </div>
+          )}
+        </>
+      )}
+    </Modal>
   )
 }

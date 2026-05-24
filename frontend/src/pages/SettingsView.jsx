@@ -1,11 +1,17 @@
 import { useMemo } from 'react'
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
 import BackupView from './BackupView'
 import CategoriesSettings from '../components/CategoriesSettings'
 import ThreadsSettings from '../components/ThreadsSettings'
 import UsersSettings from '../components/UsersSettings'
-import { useAuthStore } from '../store'
+import {
+  useAuthStore,
+  useCategoryStore,
+  usePeopleStore,
+  useThreadStore,
+  useUserStore,
+} from '../store'
 
 const BASE_TABS = [
   { value: 'people',     label: 'People' },
@@ -20,8 +26,13 @@ const ADMIN_TABS = [
 export default function SettingsView() {
   const navigate = useNavigate()
   const [params] = useSearchParams()
-  const location = useLocation()
   const role = useAuthStore((s) => s.role)
+
+  const peopleCount = usePeopleStore((s) => s.people.length)
+  const categoryCount = useCategoryStore((s) => s.categories.length)
+  const threadCount = useThreadStore((s) => s.threads.filter((t) => t.is_owner).length)
+  const userCount = useUserStore((s) => s.users.length)
+
   const tabs = useMemo(
     () => (role === 'admin' ? [...BASE_TABS, ...ADMIN_TABS] : BASE_TABS),
     [role],
@@ -34,33 +45,64 @@ export default function SettingsView() {
 
   const setTab = (value) => {
     navigate(`/settings?tab=${value}`, { replace: true })
-    // Reset scroll when switching tabs so the user lands at the top of each section.
     window.scrollTo(0, 0)
   }
 
+  const countFor = (value) => {
+    switch (value) {
+      case 'people':     return peopleCount
+      case 'categories': return categoryCount
+      case 'threads':    return threadCount
+      case 'users':      return userCount
+      default:           return null
+    }
+  }
+
   return (
-    <div className="page-narrow">
-      <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>Settings</h1>
-      <div className="settings-tabs">
-        {tabs.map((t) => (
-          <button
-            key={t.value}
-            type="button"
-            className="settings-tab"
-            aria-pressed={active === t.value}
-            onClick={() => setTab(t.value)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      <div className="settings-panel">
-        {active === 'people' && <PeopleView embedded key={location.search} />}
-        {active === 'categories' && <CategoriesSettings />}
-        {active === 'threads' && <ThreadsSettings />}
-        {active === 'backup' && <BackupView embedded key={location.search} />}
-        {active === 'users' && role === 'admin' && <UsersSettings />}
-      </div>
+    <div className="hs-settings-page">
+      <section className="hs-settings-console">
+        <aside className="hs-rail">
+          <div className="hs-rail-brand">
+            <span className="hs-rail-crumb">Settings</span>
+          </div>
+
+          <div>
+            <p className="hs-rail-eyebrow">Account</p>
+            <nav className="hs-rail-nav">
+              {tabs.map((t) => {
+                const isActive = active === t.value
+                const count = countFor(t.value)
+                return (
+                  <button
+                    key={t.value}
+                    type="button"
+                    className={`hs-rail-item${isActive ? ' active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
+                    onClick={() => setTab(t.value)}
+                  >
+                    <span>{t.label}</span>
+                    {count != null ? (
+                      <span className="hs-rail-count">{count}</span>
+                    ) : (
+                      <span className="hs-rail-arr" aria-hidden="true">↗</span>
+                    )}
+                  </button>
+                )
+              })}
+            </nav>
+          </div>
+
+          <div className="hs-rail-spacer" />
+        </aside>
+
+        <main className="hs-well">
+          {active === 'people'     && <PeopleView embedded />}
+          {active === 'categories' && <CategoriesSettings />}
+          {active === 'threads'    && <ThreadsSettings />}
+          {active === 'backup'     && <BackupView embedded />}
+          {active === 'users'      && role === 'admin' && <UsersSettings />}
+        </main>
+      </section>
     </div>
   )
 }
