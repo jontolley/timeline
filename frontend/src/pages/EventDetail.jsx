@@ -9,6 +9,7 @@ import { useEventStore, usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { personColor } from '../utils/colors'
+import { useAlert, useConfirm } from '../lib/confirm'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -34,6 +35,8 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const confirm = useConfirm()
+  const alert = useAlert()
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -55,7 +58,13 @@ export default function EventDetail() {
   }, [event])
 
   const handleDelete = async () => {
-    if (!window.confirm('Delete this event? This cannot be undone.')) return
+    const ok = await confirm({
+      title: 'Delete this event?',
+      body: 'This cannot be undone.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     await deleteEvent(id)
     useEventStore.getState().invalidate()
     navigate('/')
@@ -69,18 +78,24 @@ export default function EventDetail() {
         const updated = await attachMedia(id, meta)
         setEvent(updated)
       } catch (err) {
-        window.alert(`Failed to upload ${file.name}: ${err.message}`)
+        await alert({ title: `Upload failed: ${file.name}`, body: err.message })
       }
     }
   }
 
   const handleMediaDelete = async (key) => {
-    if (!window.confirm('Remove this item?')) return
+    const ok = await confirm({
+      title: 'Remove this item?',
+      body: 'The file will be deleted from your timeline.',
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
     try {
       const updated = await removeMedia(id, key)
       setEvent(updated)
     } catch (err) {
-      window.alert(`Failed to remove: ${err.message}`)
+      await alert({ title: 'Removal failed', body: err.message })
     }
   }
 

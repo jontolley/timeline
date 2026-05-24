@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { createCategory, deleteCategory, updateCategory } from '../api/categories'
 import { useCategoryStore } from '../store'
 import { PALETTE, personColor } from '../utils/colors'
+import { useConfirm } from '../lib/confirm'
 
 const EMPTY_DRAFT = { name: '', label: '', color: 'blue' }
 
@@ -11,6 +12,7 @@ export default function CategoriesSettings() {
   const [draft, setDraft] = useState(EMPTY_DRAFT)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   useEffect(() => {
     if (!loaded) load().catch((e) => setError(e.message))
@@ -63,7 +65,13 @@ export default function CategoriesSettings() {
   }
 
   const remove = async (cat) => {
-    if (!window.confirm(`Delete "${cat.label}"? This blocks if any events still use it.`)) return
+    const ok = await confirm({
+      title: `Delete "${cat.label}"?`,
+      body: 'Blocked if any events still use this category — you\'ll see the count if so.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {

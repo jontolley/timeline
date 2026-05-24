@@ -5,6 +5,7 @@ import { describePhoto, extractExif } from '../api/uploads'
 import EventCard from '../components/EventCard'
 import FilterBar from '../components/FilterBar'
 import { setPendingCaption, setPendingPhoto } from '../lib/photoHandoff'
+import { useAlert } from '../lib/confirm'
 import { useEventStore, usePeopleStore } from '../store'
 import { yearOf } from '../utils/date'
 
@@ -75,6 +76,7 @@ export default function TimelineView() {
   // One-shot guard: restore anchor only on the first event-render after mount.
   const anchorRestoredRef = useRef(false)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const alert = useAlert()
 
   useEffect(() => {
     if (!peopleLoaded) loadPeople().catch(() => {})
@@ -192,7 +194,7 @@ export default function TimelineView() {
       setPendingPhoto(file)
       navigate('/events/new', { state: { prefill: exif } })
     } catch (err) {
-      window.alert(err.message || 'Could not read photo')
+      await alert({ title: 'Could not read photo', body: err.message || '' })
     } finally {
       setPhotoBusy(false)
     }
@@ -211,7 +213,7 @@ export default function TimelineView() {
       setPendingCaption(captionPromise)
       navigate('/events/new', { state: { prefill: { ...exif, aiCaption: true } } })
     } catch (err) {
-      window.alert(err.message || 'Could not read photo')
+      await alert({ title: 'Could not read photo', body: err.message || '' })
     } finally {
       setAiPhotoBusy(false)
     }

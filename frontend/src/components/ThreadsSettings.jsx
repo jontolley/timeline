@@ -11,6 +11,7 @@ import {
 } from '../api/threads'
 import { useEventStore, useThreadStore } from '../store'
 import { PALETTE, personColor } from '../utils/colors'
+import { useConfirm } from '../lib/confirm'
 
 const EMPTY_DRAFT = { name: '', color: 'slate', visibility: 'private' }
 
@@ -21,6 +22,7 @@ export default function ThreadsSettings() {
   const [sharingId, setSharingId] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   useEffect(() => {
     if (!loaded) load().catch((e) => setError(e.message))
@@ -75,7 +77,13 @@ export default function ThreadsSettings() {
   }
 
   const remove = async (t) => {
-    if (!window.confirm(`Delete "${t.name}"? Blocked while any events still belong to this thread.`)) return
+    const ok = await confirm({
+      title: `Delete "${t.name}"?`,
+      body: 'Blocked while any events still belong to this thread — move them first if so.',
+      confirmLabel: 'Delete',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -106,7 +114,13 @@ export default function ThreadsSettings() {
 
   const unsubscribe = async (t) => {
     if (!t.subscription) return
-    if (!window.confirm(`Remove "${t.name}" from your view? You can be re-added by ${t.owner_email}.`)) return
+    const ok = await confirm({
+      title: `Remove "${t.name}" from your view?`,
+      body: `${t.owner_email} can re-add you later if you change your mind.`,
+      confirmLabel: 'Remove',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {
@@ -242,6 +256,7 @@ function SharePanel({ thread, onChange }) {
   const [subs, setSubs] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
+  const confirm = useConfirm()
 
   const loadSubs = async () => {
     try {
@@ -274,7 +289,13 @@ function SharePanel({ thread, onChange }) {
   }
 
   const revoke = async (sub) => {
-    if (!window.confirm(`Stop sharing with ${sub.subscriber_email}?`)) return
+    const ok = await confirm({
+      title: `Stop sharing with ${sub.subscriber_email}?`,
+      body: 'They\'ll immediately lose access to this thread\'s events.',
+      confirmLabel: 'Stop sharing',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     setError(null)
     try {

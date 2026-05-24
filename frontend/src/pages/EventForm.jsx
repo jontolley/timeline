@@ -7,6 +7,7 @@ import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { useEventStore, usePeopleStore, useThreadStore } from '../store'
+import { useAlert } from '../lib/confirm'
 import { hasTime } from '../utils/date'
 import { useEventTypes } from '../utils/eventTypes'
 
@@ -71,6 +72,7 @@ export default function EventForm() {
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
   const threads = useThreadStore((s) => s.threads)
+  const alert = useAlert()
   const eventTypes = useEventTypes()
 
   const pendingMediaUrls = useMemo(
@@ -234,7 +236,10 @@ export default function EventForm() {
         }
         useEventStore.getState().invalidate()
         if (failed.length) {
-          window.alert(`Event saved, but some media failed:\n${failed.join('\n')}`)
+          await alert({
+            title: 'Event saved, but some media failed',
+            body: failed.join('\n'),
+          })
         }
         navigate(`/events/${created._id}`)
       }

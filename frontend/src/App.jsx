@@ -9,6 +9,7 @@ import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
 import { useAuthStore, useCategoryStore, useThreadStore } from './store'
+import { ConfirmProvider } from './lib/confirm'
 
 function UnauthedShell() {
   const [showLogin, setShowLogin] = useState(false)
@@ -56,9 +57,10 @@ export default function App() {
   }
 
   return (
-    <BrowserRouter>
-      <Topbar />
-      <Routes>
+    <ConfirmProvider>
+      <BrowserRouter>
+        <Topbar />
+        <Routes>
         <Route path="/" element={<TimelineView />} />
         <Route path="/events/new" element={<EventForm />} />
         <Route path="/events/:id" element={<EventDetail />} />
@@ -69,6 +71,7 @@ export default function App() {
         <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
         <Route path="/backup" element={<Navigate to="/settings?tab=backup" replace />} />
       </Routes>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ConfirmProvider>
   )
 }
