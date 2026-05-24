@@ -105,7 +105,7 @@ export default function LandingPage({ onEnter }) {
 
         {/* drifting polaroids — drop real photos into frontend/public/landing/ */}
         <div className="hs-memory hs-m1"><div className="hs-pic" style={{ backgroundImage: 'url(/landing/photo-1.jpg)' }} /><div className="hs-cap">a quiet morning</div></div>
-        <div className="hs-memory hs-m2"><div className="hs-pic" style={{ backgroundImage: 'url(/landing/photo-2.jpeg)' }} /><div className="hs-cap">the trip we almost cancelled</div></div>
+        <div className="hs-memory hs-m2"><div className="hs-pic" style={{ backgroundImage: 'url(/landing/photo-2.jpg)' }} /><div className="hs-cap">the trip we almost cancelled</div></div>
         <div className="hs-memory hs-m3"><div className="hs-pic" style={{ backgroundImage: 'url(/landing/photo-3.jpg)' }} /><div className="hs-cap">summer, somewhere</div></div>
 
         <div className="hs-play-pill">
