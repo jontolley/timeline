@@ -15,22 +15,33 @@ export const useAuthStore = create((set, get) => ({
 
   check: async () => {
     const result = await fetchMe()
+    const userId = result.user_id || null
     set({
       status: result.authenticated ? 'authenticated' : 'unauthenticated',
       email: result.email || null,
       role: result.role || null,
-      userId: result.user_id || null,
+      userId,
     })
+    // Keep the chat scoped to the signed-in user: same user across a reload
+    // keeps their history, a different user (or a fresh sign-in after sign-out)
+    // gets a clean slate.
+    if (result.authenticated && userId) {
+      useChatStore.getState().claim(userId)
+    } else {
+      useChatStore.getState().reset()
+    }
   },
 
   signOut: async () => {
     try { await apiLogout() } catch { /* clear local state regardless */ }
     set({ status: 'unauthenticated', email: null, role: null, userId: null })
+    useChatStore.getState().reset()
   },
 
   markUnauthorized: () => {
     if (get().status !== 'unauthenticated') {
       set({ status: 'unauthenticated', email: null, role: null, userId: null })
+      useChatStore.getState().reset()
     }
   },
 }))
@@ -165,11 +176,22 @@ function toApiMessages(messages) {
 
 export const useChatStore = create(persist((set, get) => ({
   messages: [],
+  ownerId: null,
   filter: 'all',
   streaming: false,
 
   setFilter: (filter) => set({ filter }),
-  reset: () => set({ messages: [], streaming: false }),
+  reset: () => set({ messages: [], streaming: false, ownerId: null }),
+
+  // Called on every successful auth check. Wipes chat if the stored
+  // owner no longer matches (different user, or post-signout state where
+  // ownerId is null). Preserves chat across same-user page reloads.
+  claim: (userId) => {
+    if (!userId) return
+    if (get().ownerId !== userId) {
+      set({ messages: [], streaming: false, ownerId: userId })
+    }
+  },
 
   _appendMessage: (msg) => set((s) => ({ messages: [...s.messages, msg] })),
 
@@ -283,6 +305,7 @@ export const useChatStore = create(persist((set, get) => ({
   // mid-stream — onRehydrateStorage scrubs those.
   partialize: (state) => ({
     messages: state.messages,
+    ownerId: state.ownerId,
   }),
   onRehydrateStorage: () => (state) => {
     if (!state) return
