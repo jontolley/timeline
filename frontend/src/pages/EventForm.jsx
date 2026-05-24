@@ -72,6 +72,7 @@ export default function EventForm() {
   const [error, setError] = useState(null)
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
   const threads = useThreadStore((s) => s.threads)
+  const ownedThreads = useMemo(() => threads.filter((t) => t.is_owner), [threads])
   const alert = useAlert()
   const eventTypes = useEventTypes()
 
@@ -129,13 +130,15 @@ export default function EventForm() {
     if (!peopleLoaded) loadPeople().catch(() => {})
   }, [peopleLoaded, loadPeople])
 
-  // On the create path, default the thread picker to the user's oldest thread
-  // once the threads store has loaded. Edit path keeps whatever the event has.
+  // On the create path, default the thread picker to the user's oldest owned
+  // thread once the threads store has loaded. Edit path keeps whatever the
+  // event has. Subscribed (read-only) threads are excluded — you can't write
+  // to a thread you don't own.
   useEffect(() => {
     if (id) return
-    if (!threads.length) return
-    setForm((f) => (f.thread_id ? f : { ...f, thread_id: threads[0]._id }))
-  }, [id, threads])
+    if (!ownedThreads.length) return
+    setForm((f) => (f.thread_id ? f : { ...f, thread_id: ownedThreads[0]._id }))
+  }, [id, ownedThreads])
 
   useEffect(() => {
     if (!id) return
@@ -302,7 +305,7 @@ export default function EventForm() {
           </select>
         </div>
 
-        {threads.length > 1 && (
+        {ownedThreads.length > 1 && (
           <div className="field">
             <label className="field-label" htmlFor="ef-thread">
               Thread<span className="field-required">*</span>
@@ -313,7 +316,7 @@ export default function EventForm() {
               value={form.thread_id}
               onChange={set('thread_id')}
             >
-              {threads.map((t) => (
+              {ownedThreads.map((t) => (
                 <option key={t._id} value={t._id}>{t.name}</option>
               ))}
             </select>
