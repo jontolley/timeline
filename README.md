@@ -1,10 +1,14 @@
-# Personal Timeline
+# Hindsite
+
+> Look back, on purpose.
 
 A self-hosted timeline for personal life events with AI-powered chat. Add events by typing into a chat box, search and ask questions across your history with semantic retrieval, attach photos, and tag people. Built as a small family-scale project — multiple users can share one deployment, each with their own private timeline, and selectively share threads with each other.
 
+The repo and package are still named `personal-timeline`; **Hindsite** is the user-facing brand.
+
 ## Stack
 
-- **Frontend:** React 18 + Vite + Tailwind, served from nginx in Docker
+- **Frontend:** React 18 + Vite, plain CSS design system (Instrument Serif + Geist + JetBrains Mono), served from nginx in Docker
 - **Backend:** FastAPI + Uvicorn (Python 3.12)
 - **Database:** MongoDB (events, people)
 - **Vector search:** Qdrant (semantic retrieval for chat)

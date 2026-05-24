@@ -76,12 +76,14 @@ The app is deployed publicly (backend + Qdrant on Fly, MongoDB Atlas, frontend o
 
 | Service | Tech | Port |
 |---------|------|------|
-| Frontend | React 18 + Vite + Tailwind CSS | 3000 (nginx in Docker) |
+| Frontend | React 18 + Vite + plain CSS (Hindsite design system) | 3000 (nginx in Docker) |
 | Backend | FastAPI + Uvicorn | 8000 |
 | MongoDB | Motor (async driver) | 27017 |
 | Qdrant | Vector DB for semantic search | 6333 |
 | Anthropic API | Chat (Claude Sonnet 4.6 by default) | — |
 | OpenAI API | Embeddings (text-embedding-3-small, 1536-dim) | — |
+
+The product is branded **Hindsite** ("Look back, on purpose."). The repo/package is still `personal-timeline`; only the UI carries the Hindsite name.
 
 Persistent data lives in `./data/mongo` and `./data/qdrant`.
 
@@ -123,8 +125,9 @@ Persistent data lives in `./data/mongo` and `./data/qdrant`.
 - **`components/EventCard.jsx`** — Timeline tile. Renders photo thumbnails, video posters (with play badge), and a styled placeholder or waveform thumb for audio. Tagged with `data-event-id` for the scroll-restoration anchor. Shows a thread chip when the user has 2+ threads and a "shared" badge for events from other users.
 - **`components/FilterBar.jsx`** — Category, threads, and people chip rows. Threads row is hidden when the user has only 1 thread.
 - **`components/LocationPicker.jsx`** — Leaflet + OpenStreetMap map with Nominatim geocoding (no API key). On mount, auto-geocodes a value that has name/address but no coords; also reverse-geocodes the inverse case (coords but no name) so EXIF-derived locations resolve to a readable address. Nominatim search is debounced 400ms.
-- **`components/Topbar.jsx`** — Brand, Timeline / Chat nav, and a user menu (email chip → dropdown with Settings + Sign out). Esc and click-outside close the dropdown.
-- **`pages/SettingsView.jsx`** — Tabbed Settings page (People / Categories / Threads / Backup, plus Users for admins). Old `/people` and `/backup` routes redirect here.
+- **`components/Topbar.jsx`** — Hindsite wordmark + Timeline / Chat nav, and the account chip on the far right (avatar initial + display name + email → dropdown with Settings + Sign out). Esc and click-outside close the dropdown.
+- **`components/Modal.jsx`** — Reusable add/edit dialog used by every Settings section (Threads, Categories, People, Users) plus the user-delete footprint confirm and the backup-restore confirm. Renders an eyebrow + serif headline + sub + close button, a body slot for the form, and a right-aligned footer with cancel + primary action. Locks body scroll while open and wires Escape + scrim click to close. Submitting Enter inside the `<form>` slot triggers `primary` (link the form to its button via `form="..."`).
+- **`pages/SettingsView.jsx`** — Settings is a **console layout**: a 280px left rail with the "Settings" label and the Account nav (People / Categories / Threads / Backup, plus Users for admins, each with a live count) and a right "well" that renders the active section. No outer card/border — the console flushes against the page edges. Old `/people` and `/backup` routes redirect here. Each section component renders its own `.hs-well-head` (serif `<h1>` + `.hs-well-count` line) inside the well.
 - **`pages/EventDetail.jsx`** — On load, if the event has a location name/address but no coords, geocodes via Nominatim and stores the result in `displayLocation` (display-only, not saved back). Media is split: photos + videos render in a grid with a video lightbox; audio gets its own inline-player strip below the grid. Edit / Delete buttons hide for shared events (`event.is_owner === false`).
 
 ### Tools (`tools/`)
@@ -146,6 +149,7 @@ Persistent data lives in `./data/mongo` and `./data/qdrant`.
 - **Qdrant point IDs** are `uuid5` of the MongoDB `_id` string — never random, so upsert is idempotent.
 - **SSE buffering** is disabled in nginx (`proxy_buffering off`) so tokens reach the browser without delay.
 - **No `window.confirm` / `window.alert`** in the frontend. Use `useConfirm()` / `useAlert()` from `lib/confirm.jsx` so dialogs match the rest of the app.
+- **Hindsite design system.** Tokens live at the top of `frontend/src/index.css` under `:root`. Three font roles: Instrument Serif (`--font-serif`) for display headlines + italic accents, Geist (`--font-sans`) for body/UI, JetBrains Mono (`--font-mono`) for eyebrows and labels. Indigo palette: cream `--bg` (#eef1f8) and `--cream`, denim `--accent` (#2e5bb0) with `--accent-d`, gold-on-dark `--gold`. Surfaces use `--feature-bg` (cards/rows), `--rule` (1px borders), `--hi` (highlight tint). Hero gradients (`--hero-1..4`) and dark CTA (`--dark-1/2`) are landing-only. When adding new UI, prefer existing tokens over hex literals so palette changes propagate.
 
 ## Changing models
 
