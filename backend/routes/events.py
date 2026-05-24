@@ -4,7 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from bson import ObjectId
 from auth import require_auth
-from database import categories_collection, events_collection, threads_collection
+from database import (
+    categories_collection,
+    events_collection,
+    people_collection,
+    thread_subscriptions_collection,
+    threads_collection,
+)
 from models import EventCreate, EventUpdate
 from embeddings import EmbeddingService
 import storage
@@ -51,12 +57,49 @@ async def _resolve_thread_id(thread_id: Optional[str], owner_id: ObjectId) -> Ob
     return default_thread["_id"]
 
 
-async def _serialize(doc: dict) -> dict:
+async def _build_denorm_context(docs: list[dict], viewer_id) -> dict:
+    """Pre-load the foreign owners' category labels + people names for any
+    events not owned by `viewer_id`. Avoids N+1 lookups during _serialize."""
+    foreign_owner_ids = {d.get("owner_id") for d in docs if d.get("owner_id") and d.get("owner_id") != viewer_id}
+    cat_map: dict = {}  # (owner_id, name) -> {label, color}
+    if foreign_owner_ids:
+        async for c in categories_collection.find({"owner_id": {"$in": list(foreign_owner_ids)}}):
+            cat_map[(c["owner_id"], c["name"])] = {"label": c["label"], "color": c["color"]}
+
+    people_ids: set = set()
+    for d in docs:
+        if d.get("owner_id") != viewer_id:
+            for pid in (d.get("people") or []):
+                if isinstance(pid, str):
+                    people_ids.add(pid)
+    people_map: dict = {}
+    if people_ids:
+        try:
+            oids = [ObjectId(pid) for pid in people_ids if pid]
+            async for p in people_collection.find(
+                {"_id": {"$in": oids}}, {"_id": 1, "name": 1, "color": 1}
+            ):
+                people_map[str(p["_id"])] = {"name": p.get("name") or "", "color": p.get("color") or "slate"}
+        except Exception:
+            pass
+
+    return {"viewer_id": viewer_id, "categories": cat_map, "people": people_map}
+
+
+async def _serialize(doc: dict, context: dict = None) -> dict:
     """Serialize an event doc for the API. Generates fresh presigned GET URLs
     for any attached media on every read (signing is local and cheap).
-    Tolerates legacy docs that still have `photos` instead of `media`."""
+    Tolerates legacy docs that still have `photos` instead of `media`.
+
+    When `context` is provided (from `_build_denorm_context`), events whose
+    owner_id != context["viewer_id"] get denormalized category + people
+    metadata embedded so the viewer's UI can render them without doing
+    cross-user lookups against stores it doesn't have access to."""
     doc = dict(doc)
+    raw_owner_id = doc.get("owner_id")
     doc["_id"] = str(doc["_id"])
+    is_foreign = context is not None and raw_owner_id is not None and raw_owner_id != context["viewer_id"]
+    doc["is_owner"] = not is_foreign
     doc.pop("owner_id", None)  # internal field, not surfaced to the client
     if doc.get("thread_id") is not None:
         doc["thread_id"] = str(doc["thread_id"])
@@ -98,6 +141,23 @@ async def _serialize(doc: dict) -> dict:
         enriched.append(m)
     doc["media"] = enriched
     doc.pop("photos", None)
+
+    # Denormalize category + people for shared events so the viewer's UI can
+    # render the owner's category color/label and the owner's people names
+    # without cross-user lookups.
+    if is_foreign and context is not None:
+        cat = context["categories"].get((raw_owner_id, doc.get("event_type")))
+        if cat:
+            doc["category_display"] = {"label": cat["label"], "color": cat["color"]}
+        people_disp = []
+        for pid in (doc.get("people") or []):
+            if isinstance(pid, str):
+                info = context["people"].get(pid)
+                if info:
+                    people_disp.append({"id": pid, "name": info["name"], "color": info["color"]})
+        if people_disp:
+            doc["people_display"] = people_disp
+
     return doc
 
 
@@ -115,12 +175,30 @@ async def list_events(
     before_id: Optional[str] = None,
     user: dict = Depends(require_auth),
 ):
-    """List events owned by the current user.
+    """List events the current user can see — their own plus events in any
+    threads they're subscribed to (with subscription.visible=true).
 
     Default (no `limit`) — returns every event ascending by date. With
     `limit` — paginated newest-first via the (before_date, before_id) cursor.
     """
-    query: dict = {"owner_id": user["_id"]}
+    viewer_id = user["_id"]
+
+    # Visible thread set: owned threads + subscribed threads where visible=true.
+    own_thread_ids = [
+        t["_id"] async for t in threads_collection.find(
+            {"owner_id": viewer_id}, {"_id": 1}
+        )
+    ]
+    sub_thread_ids = [
+        s["thread_id"] async for s in thread_subscriptions_collection.find(
+            {"subscriber_user_id": viewer_id, "visible": True}, {"thread_id": 1}
+        )
+    ]
+    visible_thread_ids = own_thread_ids + sub_thread_ids
+    if not visible_thread_ids:
+        return []
+
+    query: dict = {"thread_id": {"$in": visible_thread_ids}}
     if event_type:
         query["event_type"] = event_type
     if tag:
@@ -133,11 +211,15 @@ async def list_events(
         except Exception:
             raise HTTPException(status_code=400, detail="Invalid thread_id filter")
         if thread_oids:
-            query["thread_id"] = {"$in": thread_oids}
+            # Narrow to threads the viewer can already see.
+            allowed = [tid for tid in thread_oids if tid in visible_thread_ids]
+            query["thread_id"] = {"$in": allowed}
 
     if limit is None:
         cursor = events_collection.find(query).sort("date", 1)
-        return [await _serialize(doc) async for doc in cursor]
+        docs = [doc async for doc in cursor]
+        context = await _build_denorm_context(docs, viewer_id)
+        return [await _serialize(doc, context) for doc in docs]
 
     capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
 
@@ -170,7 +252,9 @@ async def list_events(
         .sort([("date", -1), ("_id", -1)])
         .limit(capped_limit)
     )
-    return [await _serialize(doc) async for doc in cursor]
+    docs = [doc async for doc in cursor]
+    context = await _build_denorm_context(docs, viewer_id)
+    return [await _serialize(doc, context) for doc in docs]
 
 
 @router.post("")
@@ -192,10 +276,20 @@ async def create_event(event: EventCreate, user: dict = Depends(require_auth)):
 
 @router.get("/{event_id}")
 async def get_event(event_id: str, user: dict = Depends(require_auth)):
-    doc = await events_collection.find_one({"_id": ObjectId(event_id), "owner_id": user["_id"]})
+    doc = await events_collection.find_one({"_id": ObjectId(event_id)})
     if not doc:
         raise HTTPException(status_code=404, detail="Event not found")
-    return await _serialize(doc)
+    # Access check: caller owns the event OR is subscribed (visible=true) to its thread.
+    if doc.get("owner_id") != user["_id"]:
+        sub = await thread_subscriptions_collection.find_one({
+            "thread_id": doc.get("thread_id"),
+            "subscriber_user_id": user["_id"],
+            "visible": True,
+        })
+        if not sub:
+            raise HTTPException(status_code=404, detail="Event not found")
+    context = await _build_denorm_context([doc], user["_id"])
+    return await _serialize(doc, context)
 
 
 @router.put("/{event_id}")

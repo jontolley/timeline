@@ -16,8 +16,17 @@ export default function EventCard({ event }) {
   const media = event.media ?? event.photos ?? []
   const shown = media.slice(0, MAX_MEDIA)
   const extra = Math.max(0, media.length - shown.length)
-  const cls = categoryClass(event.event_type)
-  const catStyle = categoryStyle(event.event_type)
+  const isShared = event.is_owner === false
+  // For shared events, use the denormalized category info from the backend so
+  // we render the owner's color/label without needing their category store.
+  const denormCat = event.category_display
+  const cls = isShared && denormCat ? 'cat-color' : categoryClass(event.event_type)
+  const catStyle = isShared && denormCat
+    ? { '--cat-color': personColor(denormCat.color) }
+    : categoryStyle(event.event_type)
+  const catTagText = isShared && denormCat
+    ? denormCat.label
+    : (categoryLabel(event.event_type) || event.event_type)
   const location = locationDisplay(event.location)
 
   return (
@@ -30,7 +39,7 @@ export default function EventCard({ event }) {
 
       <Link to={`/events/${event._id}`} className="card">
         <div className="event-meta">
-          <span className="cat-tag">{categoryLabel(event.event_type) || event.event_type}</span>
+          <span className="cat-tag">{catTagText}</span>
           <span className="event-range">
             · {formatRangeCompact(event.date, event.end_date)}
           </span>
@@ -43,6 +52,7 @@ export default function EventCard({ event }) {
               {thread.name}
             </span>
           )}
+          {isShared && <span className="shared-event-banner">shared</span>}
         </div>
 
         <h3 className="event-title">{event.title}</h3>
@@ -78,7 +88,14 @@ export default function EventCard({ event }) {
 
         {event.people?.length > 0 && (
           <div className="event-people">
-            <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+            <PeopleChips
+              peopleIds={event.people}
+              peopleById={
+                isShared && event.people_display
+                  ? Object.fromEntries(event.people_display.map((p) => [p.id, p]))
+                  : peopleById
+              }
+            />
           </div>
         )}
       </Link>

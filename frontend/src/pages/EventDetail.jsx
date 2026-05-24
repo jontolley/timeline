@@ -8,6 +8,7 @@ import { locationDisplay, locationMapUrl } from '../utils/location'
 import { useEventStore, usePeopleStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
+import { personColor } from '../utils/colors'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -89,16 +90,24 @@ export default function EventDetail() {
   const dateRange = formatDateRange(event.date, event.end_date)
   const location = locationDisplay(event.location)
   const mapUrl = locationMapUrl(event.location)
-  const cls = categoryClass(event.event_type)
-  const catStyle = categoryStyle(event.event_type)
+  const isShared = event.is_owner === false
+  const denormCat = event.category_display
+  const cls = isShared && denormCat ? 'cat-color' : categoryClass(event.event_type)
+  const catStyle = isShared && denormCat
+    ? { '--cat-color': personColor(denormCat.color) }
+    : categoryStyle(event.event_type)
+  const catTagText = isShared && denormCat
+    ? denormCat.label
+    : (categoryLabel(event.event_type) || event.event_type)
 
   return (
     <div className={`page-narrow ${cls}`} style={catStyle}>
       <Link to="/" className="back-link">← Back to timeline</Link>
 
       <div className="event-meta" style={{ marginBottom: 8 }}>
-        <span className="cat-tag">{categoryLabel(event.event_type) || event.event_type}</span>
+        <span className="cat-tag">{catTagText}</span>
         <span className="event-range">· {dateRange}</span>
+        {isShared && <span className="shared-event-banner">shared (read-only)</span>}
       </div>
       <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>
         {event.title}
@@ -144,7 +153,14 @@ export default function EventDetail() {
 
       {event.people?.length > 0 && (
         <div className="event-people" style={{ marginBottom: 18 }}>
-          <PeopleChips peopleIds={event.people} peopleById={peopleById} />
+          <PeopleChips
+            peopleIds={event.people}
+            peopleById={
+              isShared && event.people_display
+                ? Object.fromEntries(event.people_display.map((p) => [p.id, p]))
+                : peopleById
+            }
+          />
         </div>
       )}
 
@@ -161,6 +177,7 @@ export default function EventDetail() {
         onSelect={handleMediaSelected}
         onDelete={handleMediaDelete}
         onOpen={setLightboxIndex}
+        readOnly={isShared}
       />
 
       {lightboxIndex !== null && (
@@ -172,11 +189,15 @@ export default function EventDetail() {
         />
       )}
 
-      <div className="divider" style={{ margin: '32px 0 20px' }} />
-      <div className="form-actions">
-        <Link to={`/events/${id}/edit`} className="btn btn-primary">Edit</Link>
-        <button type="button" className="btn btn-danger" onClick={handleDelete}>Delete</button>
-      </div>
+      {!isShared && (
+        <>
+          <div className="divider" style={{ margin: '32px 0 20px' }} />
+          <div className="form-actions">
+            <Link to={`/events/${id}/edit`} className="btn btn-primary">Edit</Link>
+            <button type="button" className="btn btn-danger" onClick={handleDelete}>Delete</button>
+          </div>
+        </>
+      )}
     </div>
   )
 }
@@ -192,7 +213,7 @@ const MEDIA_ACCEPT = [
   '.mp3', '.m4a',
 ].join(',')
 
-function MediaSection({ media, onSelect, onDelete, onOpen }) {
+function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
 
@@ -217,14 +238,16 @@ function MediaSection({ media, onSelect, onDelete, onOpen }) {
         <span className="label">
           Media{media.length > 0 ? ` · ${media.length}` : ''}
         </span>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-        >
-          {uploading ? 'Uploading…' : '+ Add media'}
-        </button>
+        {!readOnly && (
+          <button
+            type="button"
+            className="btn"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? 'Uploading…' : '+ Add media'}
+          </button>
+        )}
         <input
           ref={fileInputRef}
           type="file"
@@ -255,14 +278,16 @@ function MediaSection({ media, onSelect, onDelete, onOpen }) {
                     ) : (
                       <div className="media-fallback">Unavailable</div>
                     )}
-                    <button
-                      type="button"
-                      className="delete"
-                      onClick={() => onDelete(m.key)}
-                      aria-label="Remove"
-                    >
-                      ✕
-                    </button>
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        className="delete"
+                        onClick={() => onDelete(m.key)}
+                        aria-label="Remove"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
                 )
               })}
@@ -278,14 +303,16 @@ function MediaSection({ media, onSelect, onDelete, onOpen }) {
                   ) : (
                     <span className="media-fallback">Unavailable</span>
                   )}
-                  <button
-                    type="button"
-                    className="audio-remove"
-                    onClick={() => onDelete(m.key)}
-                    aria-label="Remove audio"
-                  >
-                    ✕
-                  </button>
+                  {!readOnly && (
+                    <button
+                      type="button"
+                      className="audio-remove"
+                      onClick={() => onDelete(m.key)}
+                      aria-label="Remove audio"
+                    >
+                      ✕
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

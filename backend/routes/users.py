@@ -8,11 +8,47 @@ from database import (
     categories_collection,
     events_collection,
     people_collection,
+    thread_subscriptions_collection,
+    threads_collection,
     users_collection,
 )
 from embeddings import EmbeddingService, COLLECTION_NAME
 from models import UserCreate, UserUpdate
 import storage
+
+# Mirror of main.py's defaults so we can seed a brand-new invitee with the
+# same baseline (one default thread + five default categories) without
+# waiting for the next backend startup.
+DEFAULT_CATEGORIES = [
+    {"name": "career",    "label": "Career",    "color": "blue"},
+    {"name": "travel",    "label": "Travel",    "color": "emerald"},
+    {"name": "milestone", "label": "Milestone", "color": "violet"},
+    {"name": "family",    "label": "Family",    "color": "amber"},
+    {"name": "adventure", "label": "Adventure", "color": "cyan"},
+]
+
+
+async def _seed_new_user(user_id):
+    """Idempotent seed of a fresh user's baseline data: one default thread
+    ('My Timeline') and the five default categories. Called from invite_user
+    so newly invited users can start using the app immediately, without
+    waiting for the next backend startup."""
+    now = datetime.now(timezone.utc)
+    if await threads_collection.count_documents({"owner_id": user_id}) == 0:
+        await threads_collection.insert_one({
+            "owner_id": user_id,
+            "name": "My Timeline",
+            "color": "slate",
+            "visibility": "private",
+            "created_at": now,
+            "updated_at": now,
+        })
+    if await categories_collection.count_documents({"owner_id": user_id}) == 0:
+        docs = [
+            dict(c, owner_id=user_id, created_at=now, updated_at=now)
+            for c in DEFAULT_CATEGORIES
+        ]
+        await categories_collection.insert_many(docs)
 
 router = APIRouter(prefix="/api/users", dependencies=[Depends(require_admin)])
 embedding_service = EmbeddingService()
@@ -53,6 +89,9 @@ async def invite_user(body: UserCreate, admin=Depends(require_admin)):
     }
     result = await users_collection.insert_one(doc)
     created = await users_collection.find_one({"_id": result.inserted_id})
+    # Seed the invitee with their default thread + categories so they're not
+    # locked out of creating events until the next backend restart.
+    await _seed_new_user(created["_id"])
     # Send the welcome / sign-in email — best-effort. If Resend is down or the
     # address bounces, the user record still exists and the admin can resend
     # later by removing + re-inviting.
@@ -156,10 +195,18 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
     except Exception as exc:
         print(f"[users] Qdrant cleanup failed for {target['email']}: {exc}", flush=True)
 
-    # 3) Delete the Mongo docs owned by this user.
+    # 3) Delete the Mongo docs owned by this user, plus any subscriptions
+    # they hold OR that exist against their threads.
     await events_collection.delete_many({"owner_id": owner_id})
     await people_collection.delete_many({"owner_id": owner_id})
     await categories_collection.delete_many({"owner_id": owner_id})
+    await threads_collection.delete_many({"owner_id": owner_id})
+    await thread_subscriptions_collection.delete_many({
+        "$or": [
+            {"owner_id": owner_id},          # subscriptions FOR their threads
+            {"subscriber_user_id": owner_id}, # subscriptions HELD by them
+        ],
+    })
 
     # 4) Finally, delete the user record itself.
     await users_collection.delete_one({"_id": owner_id})

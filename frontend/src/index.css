@@ -687,6 +687,77 @@ a.card { text-decoration: none; }
 
 .timeline-sentinel { height: 1px; }
 
+.section-subtitle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 12px;
+  font-weight: 500;
+}
+
+.list-card-block {
+  display: flex;
+  flex-direction: column;
+}
+.thread-subscribers-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  margin-top: -1px;
+  padding: 8px 16px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  color: var(--ink-soft);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+.thread-subscribers-trigger:hover { background: var(--line-soft); color: var(--ink); }
+.thread-subscribers-trigger .caret { font-size: 9px; color: var(--ink-mute); }
+.thread-subscribers-trigger[aria-expanded="true"] { border-radius: 0; }
+
+.share-panel {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  padding: 12px 16px;
+  margin-top: -1px;
+}
+.share-subscribers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 13.5px;
+}
+.share-subscribers li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.share-subscribers li:last-child { border-bottom: 0; }
+
+.shared-event-banner {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  background: color-mix(in oklab, var(--cat-color, var(--ink-mute)) 10%, var(--surface));
+  border-radius: 999px;
+  padding: 2px 8px;
+  margin-left: 6px;
+}
+
 .thread-chip {
   display: inline-flex;
   align-items: center;

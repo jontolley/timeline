@@ -19,7 +19,7 @@ from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
 from routes.categories import router as categories_router
-from routes.threads import router as threads_router
+from routes.threads import router as threads_router, subs_router as subscriptions_router
 from routes.users import router as users_router
 from routes.backup import router as backup_router
 from routes.uploads import router as uploads_router
@@ -372,6 +372,7 @@ app.include_router(chat_router)
 app.include_router(people_router)
 app.include_router(categories_router)
 app.include_router(threads_router)
+app.include_router(subscriptions_router)
 app.include_router(users_router)
 app.include_router(backup_router)
 app.include_router(uploads_router)
