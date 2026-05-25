@@ -824,10 +824,11 @@ input, select, textarea {
 }
 .tl-month .m {
   font-family: var(--font-serif);
+  font-style: italic;
   font-size: clamp(28px, 3.4vw, 38px);
   line-height: 1;
   letter-spacing: -0.01em;
-  color: var(--ink);
+  color: var(--accent);
 }
 .tl-month .m em { font-style: italic; color: var(--accent); }
 .tl-month .y {
@@ -861,6 +862,14 @@ input, select, textarea {
   padding-top: 18px;
   text-align: right;
   position: relative;
+}
+.tl-date .y {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  color: var(--ink-mute);
+  display: block;
+  margin-bottom: 2px;
 }
 .tl-date .d {
   font-family: var(--font-mono);

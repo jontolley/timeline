@@ -505,6 +505,7 @@ export default function TimelineView() {
                       {m.days.map((day) => (
                         <div className="tl-day" key={`${yearGroup.year}-${m.month}-${day.day}`}>
                           <div className="tl-date">
+                            <span className="y">{yearGroup.year}</span>
                             <span className="d">{monthDayShort(day.sampleDate)}</span>
                             <span className="w">{weekdayShort(day.sampleDate)}</span>
                           </div>
