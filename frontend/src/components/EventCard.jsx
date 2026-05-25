@@ -62,8 +62,9 @@ export default function EventCard({ event }) {
   const location = locationDisplay(event.location)
   const typeLabel = deriveTypeLabel(event)
 
-  // Photo grid layout class: 1 photo → big 16:9, 3 photos → 3-col, otherwise 4.
-  const photoLayout = shown.length === 1 ? 'one' : shown.length === 3 ? 'three' : 'four'
+  // Photo grid is always 4-col so every tile is the same size regardless
+  // of how many photos the event has.
+  const photoLayout = 'four'
 
   // Resolve people names from the appropriate source (denorm for shared,
   // local store for owned events).

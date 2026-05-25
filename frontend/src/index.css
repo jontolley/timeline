@@ -1026,15 +1026,14 @@ input, select, textarea {
   padding-left: 10px;
 }
 
-/* Photo grid */
+/* Photo grid — always 4-col so every photo tile is the same size
+   regardless of how many photos the event has. */
 .event .e-photos {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
   gap: 6px;
   margin-top: 14px;
 }
-.event .e-photos.three { grid-template-columns: repeat(3, 1fr); }
-.event .e-photos.one { grid-template-columns: 1fr; }
 .event .e-photos .ph {
   aspect-ratio: 1 / 1;
   border-radius: 10px;
@@ -1044,10 +1043,6 @@ input, select, textarea {
   background-position: center;
   position: relative;
   overflow: hidden;
-}
-.event .e-photos.one .ph {
-  aspect-ratio: 16 / 9;
-  border-radius: 14px;
 }
 .event .e-photos .ph.placeholder {
   background:
