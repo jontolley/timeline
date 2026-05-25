@@ -97,6 +97,7 @@ export default function PeopleView({ embedded = false }) {
         </div>
       </header>
 
+      <div className="hs-well-body">
       <p className="hs-well-intro">
         People you tag on events. Delete here to pull them from every event they're on — the events
         themselves stay.
@@ -139,6 +140,7 @@ export default function PeopleView({ embedded = false }) {
             </div>
           </article>
         ))}
+      </div>
       </div>
 
       {modalState && (

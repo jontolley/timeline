@@ -149,11 +149,12 @@ export default function ThreadsSettings() {
       <>
         <header className="hs-well-head">
           <div>
-            <p className="hs-well-eyebrow"><span className="pip" /> Section · Threads</p>
             <h1 className="hs-well-title">Threads.</h1>
           </div>
         </header>
-        <p className="muted small">Loading…</p>
+        <div className="hs-well-body">
+          <p className="muted small">Loading…</p>
+        </div>
       </>
     )
   }
@@ -176,6 +177,7 @@ export default function ThreadsSettings() {
         </div>
       </header>
 
+      <div className="hs-well-body">
       <p className="hs-well-intro">
         Threads group your events. Mark one <strong>shared</strong> to invite other users — they'll
         see its events on their own timeline, read-only. Switch back to private and existing
@@ -312,6 +314,7 @@ export default function ThreadsSettings() {
           </div>
         </div>
       )}
+      </div>
 
       {modalState && (
         <ThreadModal

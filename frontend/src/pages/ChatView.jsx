@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
@@ -91,82 +91,138 @@ export default function ChatView() {
     setDraft('')
   }
 
-  return (
-    <div className="chat-shell">
-      <div className="chat-head">
-        <h1 className="chat-title">Chat</h1>
-        <button
-          type="button"
-          className="btn"
-          onClick={startNewChat}
-          disabled={streaming || messages.length === 0}
-        >
-          + New chat
-        </button>
-      </div>
+  const counts = useMemo(() => {
+    const turns = messages.length
+    const userTurns = messages.filter((m) => m.role === 'user').length
+    return { turns, userTurns }
+  }, [messages])
 
-      <div className="thread">
-        {messages.length === 0 ? (
-          <EmptyState onPick={(text) => sendMessage(text)} />
-        ) : (
-          messages.map((msg, i) => (
-            <MessageRow
-              key={i}
-              msg={msg}
-              messageIndex={i}
-              streaming={streaming}
-              peopleById={peopleById}
-              onConfirm={confirmPendingEdit}
-              onCancel={cancelPendingEdit}
-            />
-          ))
-        )}
-        <div ref={bottomRef} />
+  return (
+    <div className="chat-page">
+      <header className="chat-head">
+        <div>
+          <h1 className="chat-title">Chat.</h1>
+          <p className="chat-stats">
+            {counts.turns === 0 ? (
+              <span>start a conversation</span>
+            ) : (
+              <>
+                <span>{counts.turns} {counts.turns === 1 ? 'message' : 'messages'}</span>
+                {counts.userTurns > 0 && (
+                  <>
+                    <span className="sep" aria-hidden="true" />
+                    <span>{counts.userTurns} {counts.userTurns === 1 ? 'question' : 'questions'}</span>
+                  </>
+                )}
+                {streaming && (
+                  <>
+                    <span className="sep" aria-hidden="true" />
+                    <span>thinking…</span>
+                  </>
+                )}
+              </>
+            )}
+          </p>
+        </div>
+        <div className="chat-head-actions">
+          <button
+            type="button"
+            className="btn"
+            onClick={startNewChat}
+            disabled={streaming || messages.length === 0}
+          >
+            + New chat
+          </button>
+        </div>
+      </header>
+
+      <div className="chat-thread" role="log" aria-live="polite">
+        <div className="chat-thread-inner">
+          {messages.length === 0 ? (
+            <EmptyState onPick={(text) => sendMessage(text)} />
+          ) : (
+            messages.map((msg, i) => (
+              <MessageRow
+                key={i}
+                msg={msg}
+                messageIndex={i}
+                streaming={streaming}
+                peopleById={peopleById}
+                onConfirm={confirmPendingEdit}
+                onCancel={cancelPendingEdit}
+              />
+            ))
+          )}
+          <div ref={bottomRef} />
+        </div>
       </div>
 
       <div className="composer">
-        <div className="suggestions">
-          {SUGGESTIONS.map((s) => (
-            <button
-              key={s.text}
-              type="button"
-              className="suggestion"
-              onClick={() => setDraft(s.text)}
-            >
-              <span className="mono">{s.mono}</span>{s.text}
-            </button>
-          ))}
-        </div>
         <div className="composer-inner">
-          <textarea
-            ref={textareaRef}
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={onKey}
-            placeholder={streaming ? 'Thinking…' : 'Ask, or say "add an event"…'}
-            disabled={streaming}
-            rows={1}
-          />
-          <button
-            type="button"
-            className="send"
-            onClick={send}
-            disabled={streaming || !draft.trim()}
-          >
-            Send
-          </button>
+          {messages.length > 0 && (
+            <div className="composer-suggestions">
+              {SUGGESTIONS.map((s) => (
+                <button
+                  key={s.text}
+                  type="button"
+                  className="suggestion"
+                  onClick={() => setDraft(s.text)}
+                  disabled={streaming}
+                >
+                  <span className="mono">{s.mono}</span>{s.text}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="composer-input">
+            <textarea
+              ref={textareaRef}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={onKey}
+              placeholder={streaming ? 'Thinking…' : 'Ask, or say "add an event"…'}
+              disabled={streaming}
+              rows={1}
+            />
+            <button
+              type="button"
+              className="composer-send"
+              onClick={send}
+              disabled={streaming || !draft.trim()}
+              aria-label="Send"
+            >
+              <SendIcon />
+            </button>
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
+function SendIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" fill="none" aria-hidden="true">
+      <path
+        d="M2 8 L13.5 8 M8 2.5 L13.5 8 L8 13.5"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
+
 function EmptyState({ onPick }) {
   return (
     <div className="chat-empty">
-      <div className="eyebrow">Talk to your timeline</div>
-      <p>Ask questions or manage events with natural language.</p>
-      <div className="suggestions">
+      <p className="chat-empty-eyebrow"><span className="pip" /> Talk to your timeline</p>
+      <h2 className="chat-empty-title">What do you want <em>to know?</em></h2>
+      <p className="chat-empty-sub">
+        Ask questions across your history. Or say "add an event" and I'll capture it for you.
+      </p>
+      <div className="chat-empty-suggestions">
         {SUGGESTIONS.map((s) => (
           <button
             key={s.text}

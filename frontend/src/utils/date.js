@@ -52,3 +52,37 @@ export function yearOf(isoDate) {
   if (!isoDate) return null
   return new Date(isoDate).getUTCFullYear()
 }
+
+/** 0-based month index in UTC (Jan = 0). Pairs with yearOf for grouping. */
+export function monthOf(isoDate) {
+  if (!isoDate) return null
+  return new Date(isoDate).getUTCMonth()
+}
+
+/** "May" / "April" — long month name. */
+export function monthNameOf(isoDate) {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleDateString('en-US', { month: 'long', timeZone: 'UTC' })
+}
+
+/** 1-based day of month in UTC. */
+export function dayOf(isoDate) {
+  if (!isoDate) return null
+  return new Date(isoDate).getUTCDate()
+}
+
+/** "May 23" — short month + day. Used in the per-day timeline column. */
+export function monthDayShort(isoDate) {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleDateString('en-US', {
+    month: 'short', day: 'numeric', timeZone: 'UTC',
+  })
+}
+
+/** "Sat" — short weekday label. */
+export function weekdayShort(isoDate) {
+  if (!isoDate) return ''
+  return new Date(isoDate).toLocaleDateString('en-US', {
+    weekday: 'short', timeZone: 'UTC',
+  })
+}

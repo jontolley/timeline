@@ -115,6 +115,7 @@ export default function CategoriesSettings() {
         </div>
       </header>
 
+      <div className="hs-well-body">
       <p className="hs-well-intro">
         Categories are the <code>event_type</code> values on every event. Recolor and rename freely;
         deletion is blocked while any event still uses a category.
@@ -157,6 +158,7 @@ export default function CategoriesSettings() {
             </div>
           </article>
         ))}
+      </div>
       </div>
 
       {modalState && (

@@ -73,6 +73,7 @@ export default function BackupView({ embedded = false }) {
         </div>
       </header>
 
+      <div className="hs-well-body">
       <p className="hs-well-intro">
         Download a copy of every event and person, or replace your timeline from a previous backup
         file. Restore is destructive — it replaces all current data.
@@ -140,6 +141,7 @@ export default function BackupView({ embedded = false }) {
             <div className="hs-row-actions" />
           </div>
         </article>
+      </div>
       </div>
 
       {showConfirm && file && (

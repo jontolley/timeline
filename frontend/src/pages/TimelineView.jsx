@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { listEvents, listEventYears } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
 import EventCard from '../components/EventCard'
-import FilterBar from '../components/FilterBar'
+import FilterModal from '../components/FilterModal'
+import TimelineToolbar from '../components/TimelineToolbar'
 import YearRail from '../components/YearRail'
 import { setPendingCaption, setPendingPhoto } from '../lib/photoHandoff'
 import { useAlert } from '../lib/confirm'
-import { useEventStore, usePeopleStore } from '../store'
-import { yearOf } from '../utils/date'
+import { useEventStore, usePeopleStore, useThreadStore } from '../store'
+import { dayOf, monthDayShort, monthNameOf, monthOf, weekdayShort, yearOf } from '../utils/date'
 
 const PAGE_SIZE = 20
 
@@ -31,34 +32,6 @@ function buildListParams(filters, { before = null, after = null } = {}) {
     params.after_id = after.id
   }
   return params
-}
-
-function PlusIcon() {
-  return (
-    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" aria-hidden="true">
-      <line x1="6.5" y1="1.5" x2="6.5" y2="11.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-      <line x1="1.5" y1="6.5" x2="11.5" y2="6.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-function PhotoIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <rect x="1.5" y="3.5" width="13" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.4" />
-      <circle cx="8" cy="9" r="2.5" stroke="currentColor" strokeWidth="1.4" />
-      <path d="M5 3.5 L6 2 L10 2 L11 3.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
-    </svg>
-  )
-}
-
-function SparkleIcon() {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-      <path d="M8 1 L9.2 6 L14 7.2 L9.2 8.4 L8 13.4 L6.8 8.4 L2 7.2 L6.8 6 Z" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-      <path d="M13 11 L13.6 12.8 L15.4 13.4 L13.6 14 L13 15.8 L12.4 14 L10.6 13.4 L12.4 12.8 Z" stroke="currentColor" strokeWidth="1" strokeLinejoin="round" />
-    </svg>
-  )
 }
 
 export default function TimelineView() {
@@ -84,6 +57,8 @@ export default function TimelineView() {
   const [aiPhotoBusy, setAiPhotoBusy] = useState(false)
   const [years, setYears] = useState([])
   const [activeYear, setActiveYear] = useState(null)
+  const [filterOpen, setFilterOpen] = useState(false)
+  const threadCount = useThreadStore((s) => s.threads.length)
   const photoInputRef = useRef(null)
   const aiPhotoInputRef = useRef(null)
   const bottomSentinelRef = useRef(null)
@@ -387,76 +362,108 @@ export default function TimelineView() {
     }
   }
 
-  // The API returns events newest-first when paginated, so no client-side sort.
+  // API returns newest-first; nest groups year → month → day for the new
+  // layout. We track the first month of each year so we can hang
+  // `data-year-marker` on it for the scrollspy + jump targets.
   const groups = useMemo(() => {
-    const out = []
-    let current = null
+    const years = []
+    let curYear = null
+    let curMonth = null
+    let curDay = null
     for (const ev of events) {
       const y = yearOf(ev.date)
-      if (!current || current.year !== y) {
-        current = { year: y, items: [] }
-        out.push(current)
+      const m = monthOf(ev.date)
+      const d = dayOf(ev.date)
+      if (!curYear || curYear.year !== y) {
+        curYear = { year: y, months: [], firstMonthFlag: true }
+        years.push(curYear)
+        curMonth = null
+        curDay = null
       }
-      current.items.push(ev)
+      if (!curMonth || curMonth.month !== m) {
+        curMonth = {
+          month: m,
+          monthName: monthNameOf(ev.date),
+          sampleDate: ev.date,
+          days: [],
+          count: 0,
+          isFirstOfYear: curYear.months.length === 0,
+        }
+        curYear.months.push(curMonth)
+        curDay = null
+      }
+      if (!curDay || curDay.day !== d) {
+        curDay = { day: d, sampleDate: ev.date, events: [] }
+        curMonth.days.push(curDay)
+      }
+      curDay.events.push(ev)
+      curMonth.count += 1
     }
-    return out
+    return years
   }, [events])
 
-  const isFiltered =
-    filters.event_type !== '' ||
-    (filters.person_ids?.length || 0) > 0 ||
-    (filters.thread_ids?.length || 0) > 0
-  const handleFilterChange = (change) => {
+  const earliestYear = useMemo(() => {
+    if (years.length === 0) return null
+    return years[years.length - 1].year
+  }, [years])
+
+  const filterCount =
+    (filters.event_type ? 1 : 0) +
+    (filters.person_ids?.length || 0) +
+    (filters.thread_ids?.length || 0)
+  const isFiltered = filterCount > 0
+  const handleFilterChange = (next) => {
     // Mark anchor as already restored so the new filter's page-1 doesn't
     // try to jump to a card that's no longer in the result set.
     anchorRestoredRef.current = true
-    setStoreFilters(change)
+    setStoreFilters(next)
     window.scrollTo(0, 0)
   }
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <h1 className="page-title">Timeline</h1>
-          {!loading && (
-            <div className="page-sub">
-              <span className="mono num">
-                {String(events.length).padStart(2, '0')}
-                {hasMoreOlder || hasMoreNewer ? '+' : ''}{' '}
-                {events.length === 1 ? 'event' : 'events'}
-              </span>
-              {isFiltered ? <span> · filtered</span> : null}
+    <div className="tl-page">
+      <div className="tl-grid">
+        <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
+
+        <main className="tl-feed">
+          <header className="tl-feed-head">
+            <div>
+              <h1 className="tl-feed-title">Timeline.</h1>
+              {!loading && (
+                <p className="tl-feed-stats">
+                  <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
+                  {earliestYear && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>since {earliestYear}</span>
+                    </>
+                  )}
+                  {threadCount > 0 && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>{threadCount} thread{threadCount === 1 ? '' : 's'}</span>
+                    </>
+                  )}
+                  {isFiltered && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>filtered</span>
+                    </>
+                  )}
+                </p>
+              )}
             </div>
-          )}
-        </div>
-        <div className="page-head-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={() => aiPhotoInputRef.current?.click()}
-            disabled={aiPhotoBusy}
-          >
-            <SparkleIcon />
-            {aiPhotoBusy ? 'Reading…' : 'Photo with AI captions'}
-          </button>
-          <button
-            type="button"
-            className="btn"
-            onClick={() => photoInputRef.current?.click()}
-            disabled={photoBusy}
-          >
-            <PhotoIcon />
-            {photoBusy ? 'Reading…' : 'Event from photo'}
-          </button>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => navigate('/events/new')}
-          >
-            <PlusIcon />
-            Add event
-          </button>
+          </header>
+
+          <TimelineToolbar
+            filterCount={filterCount}
+            onOpenFilters={() => setFilterOpen(true)}
+            onAddEvent={() => navigate('/events/new')}
+            onAiPhoto={() => aiPhotoInputRef.current?.click()}
+            onPhotoEvent={() => photoInputRef.current?.click()}
+            aiPhotoBusy={aiPhotoBusy}
+            photoBusy={photoBusy}
+          />
           <input
             ref={photoInputRef}
             type="file"
@@ -471,47 +478,64 @@ export default function TimelineView() {
             hidden
             onChange={handleAiPhotoPicked}
           />
-        </div>
+
+          <div className="tl-stream">
+            {loading ? (
+              <div className="empty">loading…</div>
+            ) : groups.length === 0 ? (
+              <div className="empty">
+                {isFiltered ? 'no events match — clear filters?' : 'nothing here yet — capture a moment'}
+              </div>
+            ) : (
+              <>
+                <div ref={topSentinelRef} className="timeline-sentinel top" aria-hidden="true" />
+                {loadingNewer && <div className="empty">loading newer…</div>}
+                {groups.map((yearGroup) =>
+                  yearGroup.months.map((m) => (
+                    <Fragment key={`${yearGroup.year}-${m.month}`}>
+                      <div
+                        className="tl-month"
+                        data-year-marker={m.isFirstOfYear ? yearGroup.year : undefined}
+                      >
+                        <span className="m">{m.monthName}<em>.</em></span>
+                        <span className="y">{yearGroup.year}</span>
+                        <span className="rule" aria-hidden="true" />
+                        <span className="count">{m.count} event{m.count === 1 ? '' : 's'}</span>
+                      </div>
+                      {m.days.map((day) => (
+                        <div className="tl-day" key={`${yearGroup.year}-${m.month}-${day.day}`}>
+                          <div className="tl-date">
+                            <span className="d">{monthDayShort(day.sampleDate)}</span>
+                            <span className="w">{weekdayShort(day.sampleDate)}</span>
+                          </div>
+                          <div className="tl-events">
+                            {day.events.map((ev) => (
+                              <EventCard key={ev._id} event={ev} />
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </Fragment>
+                  )),
+                )}
+                <div ref={bottomSentinelRef} className="timeline-sentinel" aria-hidden="true" />
+                {loadingMore && <div className="empty">loading more…</div>}
+                {!hasMoreOlder && events.length > 0 && (
+                  <div className="timeline-end">end of timeline</div>
+                )}
+              </>
+            )}
+          </div>
+        </main>
       </div>
 
-      <FilterBar filters={filters} people={people} onChange={handleFilterChange} />
-
-      <div className="timeline-layout">
-        <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
-
-        <div className="timeline">
-          {loading ? (
-            <div className="empty">loading…</div>
-          ) : groups.length === 0 ? (
-            <div className="empty">
-              {isFiltered ? 'no events match — clear filters?' : 'nothing here yet — capture a moment'}
-            </div>
-          ) : (
-            <>
-              <div ref={topSentinelRef} className="timeline-sentinel top" aria-hidden="true" />
-              {loadingNewer && <div className="empty">loading newer…</div>}
-              {groups.map((g) => (
-                <div key={g.year}>
-                  <div className="year-marker" data-year-marker={g.year}>
-                    <span className="year">
-                      <strong>{g.year}</strong>
-                    </span>
-                  </div>
-                  {g.items.map((ev) => (
-                    <EventCard key={ev._id} event={ev} />
-                  ))}
-                </div>
-              ))}
-              <div ref={bottomSentinelRef} className="timeline-sentinel" aria-hidden="true" />
-              {loadingMore && <div className="empty">loading more…</div>}
-              {!hasMoreOlder && events.length > 0 && (
-                <div className="timeline-end">end of timeline</div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-
+      <FilterModal
+        open={filterOpen}
+        filters={filters}
+        people={people}
+        onClose={() => setFilterOpen(false)}
+        onApply={(next) => handleFilterChange(next)}
+      />
     </div>
   )
 }

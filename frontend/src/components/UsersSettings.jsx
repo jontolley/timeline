@@ -123,6 +123,7 @@ export default function UsersSettings() {
         </div>
       </header>
 
+      <div className="hs-well-body">
       <p className="hs-well-intro">
         Add people by email. After you add them, share the sign-in link below — they'll be able to
         sign in with Google or the magic-link form. Each user has their own private timeline.
@@ -200,6 +201,7 @@ export default function UsersSettings() {
             </article>
           )
         })}
+      </div>
       </div>
 
       {inviteOpen && (
