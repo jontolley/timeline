@@ -91,9 +91,25 @@ function UserMenu({ email, onSignOut }) {
 export default function Topbar() {
   const { email, signOut } = useAuthStore()
   const { pathname } = useLocation()
+  const ref = useRef(null)
+
+  // Publish the topbar's rendered height as --topbar-h so every sticky offset,
+  // scroll-margin, and 100vh-minus-topbar height stays in sync across breakpoints.
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const apply = () => {
+      const h = Math.round(el.getBoundingClientRect().height)
+      if (h > 0) document.documentElement.style.setProperty('--topbar-h', `${h}px`)
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   return (
-    <header className="topbar">
+    <header className="topbar" ref={ref}>
       <Link to="/" className="brand">
         <Brandmark />
         <span className="brand-word">Hindsite</span>

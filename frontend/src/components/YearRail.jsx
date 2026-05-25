@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 
 /**
  * Vertical year-navigation rail.
@@ -10,17 +10,46 @@ import { useMemo } from 'react'
  * `activeYear` is set by the parent based on scroll position.
  */
 export default function YearRail({ years, activeYear, onJump }) {
+  const listRef = useRef(null)
   const maxCount = useMemo(
     () => (years && years.length ? Math.max(...years.map((y) => y.count || 0)) : 0),
     [years],
   )
+
+  // Keep the active pill within the rail's own scroll viewport (horizontal on
+  // mobile, vertical on desktop) without nudging the page scroll position.
+  // The scroll container differs per breakpoint (.yearspine on desktop, .yr-list
+  // on mobile), so walk up from the button to find whichever ancestor scrolls.
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || activeYear == null) return
+    const btn = list.querySelector(`[data-year="${activeYear}"]`)
+    if (!btn) return
+    let scroller = btn.parentElement
+    while (scroller) {
+      const s = getComputedStyle(scroller)
+      if (/(auto|scroll)/.test(s.overflowX + s.overflowY)) break
+      scroller = scroller.parentElement
+    }
+    if (!scroller) return
+    const sRect = scroller.getBoundingClientRect()
+    const bRect = btn.getBoundingClientRect()
+    const margin = 24
+    let dx = 0
+    let dy = 0
+    if (bRect.left < sRect.left + margin) dx = bRect.left - sRect.left - margin
+    else if (bRect.right > sRect.right - margin) dx = bRect.right - sRect.right + margin
+    if (bRect.top < sRect.top + margin) dy = bRect.top - sRect.top - margin
+    else if (bRect.bottom > sRect.bottom - margin) dy = bRect.bottom - sRect.bottom + margin
+    if (dx || dy) scroller.scrollBy({ left: dx, top: dy, behavior: 'smooth' })
+  }, [activeYear])
 
   if (!years || years.length === 0) return null
 
   return (
     <aside className="yearspine" aria-label="Jump to year">
       <p className="yearspine-lbl">Years</p>
-      <ul className="yr-list">
+      <ul className="yr-list" ref={listRef}>
         {years.map((y) => {
           const isActive = y.year === activeYear
           const pct = maxCount > 0 ? Math.max(8, Math.round((y.count / maxCount) * 100)) : 0
@@ -29,6 +58,7 @@ export default function YearRail({ years, activeYear, onJump }) {
               <button
                 type="button"
                 className={`yr${isActive ? ' on' : ''}`}
+                data-year={y.year}
                 onClick={() => onJump(y.year)}
                 aria-current={isActive ? 'page' : undefined}
                 title={`${y.count} event${y.count === 1 ? '' : 's'}`}
