@@ -30,7 +30,7 @@ export default function EventCard({ event }) {
   const location = locationDisplay(event.location)
 
   return (
-    <article className={`event ${cls}`} data-event-id={event._id} style={catStyle}>
+    <article className={`event ${cls}`} data-event-id={event._id} data-event-date={event.date} style={catStyle}>
       <span className="event-node" aria-hidden="true" />
       <div className="event-date-stub">
         <strong>{shortDate(event.date)}</strong>

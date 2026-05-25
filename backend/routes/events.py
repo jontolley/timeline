@@ -164,26 +164,10 @@ async def _serialize(doc: dict, context: dict = None) -> dict:
 _MAX_PAGE_SIZE = 200
 
 
-@router.get("")
-async def list_events(
-    event_type: Optional[str] = None,
-    tag: Optional[str] = None,
-    person_id: Optional[list[str]] = Query(None),
-    thread_id: Optional[list[str]] = Query(None),
-    limit: Optional[int] = None,
-    before_date: Optional[str] = None,
-    before_id: Optional[str] = None,
-    user: dict = Depends(require_auth),
-):
-    """List events the current user can see — their own plus events in any
-    threads they're subscribed to (with subscription.visible=true).
-
-    Default (no `limit`) — returns every event ascending by date. With
-    `limit` — paginated newest-first via the (before_date, before_id) cursor.
-    """
-    viewer_id = user["_id"]
-
-    # Visible thread set: owned threads + subscribed threads where visible=true.
+async def _visible_thread_filter(viewer_id, thread_id_filter: Optional[list[str]]):
+    """Resolve the visible-thread set + optional explicit thread filter into a
+    Mongo query fragment. Returns either a dict ready to merge into the events
+    query, or None if the viewer can't see any threads."""
     own_thread_ids = [
         t["_id"] async for t in threads_collection.find(
             {"owner_id": viewer_id}, {"_id": 1}
@@ -196,24 +180,54 @@ async def list_events(
     ]
     visible_thread_ids = own_thread_ids + sub_thread_ids
     if not visible_thread_ids:
+        return None, []
+
+    allowed = visible_thread_ids
+    if thread_id_filter:
+        try:
+            thread_oids = [ObjectId(t) for t in thread_id_filter if t]
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid thread_id filter")
+        if thread_oids:
+            allowed = [tid for tid in thread_oids if tid in visible_thread_ids]
+    return {"$in": allowed}, visible_thread_ids
+
+
+@router.get("")
+async def list_events(
+    event_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    person_id: Optional[list[str]] = Query(None),
+    thread_id: Optional[list[str]] = Query(None),
+    limit: Optional[int] = None,
+    before_date: Optional[str] = None,
+    before_id: Optional[str] = None,
+    after_date: Optional[str] = None,
+    after_id: Optional[str] = None,
+    user: dict = Depends(require_auth),
+):
+    """List events the current user can see — their own plus events in any
+    threads they're subscribed to (with subscription.visible=true).
+
+    Default (no `limit`) — returns every event ascending by date. With
+    `limit` — paginated newest-first. Use the (before_date, before_id) cursor
+    to get *older* events; use (after_date, after_id) to get *newer* events
+    (e.g. when paginating upward after jumping to a past year). Both cursors
+    can be supplied to bound a window, but typically only one is set.
+    """
+    viewer_id = user["_id"]
+
+    thread_clause, _ = await _visible_thread_filter(viewer_id, thread_id)
+    if thread_clause is None:
         return []
 
-    query: dict = {"thread_id": {"$in": visible_thread_ids}}
+    query: dict = {"thread_id": thread_clause}
     if event_type:
         query["event_type"] = event_type
     if tag:
         query["tags"] = tag
     if person_id:
         query["people"] = {"$in": person_id}
-    if thread_id:
-        try:
-            thread_oids = [ObjectId(t) for t in thread_id if t]
-        except Exception:
-            raise HTTPException(status_code=400, detail="Invalid thread_id filter")
-        if thread_oids:
-            # Narrow to threads the viewer can already see.
-            allowed = [tid for tid in thread_oids if tid in visible_thread_ids]
-            query["thread_id"] = {"$in": allowed}
 
     if limit is None:
         cursor = events_collection.find(query).sort("date", 1)
@@ -222,6 +236,9 @@ async def list_events(
         return [await _serialize(doc, context) for doc in docs]
 
     capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
+
+    # Cursor clauses are appended to the base query as additional $and terms.
+    extra_clauses = []
 
     if before_date:
         try:
@@ -233,28 +250,91 @@ async def list_events(
                 cursor_oid = ObjectId(before_id)
             except Exception:
                 raise HTTPException(status_code=400, detail="Invalid before_id")
-            query = {
-                "$and": [
-                    query,
-                    {
-                        "$or": [
-                            {"date": {"$lt": cursor_dt}},
-                            {"date": cursor_dt, "_id": {"$lt": cursor_oid}},
-                        ]
-                    },
+            extra_clauses.append({
+                "$or": [
+                    {"date": {"$lt": cursor_dt}},
+                    {"date": cursor_dt, "_id": {"$lt": cursor_oid}},
                 ]
-            }
+            })
         else:
-            query = {"$and": [query, {"date": {"$lt": cursor_dt}}]}
+            extra_clauses.append({"date": {"$lt": cursor_dt}})
+
+    if after_date:
+        try:
+            after_dt = datetime.fromisoformat(after_date.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid after_date")
+        if after_id:
+            try:
+                after_oid = ObjectId(after_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid after_id")
+            extra_clauses.append({
+                "$or": [
+                    {"date": {"$gt": after_dt}},
+                    {"date": after_dt, "_id": {"$gt": after_oid}},
+                ]
+            })
+        else:
+            extra_clauses.append({"date": {"$gt": after_dt}})
+
+    if extra_clauses:
+        query = {"$and": [query, *extra_clauses]}
+
+    # Pagination order: when paginating upward (after_date and no before_date),
+    # we want the events *closest* to the cursor on the newer side, not the
+    # newest events overall. Sort ASC, take N, then reverse so the response is
+    # always newest-first.
+    upward = bool(after_date) and not before_date
+    sort_spec = [("date", 1), ("_id", 1)] if upward else [("date", -1), ("_id", -1)]
 
     cursor = (
         events_collection.find(query)
-        .sort([("date", -1), ("_id", -1)])
+        .sort(sort_spec)
         .limit(capped_limit)
     )
     docs = [doc async for doc in cursor]
+    if upward:
+        docs.reverse()
     context = await _build_denorm_context(docs, viewer_id)
     return [await _serialize(doc, context) for doc in docs]
+
+
+@router.get("/years")
+async def list_event_years(
+    event_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    person_id: Optional[list[str]] = Query(None),
+    thread_id: Optional[list[str]] = Query(None),
+    user: dict = Depends(require_auth),
+):
+    """Return a year-bucket index for the timeline sidebar:
+    [{ "year": 2025, "count": 14 }, …] in descending order. Respects the same
+    filter set as the event list so years with zero matching events disappear
+    from the rail when filters narrow the view."""
+    viewer_id = user["_id"]
+
+    thread_clause, _ = await _visible_thread_filter(viewer_id, thread_id)
+    if thread_clause is None:
+        return []
+
+    match: dict = {"thread_id": thread_clause}
+    if event_type:
+        match["event_type"] = event_type
+    if tag:
+        match["tags"] = tag
+    if person_id:
+        match["people"] = {"$in": person_id}
+
+    pipeline = [
+        {"$match": match},
+        {"$group": {"_id": {"$year": "$date"}, "count": {"$sum": 1}}},
+        {"$sort": {"_id": -1}},
+    ]
+    return [
+        {"year": doc["_id"], "count": doc["count"]}
+        async for doc in events_collection.aggregate(pipeline)
+    ]
 
 
 @router.post("")

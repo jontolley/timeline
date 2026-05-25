@@ -2,7 +2,7 @@ import { http } from './http'
 
 const BASE = '/api/events'
 
-export async function listEvents(params = {}) {
+function buildQuery(params) {
   const usp = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
     if (value == null || value === '') continue
@@ -12,9 +12,20 @@ export async function listEvents(params = {}) {
       usp.set(key, value)
     }
   }
-  const qs = usp.toString()
+  return usp.toString()
+}
+
+export async function listEvents(params = {}) {
+  const qs = buildQuery(params)
   const res = await http(`${BASE}${qs ? `?${qs}` : ''}`)
   if (!res.ok) throw new Error('Failed to fetch events')
+  return res.json()
+}
+
+export async function listEventYears(params = {}) {
+  const qs = buildQuery(params)
+  const res = await http(`${BASE}/years${qs ? `?${qs}` : ''}`)
+  if (!res.ok) throw new Error('Failed to fetch event years')
   return res.json()
 }
 

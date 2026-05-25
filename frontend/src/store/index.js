@@ -97,7 +97,12 @@ const DEFAULT_FILTERS = { event_type: '', person_ids: [], thread_ids: [] }
 export const useEventStore = create((set, get) => ({
   events: [],
   filters: DEFAULT_FILTERS,
-  hasMore: true,
+  // Bidirectional pagination. `hasMoreOlder` is the bottom edge (scroll down
+  // loads older events); `hasMoreNewer` is the top edge (after a year-jump,
+  // scroll up loads newer events back toward today). On a normal "page 1
+  // from today" load, `hasMoreNewer` is false — we're already at the top.
+  hasMoreOlder: true,
+  hasMoreNewer: false,
   anchorId: null, // _id of the topmost visible event card when leaving
   loaded: false,
 
@@ -105,20 +110,43 @@ export const useEventStore = create((set, get) => ({
     set({
       filters: { ...get().filters, ...patch },
       events: [],
-      hasMore: true,
+      hasMoreOlder: true,
+      hasMoreNewer: false,
       anchorId: null,
       loaded: false,
     }),
 
-  setInitialPage: (events, hasMore) => set({ events, hasMore, loaded: true }),
+  setInitialPage: (events, hasMoreOlder) =>
+    set({ events, hasMoreOlder, hasMoreNewer: false, loaded: true }),
 
-  appendPage: (page, hasMore) =>
-    set({ events: [...get().events, ...page], hasMore }),
+  appendOlder: (page, hasMoreOlder) =>
+    set({ events: [...get().events, ...page], hasMoreOlder }),
+
+  prependNewer: (page, hasMoreNewer) =>
+    set({ events: [...page, ...get().events], hasMoreNewer }),
+
+  // Year-jump: replace the list with a window straddling the target year.
+  // Caller supplies both edge flags so the top/bottom sentinels can be
+  // accurate from the first paint.
+  jumpToWindow: (events, hasMoreOlder, hasMoreNewer) =>
+    set({
+      events,
+      hasMoreOlder,
+      hasMoreNewer,
+      anchorId: null,
+      loaded: true,
+    }),
 
   setAnchorId: (id) => set({ anchorId: id }),
 
   invalidate: () =>
-    set({ events: [], hasMore: true, anchorId: null, loaded: false }),
+    set({
+      events: [],
+      hasMoreOlder: true,
+      hasMoreNewer: false,
+      anchorId: null,
+      loaded: false,
+    }),
 }))
 
 export const usePeopleStore = create((set, get) => ({
