@@ -25,7 +25,18 @@ export default function BackToTop({ threshold = 600 }) {
     }
   }, [threshold])
 
-  const onClick = () => window.scrollTo({ top: 0, behavior: 'smooth' })
+  const onClick = () => {
+    // Target the document scrolling element explicitly — window.scrollTo can
+    // be flaky when another smooth scroll is in flight (e.g. the YearRail's
+    // auto-scroll runs as activeYear updates while the page scrolls up).
+    const el = document.scrollingElement || document.documentElement
+    el.scrollTo({ top: 0, behavior: 'smooth' })
+    // Belt-and-braces: if the smooth scroll got cancelled mid-flight, force
+    // instant after the animation window so the user always lands at the top.
+    window.setTimeout(() => {
+      if (el.scrollTop > 0) el.scrollTop = 0
+    }, 700)
+  }
 
   return (
     <button
