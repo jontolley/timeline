@@ -354,6 +354,31 @@ export default function TimelineView() {
     }
   }, [filters, jumpToWindow])
 
+  // Smart "back to top": when the view is a year-jumped window (hasMoreNewer
+  // is true), refetch a fresh page-1 so the user lands at *today*, not at
+  // the top of the loaded window. Otherwise just smooth-scroll up.
+  const handleBackToTop = useCallback(async () => {
+    if (!hasMoreNewer) {
+      const el = document.scrollingElement || document.documentElement
+      el.scrollTo({ top: 0, behavior: 'smooth' })
+      window.setTimeout(() => { if (el.scrollTop > 0) el.scrollTop = 0 }, 700)
+      return
+    }
+    fetchingOlderRef.current = true
+    setLoading(true)
+    try {
+      const page = await listEvents(buildListParams(filters))
+      anchorRestoredRef.current = true
+      setInitialPage(page, page.length === PAGE_SIZE)
+      window.scrollTo(0, 0)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      fetchingOlderRef.current = false
+      setLoading(false)
+    }
+  }, [filters, hasMoreNewer, setInitialPage])
+
   const handlePhotoPicked = async (e) => {
     const file = e.target.files?.[0]
     e.target.value = ''
@@ -629,7 +654,7 @@ export default function TimelineView() {
         onApply={(next) => handleFilterChange(next)}
       />
 
-      <BackToTop />
+      <BackToTop onClick={handleBackToTop} />
     </div>
   )
 }
