@@ -35,12 +35,23 @@ export default function YearRail({ years, activeYear, onJump }) {
     const sRect = scroller.getBoundingClientRect()
     const bRect = btn.getBoundingClientRect()
     const margin = 24
+    // Only push on axes the scroller actually scrolls on. Without these guards
+    // the mobile horizontal strip would emit a vertical scrollBy (the pill's
+    // top sits a few px below the list top inside the 24px margin), which some
+    // browsers bubble to the window — kicking the page scroll and the active
+    // year right back into a feedback loop.
+    const canScrollX = scroller.scrollWidth - scroller.clientWidth > 1
+    const canScrollY = scroller.scrollHeight - scroller.clientHeight > 1
     let dx = 0
     let dy = 0
-    if (bRect.left < sRect.left + margin) dx = bRect.left - sRect.left - margin
-    else if (bRect.right > sRect.right - margin) dx = bRect.right - sRect.right + margin
-    if (bRect.top < sRect.top + margin) dy = bRect.top - sRect.top - margin
-    else if (bRect.bottom > sRect.bottom - margin) dy = bRect.bottom - sRect.bottom + margin
+    if (canScrollX) {
+      if (bRect.left < sRect.left + margin) dx = bRect.left - sRect.left - margin
+      else if (bRect.right > sRect.right - margin) dx = bRect.right - sRect.right + margin
+    }
+    if (canScrollY) {
+      if (bRect.top < sRect.top + margin) dy = bRect.top - sRect.top - margin
+      else if (bRect.bottom > sRect.bottom - margin) dy = bRect.bottom - sRect.bottom + margin
+    }
     if (dx || dy) scroller.scrollBy({ left: dx, top: dy, behavior: 'smooth' })
   }, [activeYear])
 
