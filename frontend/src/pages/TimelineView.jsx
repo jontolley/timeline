@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { listEvents, listEventYears } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
+import BackToTop from '../components/BackToTop'
 import EventCard from '../components/EventCard'
 import FilterModal from '../components/FilterModal'
 import TimelineToolbar from '../components/TimelineToolbar'
@@ -627,6 +628,8 @@ export default function TimelineView() {
         onClose={() => setFilterOpen(false)}
         onApply={(next) => handleFilterChange(next)}
       />
+
+      <BackToTop />
     </div>
   )
 }
