@@ -338,14 +338,16 @@ export default function TimelineView() {
         newer.length === PAGE_SIZE,
       )
       setActiveYear(year)
-      // After paint, anchor on the first event of the target year so the user
-      // lands at the year they clicked rather than at the very top of the
-      // window.
-      requestAnimationFrame(() => {
-        const target = document.querySelector(`[data-year-marker="${year}"]`)
-        if (target) target.scrollIntoView({ behavior: 'auto', block: 'start' })
-        else window.scrollTo({ top: 0, behavior: 'auto' })
-      })
+      // Await the next two paints before letting `finally` flip loading off:
+      // (1) lets React commit the new events so [data-year-marker] exists,
+      // (2) ensures the scroll has taken effect before the top-sentinel
+      // observer is allowed to mount. Otherwise the observer fires at scroll
+      // 0 and triggers a spurious loadNewer that prepends the wrong page.
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      const target = document.querySelector(`[data-year-marker="${year}"]`)
+      if (target) target.scrollIntoView({ behavior: 'auto', block: 'start' })
+      else window.scrollTo({ top: 0, behavior: 'auto' })
+      await new Promise((resolve) => requestAnimationFrame(resolve))
     } catch (err) {
       console.error(err)
     } finally {
