@@ -370,6 +370,11 @@ export default function TimelineView() {
       const page = await listEvents(buildListParams(filters))
       anchorRestoredRef.current = true
       setInitialPage(page, page.length === PAGE_SIZE)
+      // The scrollspy doesn't fire when we go from scroll-X to 0 with a fully
+      // replaced event list, so the rail would stay on whatever year the user
+      // had visible. Set activeYear explicitly so YearRail's auto-scroll lands
+      // on the newest year (= top/left of the rail).
+      if (page.length > 0) setActiveYear(yearOf(page[0].date))
       window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
