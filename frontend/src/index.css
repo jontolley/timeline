@@ -4349,3 +4349,83 @@ a.card { text-decoration: none; }
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ---- About page ---- */
+.about-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+}
+.about-head { margin-bottom: 40px; }
+.about-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.about-eyebrow .pip {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.about-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-style: italic;
+  font-size: clamp(56px, 7vw, 92px);
+  line-height: 0.9;
+  letter-spacing: -0.025em;
+  margin: 0 0 14px;
+  color: var(--accent);
+}
+.about-title em { font-style: italic; color: var(--ink); }
+.about-tag {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 22px;
+  color: var(--ink-mute);
+  margin: 0;
+}
+.about-block { margin-top: 36px; }
+.about-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px 28px;
+  margin: 0;
+  padding: 22px 26px;
+  border: 1px solid var(--rule);
+  border-radius: 16px;
+  background: var(--feature-bg);
+}
+.about-meta div { margin: 0; }
+.about-meta dt {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 4px;
+}
+.about-meta dd {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--ink);
+}
+.about-meta a { color: var(--accent); text-decoration: none; }
+.about-meta a:hover { text-decoration: underline; }
+.about-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink);
+  margin: 0 0 12px;
+}
+.about-body a { color: var(--accent); text-decoration: none; }
+.about-body a:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  .about-page { padding: 32px 16px calc(80px + var(--bottom-nav-h)); }
+  .about-meta { grid-template-columns: 1fr; padding: 18px 20px; }
+}

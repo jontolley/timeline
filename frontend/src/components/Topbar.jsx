@@ -49,6 +49,10 @@ function UserMenu({ email, onSignOut }) {
     setOpen(false)
     navigate('/settings')
   }
+  const goToAbout = () => {
+    setOpen(false)
+    navigate('/about')
+  }
   const handleSignOut = () => {
     setOpen(false)
     onSignOut()
@@ -77,6 +81,9 @@ function UserMenu({ email, onSignOut }) {
         <div className="user-menu-dropdown" role="menu">
           <button type="button" className="user-menu-item" onClick={goToSettings} role="menuitem">
             Settings
+          </button>
+          <button type="button" className="user-menu-item" onClick={goToAbout} role="menuitem">
+            About
           </button>
           <div className="user-menu-divider" />
           <button type="button" className="user-menu-item danger" onClick={handleSignOut} role="menuitem">

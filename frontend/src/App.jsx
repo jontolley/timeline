@@ -5,6 +5,7 @@ import Topbar from './components/Topbar'
 import TimelineView from './pages/TimelineView'
 import EventDetail from './pages/EventDetail'
 import EventForm from './pages/EventForm'
+import AboutView from './pages/AboutView'
 import ChatView from './pages/ChatView'
 import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
@@ -68,6 +69,7 @@ export default function App() {
         <Route path="/events/:id/edit" element={<EventForm />} />
         <Route path="/chat" element={<ChatView />} />
         <Route path="/settings" element={<SettingsView />} />
+        <Route path="/about" element={<AboutView />} />
         {/* Old pre-Settings paths redirect to the matching tab. */}
         <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
         <Route path="/backup" element={<Navigate to="/settings?tab=backup" replace />} />
