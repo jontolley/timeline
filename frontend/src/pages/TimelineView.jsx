@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { listEvents, listEventYears } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
@@ -58,7 +59,32 @@ export default function TimelineView() {
   const [years, setYears] = useState([])
   const [activeYear, setActiveYear] = useState(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [topbarHost, setTopbarHost] = useState(null)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
+  const addMenuRef = useRef(null)
   const threadCount = useThreadStore((s) => s.threads.length)
+
+  // Bind to the topbar's action slot once it's in the DOM so we can portal
+  // mobile-only filter + add buttons into it.
+  useEffect(() => {
+    setTopbarHost(document.getElementById('topbar-actions'))
+  }, [])
+
+  // Close the topbar add-menu on outside click + Escape, mirroring the desktop
+  // split-button menu.
+  useEffect(() => {
+    if (!addMenuOpen) return undefined
+    const onClickOutside = (e) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target)) setAddMenuOpen(false)
+    }
+    const onKey = (e) => { if (e.key === 'Escape') setAddMenuOpen(false) }
+    document.addEventListener('mousedown', onClickOutside)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [addMenuOpen])
   const photoInputRef = useRef(null)
   const aiPhotoInputRef = useRef(null)
   const bottomSentinelRef = useRef(null)
@@ -425,36 +451,36 @@ export default function TimelineView() {
       <div className="tl-grid">
         <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
 
-        <main className="tl-feed">
-          <header className="tl-feed-head">
-            <div>
-              <h1 className="tl-feed-title">Timeline.</h1>
-              {!loading && (
-                <p className="tl-feed-stats">
-                  <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
-                  {earliestYear && (
-                    <>
-                      <span className="sep" aria-hidden="true" />
-                      <span>since {earliestYear}</span>
-                    </>
-                  )}
-                  {threadCount > 0 && (
-                    <>
-                      <span className="sep" aria-hidden="true" />
-                      <span>{threadCount} thread{threadCount === 1 ? '' : 's'}</span>
-                    </>
-                  )}
-                  {isFiltered && (
-                    <>
-                      <span className="sep" aria-hidden="true" />
-                      <span>filtered</span>
-                    </>
-                  )}
-                </p>
-              )}
-            </div>
-          </header>
+        <header className="tl-feed-head">
+          <div>
+            <h1 className="tl-feed-title">Timeline.</h1>
+            {!loading && (
+              <p className="tl-feed-stats">
+                <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
+                {earliestYear && (
+                  <>
+                    <span className="sep" aria-hidden="true" />
+                    <span>since {earliestYear}</span>
+                  </>
+                )}
+                {threadCount > 0 && (
+                  <>
+                    <span className="sep" aria-hidden="true" />
+                    <span>{threadCount} thread{threadCount === 1 ? '' : 's'}</span>
+                  </>
+                )}
+                {isFiltered && (
+                  <>
+                    <span className="sep" aria-hidden="true" />
+                    <span>filtered</span>
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+        </header>
 
+        <main className="tl-feed">
           <TimelineToolbar
             filterCount={filterCount}
             onOpenFilters={() => setFilterOpen(true)}
@@ -529,6 +555,70 @@ export default function TimelineView() {
           </div>
         </main>
       </div>
+
+      {topbarHost && createPortal(
+        <>
+          <button
+            type="button"
+            className="topbar-action-btn"
+            aria-label={filterCount > 0 ? `Filter (${filterCount} active)` : 'Filter'}
+            onClick={() => setFilterOpen(true)}
+          >
+            <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <path d="M2 4 H14 M4 8 H12 M6 12 H10" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+            </svg>
+            {filterCount > 0 && <span className="topbar-action-dot" aria-hidden="true" />}
+          </button>
+          <div className="topbar-add-wrap" ref={addMenuRef}>
+            <button
+              type="button"
+              className="topbar-action-btn"
+              aria-label="Add event"
+              aria-haspopup="menu"
+              aria-expanded={addMenuOpen}
+              onClick={() => setAddMenuOpen((v) => !v)}
+            >
+              <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="M8 3 V13 M3 8 H13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            </button>
+            {addMenuOpen && (
+              <div className="tl-add-menu" role="menu">
+                <button
+                  type="button"
+                  className="tl-add-menu-item"
+                  role="menuitem"
+                  onClick={() => { setAddMenuOpen(false); navigate('/events/new') }}
+                >
+                  <span className="tl-add-menu-t">Add event</span>
+                  <span className="tl-add-menu-s">Blank form — fill it in yourself</span>
+                </button>
+                <button
+                  type="button"
+                  className="tl-add-menu-item"
+                  role="menuitem"
+                  onClick={() => { setAddMenuOpen(false); aiPhotoInputRef.current?.click() }}
+                  disabled={aiPhotoBusy}
+                >
+                  <span className="tl-add-menu-t">Photo with AI captions</span>
+                  <span className="tl-add-menu-s">EXIF + Claude-written title and description</span>
+                </button>
+                <button
+                  type="button"
+                  className="tl-add-menu-item"
+                  role="menuitem"
+                  onClick={() => { setAddMenuOpen(false); photoInputRef.current?.click() }}
+                  disabled={photoBusy}
+                >
+                  <span className="tl-add-menu-t">Event from photo</span>
+                  <span className="tl-add-menu-s">Date + GPS from EXIF, you write the rest</span>
+                </button>
+              </div>
+            )}
+          </div>
+        </>,
+        topbarHost,
+      )}
 
       <FilterModal
         open={filterOpen}

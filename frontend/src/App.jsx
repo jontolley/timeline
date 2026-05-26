@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import BottomNav from './components/BottomNav'
 import Topbar from './components/Topbar'
 import TimelineView from './pages/TimelineView'
 import EventDetail from './pages/EventDetail'
@@ -71,6 +72,7 @@ export default function App() {
         <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
         <Route path="/backup" element={<Navigate to="/settings?tab=backup" replace />} />
       </Routes>
+      <BottomNav />
       </BrowserRouter>
     </ConfirmProvider>
   )

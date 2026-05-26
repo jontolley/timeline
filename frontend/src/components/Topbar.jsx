@@ -130,6 +130,7 @@ export default function Topbar() {
         })}
       </nav>
       <div className="topbar-spacer" />
+      <div className="topbar-actions" id="topbar-actions" />
       {email && <UserMenu email={email} onSignOut={signOut} />}
     </header>
   )

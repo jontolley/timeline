@@ -81,6 +81,9 @@
      ≈ 79px, hence 80. Bumping this also pushes scroll-margin-top deeper, so
      keep it accurate. */
   --topbar-h:    80px;
+  /* Mobile bottom-tab bar height. 0 on desktop (bar hidden); overridden in the
+     phone media query so full-viewport pages (chat, settings) reserve room. */
+  --bottom-nav-h: 0px;
 }
 
 ::selection { background: var(--accent); color: #fff; }
@@ -194,6 +197,71 @@ input, select, textarea {
 }
 
 .topbar-spacer { flex: 1; }
+.topbar-actions {
+  display: none;
+  align-items: center;
+  gap: 6px;
+}
+.topbar-action-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid var(--rule);
+  background: var(--feature-bg);
+  color: var(--ink);
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+.topbar-action-btn:hover {
+  background: var(--bg-elev);
+  border-color: var(--ink-mute);
+}
+.topbar-action-btn:active { transform: scale(0.96); }
+.topbar-action-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.topbar-add-wrap { position: relative; }
+
+/* Mobile bottom tab bar — fixed at the bottom of the viewport, hidden on
+   desktop. Two tabs (Timeline + Chat); active route inherits the accent. */
+.bottom-nav {
+  display: none;
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  z-index: 40;
+  background: color-mix(in oklab, var(--bg) 92%, transparent);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-top: 1px solid var(--rule);
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+.bottom-nav-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 0 10px;
+  color: var(--ink-mute);
+  text-decoration: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color .15s ease;
+}
+.bottom-nav-item[aria-current="page"] { color: var(--accent); }
+.bottom-nav-label { line-height: 1; }
 .topbar-user {
   color: var(--ink-soft);
   font-size: 13.5px;
@@ -542,9 +610,15 @@ input, select, textarea {
 .tl-grid {
   display: grid;
   grid-template-columns: 140px 1fr;
-  gap: 28px;
+  grid-template-areas:
+    "rail head"
+    "rail feed";
+  column-gap: 28px;
   align-items: start;
 }
+.yearspine { grid-area: rail; }
+.tl-feed-head { grid-area: head; }
+.tl-feed { grid-area: feed; }
 
 /* ---- Year spine (left rail) ---- */
 .yearspine {
@@ -613,15 +687,16 @@ input, select, textarea {
 .yr.on .bar { background: var(--gold); }
 
 /* ---- Feed column ---- */
-.tl-feed { padding: 40px 0 80px; min-width: 0; }
+.tl-feed { padding: 0 0 80px; min-width: 0; }
 
 .tl-feed-head {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 22px;
+  padding: 40px 0 22px;
   border-bottom: 1px solid var(--rule);
+  min-width: 0;
 }
 .tl-feed-title {
   font-family: var(--font-serif);
@@ -1089,7 +1164,15 @@ input, select, textarea {
 /* Responsive */
 @media (max-width: 1080px) {
   .tl-page { padding: 0 22px; }
-  .tl-grid { grid-template-columns: 1fr; gap: 0; }
+  .tl-grid {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "head"
+      "rail"
+      "feed";
+    column-gap: 0;
+  }
+  .tl-feed-head { padding: 24px 0 18px; border-bottom: 0; }
   .yearspine {
     position: sticky;
     top: var(--topbar-h);
@@ -1100,6 +1183,7 @@ input, select, textarea {
     overflow: hidden;
     padding: 14px 0 10px;
     background: var(--bg);
+    border-top: 1px solid var(--rule);
     border-bottom: 1px solid var(--rule);
   }
   .yearspine-lbl { display: none; }
@@ -1124,12 +1208,41 @@ input, select, textarea {
   }
   .yr .bar { display: none; }
   .tl-feed-title { font-size: 48px; }
-  .tl-feed { padding: 24px 0 64px; }
+  .tl-feed { padding: 6px 0 64px; }
+  .tl-month { margin: 7px 0 12px; padding-top: 0; }
 }
 @media (max-width: 720px) {
+  :root { --bottom-nav-h: 64px; }
+  .bottom-nav { display: flex; }
+  .topbar .nav { display: none; }
   .tl-page { padding: 0 16px; }
+  .tl-feed { padding-bottom: calc(64px + var(--bottom-nav-h)); }
+  .topbar-actions { display: flex; }
+  .hs-account-trigger {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    gap: 0;
+  }
+  .hs-account-trigger:hover,
+  .hs-account-trigger[aria-expanded="true"] {
+    background: transparent;
+    border-color: transparent;
+  }
+  .hs-account-who,
+  .hs-account-caret { display: none; }
+  .tl-toolbar { display: none; }
   .tl-feed-head { flex-direction: column; align-items: flex-start; }
-  .tl-toolbar { flex-wrap: wrap; }
+  .hs-modal-scrim { padding: 0; }
+  .hs-modal {
+    max-width: 100% !important;
+    width: 100%;
+    min-height: 100vh;
+    min-height: 100dvh;
+    border-radius: 0;
+    border: 0;
+    box-shadow: none;
+  }
   .tl-search { max-width: none; width: 100%; }
   .tl-day { grid-template-columns: 64px 1fr; gap: 14px; }
   .tl-events { padding-left: 16px; }
@@ -2332,7 +2445,7 @@ a.card { text-decoration: none; }
    Chat (Hindsite — matches the timeline editorial layout)
    ===================================================================== */
 .chat-page {
-  height: calc(100vh - var(--topbar-h));
+  height: calc(100vh - var(--topbar-h) - var(--bottom-nav-h));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3434,7 +3547,7 @@ a.card { text-decoration: none; }
   max-width: none;
   margin: 0;
   padding: 0;
-  height: calc(100vh - var(--topbar-h));
+  height: calc(100vh - var(--topbar-h) - var(--bottom-nav-h));
   overflow: hidden;
 }
 .hs-settings-console {
