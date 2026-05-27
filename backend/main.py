@@ -1,3 +1,4 @@
+import asyncio
 import uuid
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
@@ -348,12 +349,22 @@ async def _ensure_text_index():
     )
 
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+async def _background_startup():
+    """Heavy startup work that runs *after* FastAPI is already serving
+    requests. Everything here is idempotent — if the process is killed
+    mid-run, the next boot picks up where it left off.
+
+    Why this isn't in the synchronous lifespan: Fly auto-suspends idle
+    machines, and Cloudflare's edge gives the origin ~100s before it
+    returns a 524. Doing the Qdrant catch-up sync (~300ms per missing
+    event) plus a Qdrant wake-up hop plus Atlas cold-connect *before*
+    serving the first /api/auth/me used to push first-request latency
+    past that ceiling. Moving these out means /me, /events, /people,
+    etc. respond as soon as the Mongo connection is up — Qdrant-backed
+    chat semantic search just misses any newly-created events until
+    the catch-up loop here finishes (idempotent, runs every boot)."""
     try:
         await embedding_service.ensure_collection()
-        await _ensure_text_index()
-        await _ensure_auth_indexes()
         await _migrate_photos_to_media()
         # Multi-user bootstrap: seeds users from ALLOWED_EMAILS, backfills
         # owner_id on legacy docs, seeds per-user category defaults, and
@@ -381,10 +392,30 @@ async def lifespan(app: FastAPI):
                     _serialize_doc(doc),
                     owner_id=str(doc.get("owner_id")) if doc.get("owner_id") else None,
                 )
+        print("[startup-bg] Background startup complete", flush=True)
     except Exception as exc:
-        print(f"[startup] Warning: {exc}")
+        print(f"[startup-bg] Warning: {exc}", flush=True)
 
-    yield
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Fast path: only the Mongo index creations stay synchronous because
+    # request handlers depend on those indexes existing (text search,
+    # auth-code TTL). Everything else is deferred — see _background_startup.
+    try:
+        await _ensure_text_index()
+        await _ensure_auth_indexes()
+    except Exception as exc:
+        print(f"[startup] Warning during index ensure: {exc}", flush=True)
+
+    bg_task = asyncio.create_task(_background_startup())
+    try:
+        yield
+    finally:
+        # On shutdown, cancel the migrations if still running. They're
+        # idempotent and the next process will re-run them.
+        if not bg_task.done():
+            bg_task.cancel()
 
 
 app = FastAPI(lifespan=lifespan)
