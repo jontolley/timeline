@@ -4111,6 +4111,42 @@ a.card { text-decoration: none; }
   from { transform: translateY(12px) scale(0.98); opacity: 0; }
   to   { transform: translateY(0)    scale(1);    opacity: 1; }
 }
+/* Photo-processing overlay — shown while extractExif / describePhoto are
+   in flight, before navigating to EventForm. Reuses .hs-modal-scrim for
+   the indigo wash, with a small mono-labelled card instead of a modal. */
+.photo-busy-scrim {
+  z-index: 95; /* above modals (90) so a stray scrim layered under us
+                  doesn't catch the click on the busy card */
+  cursor: progress;
+}
+.photo-busy-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 26px;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  box-shadow: 0 40px 80px -30px rgba(10,14,30,0.6), 0 4px 0 var(--rule);
+  animation: hs-modal-pop .22s cubic-bezier(.2,.7,.2,1);
+}
+.photo-busy-spinner {
+  width: 22px; height: 22px;
+  border-radius: 50%;
+  border: 2.5px solid var(--rule);
+  border-top-color: var(--accent);
+  animation: photo-busy-spin .8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes photo-busy-spin {
+  to { transform: rotate(360deg); }
+}
+.photo-busy-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+}
 .hs-modal-head {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 16px;

@@ -407,10 +407,13 @@ export default function TimelineView() {
       const exif = await extractExif(file)
       setPendingPhoto(file)
       navigate('/events/new', { state: { prefill: exif } })
+      // Success path: component unmounts on navigation, busy state is moot.
     } catch (err) {
-      await alert({ title: 'Could not read photo', body: err.message || '' })
-    } finally {
+      // Drop the overlay *before* showing the alert — the busy scrim sits at
+      // a higher z-index than the alert modal, so leaving it up traps the OK
+      // button underneath an unclickable wash.
       setPhotoBusy(false)
+      await alert({ title: 'Could not read photo', body: err.message || '' })
     }
   }
 
@@ -427,9 +430,8 @@ export default function TimelineView() {
       setPendingCaption(captionPromise)
       navigate('/events/new', { state: { prefill: { ...exif, aiCaption: true } } })
     } catch (err) {
-      await alert({ title: 'Could not read photo', body: err.message || '' })
-    } finally {
       setAiPhotoBusy(false)
+      await alert({ title: 'Could not read photo', body: err.message || '' })
     }
   }
 
@@ -493,6 +495,14 @@ export default function TimelineView() {
 
   return (
     <div className="tl-page">
+      {(photoBusy || aiPhotoBusy) && (
+        <div className="hs-modal-scrim photo-busy-scrim" role="status" aria-live="polite">
+          <div className="photo-busy-card">
+            <span className="photo-busy-spinner" aria-hidden="true" />
+            <span className="photo-busy-label">Reading photo…</span>
+          </div>
+        </div>
+      )}
       <div className="tl-grid">
         <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
 
