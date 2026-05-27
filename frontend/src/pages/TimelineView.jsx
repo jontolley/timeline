@@ -55,6 +55,12 @@ export default function TimelineView() {
   const [loading, setLoading] = useState(!loaded)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingNewer, setLoadingNewer] = useState(false)
+  // Year-jump in flight. Gates the top + bottom sentinels so they don't fire
+  // a spurious loadNewer/loadOlder before scrollIntoView settles on the
+  // target year. Distinct from `loading` because we want the previous events
+  // list to remain rendered during the jump — otherwise [data-year-marker]
+  // doesn't exist in the DOM when scrollIntoView runs.
+  const [jumping, setJumping] = useState(false)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [aiPhotoBusy, setAiPhotoBusy] = useState(false)
   const [years, setYears] = useState([])
@@ -285,26 +291,26 @@ export default function TimelineView() {
   // Bottom sentinel — loads older events.
   useEffect(() => {
     const node = bottomSentinelRef.current
-    if (!node || !hasMoreOlder || loading) return
+    if (!node || !hasMoreOlder || loading || jumping) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadOlder() },
       { rootMargin: '400px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [loadOlder, hasMoreOlder, loading])
+  }, [loadOlder, hasMoreOlder, loading, jumping])
 
   // Top sentinel — loads newer events after a year-jump.
   useEffect(() => {
     const node = topSentinelRef.current
-    if (!node || !hasMoreNewer || loading) return
+    if (!node || !hasMoreNewer || loading || jumping) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadNewer() },
       { rootMargin: '400px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [loadNewer, hasMoreNewer, loading])
+  }, [loadNewer, hasMoreNewer, loading, jumping])
 
   const handleJumpToYear = useCallback(async (year) => {
     // Find the year already loaded? Just scroll to its first card.
@@ -323,8 +329,14 @@ export default function TimelineView() {
     // Combining both means the user lands in the middle of a window rather
     // than at the top, and scrolling up or down extends the window via the
     // normal sentinels.
-    fetchingOlderRef.current = true
-    setLoading(true)
+    //
+    // We deliberately don't `setLoading(true)` here: that swaps the events
+    // list for a "loading…" placeholder, so when we then try to
+    // `scrollIntoView` the new year marker, the marker doesn't exist yet and
+    // we silently fall back to scrollTo(0,0) — landing the user on the
+    // newest event in the window instead of the year they clicked. The
+    // previous list stays on screen during the (~one round-trip) fetch.
+    setJumping(true)
     try {
       const cutoff = `${year + 1}-01-01T00:00:00.000Z`
       const [newer, older] = await Promise.all([
@@ -338,11 +350,12 @@ export default function TimelineView() {
         newer.length === PAGE_SIZE,
       )
       setActiveYear(year)
-      // Await the next two paints before letting `finally` flip loading off:
+      // Await two paints before clearing `jumping`:
       // (1) lets React commit the new events so [data-year-marker] exists,
-      // (2) ensures the scroll has taken effect before the top-sentinel
-      // observer is allowed to mount. Otherwise the observer fires at scroll
-      // 0 and triggers a spurious loadNewer that prepends the wrong page.
+      // (2) ensures the scrollIntoView has taken effect before the top-
+      // sentinel observer is allowed to mount. Otherwise the observer fires
+      // at scroll 0 and triggers a spurious loadNewer that prepends the
+      // wrong page.
       await new Promise((resolve) => requestAnimationFrame(resolve))
       const target = document.querySelector(`[data-year-marker="${year}"]`)
       if (target) target.scrollIntoView({ behavior: 'auto', block: 'start' })
@@ -351,8 +364,7 @@ export default function TimelineView() {
     } catch (err) {
       console.error(err)
     } finally {
-      fetchingOlderRef.current = false
-      setLoading(false)
+      setJumping(false)
     }
   }, [filters, jumpToWindow])
 

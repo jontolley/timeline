@@ -1196,7 +1196,7 @@ input, select, textarea {
 }
 
 /* Responsive */
-@media (max-width: 1080px) {
+@media (max-width: 720px) {
   .tl-page { padding: 0 22px; }
   .tl-grid {
     grid-template-columns: 1fr;
