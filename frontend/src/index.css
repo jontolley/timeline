@@ -90,7 +90,15 @@
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
-html { background: var(--bg); }
+html {
+  background: var(--bg);
+  /* iOS Safari auto-inflates "main content" text on first render, which
+     made the page land visibly zoomed-in on phones until the user pinched.
+     `100%` keeps the developer-defined font sizes — pinch-to-zoom still
+     works because we didn't say `none`. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
 body {
   font-family: var(--font-sans);
   background: var(--bg);
@@ -101,6 +109,11 @@ body {
   letter-spacing: -0.005em;
   font-size: 14.5px;
   line-height: 1.5;
+  /* Belt-and-suspenders: if a single rogue element ever overflows
+     horizontally (e.g. a giant tag, code block, or URL), prevent that
+     overflow from forcing iOS to widen the layout viewport and re-scale
+     the whole page. Pages should never need horizontal scroll. */
+  overflow-x: hidden;
 }
 
 button { font: inherit; cursor: pointer; }
@@ -1143,6 +1156,20 @@ input, select, textarea {
   gap: 6px;
   flex-wrap: wrap;
   margin-top: 14px;
+  /* min-width: 0 lets inner items truncate inside the card column. */
+  min-width: 0;
+}
+/* Truncate long tags (e.g. the Day One importer's #dayone:UUID tags)
+   instead of letting the chip blow past the card edge — which used to
+   force iOS to widen the layout viewport and zoom the whole page in. */
+.event .e-tags .tag,
+.tag-list .tag {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
 }
 /* If tags sit immediately above people, tighten the spacing — both have
    their own margin-top and the doubled gap looks too airy. */
