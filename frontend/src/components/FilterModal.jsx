@@ -64,21 +64,6 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
       }
     >
       <div className="field">
-        <label className="tl-search" style={{ maxWidth: 'none' }}>
-          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
-            <path d="M10.5 10.5 L 13.5 13.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-          <input
-            type="text"
-            placeholder="search the timeline…"
-            disabled
-            aria-label="Search timeline"
-          />
-        </label>
-      </div>
-
-      <div className="field">
         <div className="field-label"><span>Category</span></div>
         <div className="filter-row" style={{ flexWrap: 'wrap' }}>
           {categories.map((c) => (

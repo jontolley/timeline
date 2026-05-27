@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 
 /**
  * Vertical year-navigation rail.
@@ -11,10 +11,37 @@ import { useEffect, useMemo, useRef } from 'react'
  */
 export default function YearRail({ years, activeYear, onJump }) {
   const listRef = useRef(null)
+  const observerRef = useRef(null)
   const maxCount = useMemo(
     () => (years && years.length ? Math.max(...years.map((y) => y.count || 0)) : 0),
     [years],
   )
+
+  // Publish the rail's rendered height as --year-rail-h so the mobile
+  // toolbar can stick directly underneath the horizontal year strip. Same
+  // pattern as the topbar's --topbar-h. On desktop the var still updates
+  // but the desktop CSS doesn't consume it, so it's a harmless no-op.
+  //
+  // Implemented as a ref callback (not a useEffect) because YearRail
+  // returns null before `years` loads — a useEffect with [] deps would
+  // fire once with no DOM node and never re-run when the rail later
+  // mounts, leaving --year-rail-h unset and the mobile toolbar stuck
+  // *under* the rail.
+  const setRailNode = useCallback((el) => {
+    if (observerRef.current) {
+      observerRef.current.disconnect()
+      observerRef.current = null
+    }
+    if (!el) return
+    const apply = () => {
+      const h = Math.round(el.getBoundingClientRect().height)
+      if (h > 0) document.documentElement.style.setProperty('--year-rail-h', `${h}px`)
+    }
+    apply()
+    const ro = new ResizeObserver(apply)
+    ro.observe(el)
+    observerRef.current = ro
+  }, [])
 
   // Keep the active pill within the rail's own scroll viewport (horizontal on
   // mobile, vertical on desktop) without nudging the page scroll position.
@@ -58,7 +85,7 @@ export default function YearRail({ years, activeYear, onJump }) {
   if (!years || years.length === 0) return null
 
   return (
-    <aside className="yearspine" aria-label="Jump to year">
+    <aside className="yearspine" aria-label="Jump to year" ref={setRailNode}>
       <p className="yearspine-lbl">Years</p>
       <ul className="yr-list" ref={listRef}>
         {years.map((y) => {

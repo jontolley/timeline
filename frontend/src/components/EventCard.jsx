@@ -145,6 +145,14 @@ export default function EventCard({ event }) {
         </div>
       )}
 
+      {event.tags?.length > 0 && (
+        <div className="e-tags">
+          {event.tags.map((tag) => (
+            <span key={tag} className="tag">#{tag}</span>
+          ))}
+        </div>
+      )}
+
       {peopleShown.length > 0 && (
         <div className="e-people">
           {peopleShown.map((p) => (

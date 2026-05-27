@@ -1,7 +1,7 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
-import { listEvents, listEventYears } from '../api/events'
+import { listEvents, listEventYears, searchEvents } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
 import BackToTop from '../components/BackToTop'
 import EventCard from '../components/EventCard'
@@ -66,6 +66,13 @@ export default function TimelineView() {
   const [years, setYears] = useState([])
   const [activeYear, setActiveYear] = useState(null)
   const [filterOpen, setFilterOpen] = useState(false)
+  // Keyword-search state. Local (not in the store) so it auto-clears when
+  // the user navigates away — search isn't a "stuck" mode. While non-empty
+  // we substitute searchResults for the paginated `events` list and disable
+  // the top/bottom sentinels.
+  const [searchQuery, setSearchQuery] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const inSearchMode = searchQuery.trim().length > 0
   const [topbarHost, setTopbarHost] = useState(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addMenuRef = useRef(null)
@@ -145,6 +152,27 @@ export default function TimelineView() {
       .catch(() => { if (!cancelled) setYears([]) })
     return () => { cancelled = true }
   }, [filters])
+
+  // Debounced keyword search. While searchQuery is non-empty, refetch
+  // results 250ms after the last keystroke (or on a filter change), then
+  // substitute the results for the paginated events list in the feed.
+  // Empty query clears the results and the feed falls back to `events`.
+  useEffect(() => {
+    if (!inSearchMode) {
+      setSearchResults([])
+      return undefined
+    }
+    let cancelled = false
+    const handle = window.setTimeout(() => {
+      searchEvents({ q: searchQuery.trim(), ...buildFilterParams(filters) })
+        .then((data) => { if (!cancelled) setSearchResults(data) })
+        .catch(() => { if (!cancelled) setSearchResults([]) })
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(handle)
+    }
+  }, [searchQuery, filters, inSearchMode])
 
   // Restore scroll position by scrolling the anchor element into view.
   // Robust to image-load height shifts because we anchor on a DOM node, not a
@@ -291,28 +319,32 @@ export default function TimelineView() {
   // Bottom sentinel — loads older events.
   useEffect(() => {
     const node = bottomSentinelRef.current
-    if (!node || !hasMoreOlder || loading || jumping) return
+    if (!node || !hasMoreOlder || loading || jumping || inSearchMode) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadOlder() },
       { rootMargin: '400px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [loadOlder, hasMoreOlder, loading, jumping])
+  }, [loadOlder, hasMoreOlder, loading, jumping, inSearchMode])
 
   // Top sentinel — loads newer events after a year-jump.
   useEffect(() => {
     const node = topSentinelRef.current
-    if (!node || !hasMoreNewer || loading || jumping) return
+    if (!node || !hasMoreNewer || loading || jumping || inSearchMode) return
     const observer = new IntersectionObserver(
       (entries) => { if (entries[0].isIntersecting) loadNewer() },
       { rootMargin: '400px' },
     )
     observer.observe(node)
     return () => observer.disconnect()
-  }, [loadNewer, hasMoreNewer, loading, jumping])
+  }, [loadNewer, hasMoreNewer, loading, jumping, inSearchMode])
 
   const handleJumpToYear = useCallback(async (year) => {
+    // Year-rail click is a "leave search mode and go to this year" action —
+    // search results don't have a continuous year sequence the rail can map
+    // to, and the markers wouldn't necessarily be in the right place.
+    if (inSearchMode) setSearchQuery('')
     // Find the year already loaded? Just scroll to its first card.
     const existing = document.querySelector(`[data-year-marker="${year}"]`)
     if (existing) {
@@ -366,7 +398,7 @@ export default function TimelineView() {
     } finally {
       setJumping(false)
     }
-  }, [filters, jumpToWindow])
+  }, [filters, jumpToWindow, inSearchMode])
 
   // Smart "back to top": when the view is a year-jumped window (hasMoreNewer
   // is true), refetch a fresh page-1 so the user lands at *today*, not at
@@ -438,12 +470,15 @@ export default function TimelineView() {
   // API returns newest-first; nest groups year → month → day for the new
   // layout. We track the first month of each year so we can hang
   // `data-year-marker` on it for the scrollspy + jump targets.
+  // In search mode, group the (already-sorted) search results instead of the
+  // paginated events list. Identical grouping logic so the feed JSX is reused.
+  const feedEvents = inSearchMode ? searchResults : events
   const groups = useMemo(() => {
     const years = []
     let curYear = null
     let curMonth = null
     let curDay = null
-    for (const ev of events) {
+    for (const ev of feedEvents) {
       const y = yearOf(ev.date)
       const m = monthOf(ev.date)
       const d = dayOf(ev.date)
@@ -473,7 +508,7 @@ export default function TimelineView() {
       curMonth.count += 1
     }
     return years
-  }, [events])
+  }, [feedEvents])
 
   const earliestYear = useMemo(() => {
     if (years.length === 0) return null
@@ -506,31 +541,52 @@ export default function TimelineView() {
       <div className="tl-grid">
         <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
 
+        {/* Wrap head + feed so the rail only competes against the combined
+            column height for grid sizing. Otherwise the rail's natural height
+            (sticky year list) gets distributed across two rows and a sparse
+            feed (e.g. zero search results) leaves a large gap above the
+            toolbar. `.tl-col` collapses to display:contents on mobile so the
+            existing 3-row "head / rail / feed" layout still works. */}
+        <div className="tl-col">
         <header className="tl-feed-head">
           <div>
             <h1 className="tl-feed-title">Timeline.</h1>
             {!loading && (
-              <p className="tl-feed-stats">
-                <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
-                {earliestYear && (
-                  <>
-                    <span className="sep" aria-hidden="true" />
-                    <span>since {earliestYear}</span>
-                  </>
-                )}
-                {threadCount > 0 && (
-                  <>
-                    <span className="sep" aria-hidden="true" />
-                    <span>{threadCount} thread{threadCount === 1 ? '' : 's'}</span>
-                  </>
-                )}
-                {isFiltered && (
-                  <>
-                    <span className="sep" aria-hidden="true" />
-                    <span>filtered</span>
-                  </>
-                )}
-              </p>
+              inSearchMode ? (
+                <p className="tl-feed-stats">
+                  <span>
+                    {searchResults.length.toLocaleString()} {searchResults.length === 1 ? 'match' : 'matches'} for “{searchQuery.trim()}”
+                  </span>
+                  {isFiltered && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>filtered</span>
+                    </>
+                  )}
+                </p>
+              ) : (
+                <p className="tl-feed-stats">
+                  <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
+                  {earliestYear && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>since {earliestYear}</span>
+                    </>
+                  )}
+                  {threadCount > 0 && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>{threadCount} thread{threadCount === 1 ? '' : 's'}</span>
+                    </>
+                  )}
+                  {isFiltered && (
+                    <>
+                      <span className="sep" aria-hidden="true" />
+                      <span>filtered</span>
+                    </>
+                  )}
+                </p>
+              )
             )}
           </div>
         </header>
@@ -544,6 +600,8 @@ export default function TimelineView() {
             onPhotoEvent={() => photoInputRef.current?.click()}
             aiPhotoBusy={aiPhotoBusy}
             photoBusy={photoBusy}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
           />
           <input
             ref={photoInputRef}
@@ -565,7 +623,11 @@ export default function TimelineView() {
               <div className="empty">loading…</div>
             ) : groups.length === 0 ? (
               <div className="empty">
-                {isFiltered ? 'no events match — clear filters?' : 'nothing here yet — capture a moment'}
+                {inSearchMode
+                  ? `no matches for “${searchQuery.trim()}”`
+                  : isFiltered
+                    ? 'no events match — clear filters?'
+                    : 'nothing here yet — capture a moment'}
               </div>
             ) : (
               <>
@@ -601,14 +663,15 @@ export default function TimelineView() {
                   )),
                 )}
                 <div ref={bottomSentinelRef} className="timeline-sentinel" aria-hidden="true" />
-                {loadingMore && <div className="empty">loading more…</div>}
-                {!hasMoreOlder && events.length > 0 && (
+                {!inSearchMode && loadingMore && <div className="empty">loading more…</div>}
+                {!inSearchMode && !hasMoreOlder && events.length > 0 && (
                   <div className="timeline-end">end of timeline</div>
                 )}
               </>
             )}
           </div>
         </main>
+        </div>
       </div>
 
       {topbarHost && createPortal(

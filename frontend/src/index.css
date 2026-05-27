@@ -644,15 +644,20 @@ input, select, textarea {
 .tl-grid {
   display: grid;
   grid-template-columns: 140px 1fr;
-  grid-template-areas:
-    "rail head"
-    "rail feed";
   column-gap: 28px;
   align-items: start;
 }
-.yearspine { grid-area: rail; }
-.tl-feed-head { grid-area: head; }
-.tl-feed { grid-area: feed; }
+/* .tl-col wraps head + feed so the rail and the column-of-content are
+   siblings in a single grid row. Without this, the rail spans two rows
+   and its natural height gets distributed across both, leaving empty
+   space above the toolbar when the feed is short (e.g. zero search
+   results). On mobile, display:contents below collapses the wrapper so
+   the existing 3-row "head / rail / feed" template still works. */
+.tl-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
 
 /* ---- Year spine (left rail) ---- */
 .yearspine {
@@ -805,6 +810,23 @@ input, select, textarea {
   border-radius: 4px;
   background: var(--bg);
 }
+.tl-search-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: var(--hi);
+  color: var(--ink);
+  border-radius: 50%;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.tl-search-clear:hover { background: var(--ink); color: var(--bg); }
 .tl-filter-btn {
   display: inline-flex;
   align-items: center;
@@ -1116,6 +1138,15 @@ input, select, textarea {
   max-width: 64ch;
   white-space: pre-wrap;
 }
+.event .e-tags {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+/* If tags sit immediately above people, tighten the spacing — both have
+   their own margin-top and the doubled gap looks too airy. */
+.event .e-tags + .e-people { margin-top: 8px; }
 .event .e-people {
   display: flex;
   gap: 6px;
@@ -1210,6 +1241,12 @@ input, select, textarea {
       "feed";
     column-gap: 0;
   }
+  /* Collapse the desktop column-wrapper so head + feed promote to direct
+     grid children and the named areas above apply. */
+  .tl-col { display: contents; }
+  .yearspine { grid-area: rail; }
+  .tl-feed-head { grid-area: head; }
+  .tl-feed { grid-area: feed; }
   .tl-feed-head { padding: 24px 0 18px; border-bottom: 0; }
   .yearspine {
     position: sticky;
@@ -1226,11 +1263,23 @@ input, select, textarea {
   }
   .yearspine-lbl { display: none; }
   .tl-toolbar {
-    position: static;
-    background: transparent;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
+    /* Stick the search input directly below the year-rail strip — the
+       offset tracks the rail's *rendered* height (published by YearRail's
+       ResizeObserver) so it stays flush across breakpoints and dynamic
+       rail content. Filter + add buttons are hidden below since they're
+       duplicated as topbar icons. */
+    position: sticky;
+    top: calc(var(--topbar-h) + var(--year-rail-h, 0px));
+    z-index: 4;  /* below the yearspine (z:5) so the rail covers it on overlap */
+    background: var(--bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    padding: 10px 0;
+    border-bottom: 1px solid var(--rule);
   }
+  .tl-toolbar .tl-filter-btn,
+  .tl-toolbar .tl-add-split { display: none; }
+  .tl-search { max-width: none; }
   .yr-list {
     flex-direction: row;
     gap: 6px;
@@ -1258,7 +1307,6 @@ input, select, textarea {
   .topbar-actions { display: flex; }
   /* The trigger is already a bare circle on desktop now, so no phone-specific
      collapse is needed — the avatar size + hover styles are uniform. */
-  .tl-toolbar { display: none; }
   .tl-feed-head { flex-direction: column; align-items: flex-start; }
   .hs-modal-scrim { padding: 0; }
   .hs-modal {

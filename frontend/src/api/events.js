@@ -29,6 +29,13 @@ export async function listEventYears(params = {}) {
   return res.json()
 }
 
+export async function searchEvents(params = {}) {
+  const qs = buildQuery(params)
+  const res = await http(`${BASE}/search${qs ? `?${qs}` : ''}`)
+  if (!res.ok) throw new Error('Search failed')
+  return res.json()
+}
+
 export async function getEvent(id) {
   const res = await http(`${BASE}/${id}`)
   if (!res.ok) throw new Error('Event not found')

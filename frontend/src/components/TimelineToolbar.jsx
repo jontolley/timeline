@@ -32,6 +32,8 @@ export default function TimelineToolbar({
   onPhotoEvent,
   aiPhotoBusy,
   photoBusy,
+  searchQuery,
+  onSearchChange,
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const menuRef = useRef(null)
@@ -60,10 +62,31 @@ export default function TimelineToolbar({
         <input
           type="text"
           placeholder="search the timeline…"
-          disabled
           aria-label="Search timeline"
+          value={searchQuery || ''}
+          onChange={(e) => onSearchChange?.(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && searchQuery) {
+              e.preventDefault()
+              // Stop the event before it can close anything else listening
+              // for Escape (e.g. a future global handler).
+              e.stopPropagation()
+              onSearchChange?.('')
+            }
+          }}
         />
-        <span className="tl-kbd" aria-hidden="true">⌘K</span>
+        {searchQuery ? (
+          <button
+            type="button"
+            className="tl-search-clear"
+            aria-label="Clear search"
+            onClick={() => onSearchChange?.('')}
+          >
+            ×
+          </button>
+        ) : (
+          <span className="tl-kbd" aria-hidden="true">⌘K</span>
+        )}
       </label>
 
       <button type="button" className="tl-filter-btn" onClick={onOpenFilters}>

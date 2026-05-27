@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -335,6 +336,78 @@ async def list_event_years(
         {"year": doc["_id"], "count": doc["count"]}
         async for doc in events_collection.aggregate(pipeline)
     ]
+
+
+@router.get("/search")
+async def search_events(
+    q: str = "",
+    event_type: Optional[str] = None,
+    tag: Optional[str] = None,
+    person_id: Optional[list[str]] = Query(None),
+    thread_id: Optional[list[str]] = Query(None),
+    limit: int = 50,
+    user: dict = Depends(require_auth),
+):
+    """Keyword (substring) search across event title, description, location
+    name/address, tags, and person names. Narrowed by the same filter chips
+    the timeline list endpoint accepts so the UI's active filters keep
+    applying. NOT vector/AI search — for that, use the chat endpoint.
+
+    People are matched by pre-resolving the viewer's people collection to
+    *string* IDs (events store person refs as stringified ObjectIds —
+    see EventBase.people: list[str]). A person rename takes effect
+    immediately without re-indexing event docs.
+    """
+    q = q.strip()
+    if not q:
+        return []
+
+    viewer_id = user["_id"]
+    thread_clause, _ = await _visible_thread_filter(viewer_id, thread_id)
+    if thread_clause is None:
+        return []
+
+    capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
+
+    needle = {"$regex": re.escape(q), "$options": "i"}
+    # Events store person refs as strings, not ObjectIds, so stringify here
+    # to match the storage type. Using ObjectIds in the $in below would
+    # silently never match.
+    matching_people_ids = [
+        str(p["_id"]) async for p in people_collection.find(
+            {"owner_id": viewer_id, "name": needle},
+            {"_id": 1},
+        )
+    ]
+
+    or_clauses = [
+        {"title": needle},
+        {"description": needle},
+        {"location.name": needle},
+        {"location.address": needle},
+        {"tags": needle},
+    ]
+    if matching_people_ids:
+        or_clauses.append({"people": {"$in": matching_people_ids}})
+
+    query: dict = {"thread_id": thread_clause}
+    if event_type:
+        query["event_type"] = event_type
+    if tag:
+        query["tags"] = tag
+    if person_id:
+        # Filter chip narrows alongside the search match — both must hold.
+        query["people"] = {"$in": person_id}
+    query["$or"] = or_clauses
+
+    cursor = (
+        events_collection.find(query)
+        .sort([("date", -1), ("_id", -1)])
+        .limit(capped_limit)
+    )
+    docs = [doc async for doc in cursor]
+    context = await _build_denorm_context(docs, viewer_id)
+    return [await _serialize(doc, context) for doc in docs]
 
 
 @router.post("")
