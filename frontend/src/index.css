@@ -124,6 +124,16 @@ input, select, textarea {
   color: inherit;
   font-size: 14px;
 }
+/* iOS Safari auto-zooms the viewport when a focused input is smaller
+   than 16px. With LoginView's autoFocus email input that fires on the
+   *initial render*, leaving the page stuck zoomed in until you pinch.
+   Forcing inputs to 16px on phones avoids the trigger. */
+@media (max-width: 720px) {
+  input, select, textarea,
+  .input, .textarea, .select {
+    font-size: 16px;
+  }
+}
 
 /* Tabular numerals for date/count badges */
 .num { font-variant-numeric: tabular-nums; }
