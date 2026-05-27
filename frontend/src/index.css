@@ -4544,7 +4544,15 @@ a.card { text-decoration: none; }
   .textarea,
   .select,
   .composer-input textarea,
-  .tl-search input {
+  .tl-search input,
+  .hs-subscribe input,
+  .sheet-field input,
+  .sheet-field textarea,
+  .sheet-field select,
+  .hs-invite-row input,
+  .hs-modal-body .field-input,
+  .hs-modal-body .field-select,
+  .hs-modal-body .field-textarea {
     font-size: 16px;
   }
 }
