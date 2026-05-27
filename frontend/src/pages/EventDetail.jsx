@@ -143,25 +143,6 @@ export default function EventDetail() {
         </p>
       )}
 
-      {displayLocation?.lat != null && (
-        <div className="location-map" style={{ height: 220, marginBottom: 24 }}>
-          <MapContainer
-            center={[displayLocation.lat, displayLocation.lng]}
-            zoom={13}
-            style={{ height: '100%', width: '100%' }}
-            dragging={false}
-            zoomControl={false}
-            scrollWheelZoom={false}
-            doubleClickZoom={false}
-            touchZoom={false}
-            attributionControl={false}
-          >
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-            <Marker position={[displayLocation.lat, displayLocation.lng]} />
-          </MapContainer>
-        </div>
-      )}
-
       {event.description && (
         <p className="event-body" style={{ marginBottom: 24 }}>{event.description}</p>
       )}
@@ -202,6 +183,25 @@ export default function EventDetail() {
           onClose={() => setLightboxIndex(null)}
           onChange={setLightboxIndex}
         />
+      )}
+
+      {displayLocation?.lat != null && (
+        <div className="location-map" style={{ height: 220, marginTop: 24 }}>
+          <MapContainer
+            center={[displayLocation.lat, displayLocation.lng]}
+            zoom={13}
+            style={{ height: '100%', width: '100%' }}
+            dragging={false}
+            zoomControl={false}
+            scrollWheelZoom={false}
+            doubleClickZoom={false}
+            touchZoom={false}
+            attributionControl={false}
+          >
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+            <Marker position={[displayLocation.lat, displayLocation.lng]} />
+          </MapContainer>
+        </div>
       )}
 
       {!isShared && (

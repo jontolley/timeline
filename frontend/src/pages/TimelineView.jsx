@@ -652,21 +652,21 @@ export default function TimelineView() {
                   type="button"
                   className="tl-add-menu-item"
                   role="menuitem"
-                  onClick={() => { setAddMenuOpen(false); aiPhotoInputRef.current?.click() }}
-                  disabled={aiPhotoBusy}
-                >
-                  <span className="tl-add-menu-t">Photo with AI captions</span>
-                  <span className="tl-add-menu-s">EXIF + Claude-written title and description</span>
-                </button>
-                <button
-                  type="button"
-                  className="tl-add-menu-item"
-                  role="menuitem"
                   onClick={() => { setAddMenuOpen(false); photoInputRef.current?.click() }}
                   disabled={photoBusy}
                 >
                   <span className="tl-add-menu-t">Event from photo</span>
                   <span className="tl-add-menu-s">Date + GPS from EXIF, you write the rest</span>
+                </button>
+                <button
+                  type="button"
+                  className="tl-add-menu-item"
+                  role="menuitem"
+                  onClick={() => { setAddMenuOpen(false); aiPhotoInputRef.current?.click() }}
+                  disabled={aiPhotoBusy}
+                >
+                  <span className="tl-add-menu-t">Photo with AI captions</span>
+                  <span className="tl-add-menu-s">EXIF + Claude-written title and description</span>
                 </button>
               </div>
             )}
