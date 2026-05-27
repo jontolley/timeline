@@ -72,6 +72,10 @@ export default function TimelineView() {
   // the top/bottom sentinels.
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
+  // True while the debounce is waiting or the fetch is in flight, so the
+  // empty state can say "searching…" instead of "no matches for X" during
+  // the round-trip.
+  const [searching, setSearching] = useState(false)
   const inSearchMode = searchQuery.trim().length > 0
   const [topbarHost, setTopbarHost] = useState(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
@@ -160,13 +164,23 @@ export default function TimelineView() {
   useEffect(() => {
     if (!inSearchMode) {
       setSearchResults([])
+      setSearching(false)
       return undefined
     }
     let cancelled = false
+    setSearching(true)
     const handle = window.setTimeout(() => {
       searchEvents({ q: searchQuery.trim(), ...buildFilterParams(filters) })
-        .then((data) => { if (!cancelled) setSearchResults(data) })
-        .catch(() => { if (!cancelled) setSearchResults([]) })
+        .then((data) => {
+          if (cancelled) return
+          setSearchResults(data)
+          setSearching(false)
+        })
+        .catch(() => {
+          if (cancelled) return
+          setSearchResults([])
+          setSearching(false)
+        })
     }, 250)
     return () => {
       cancelled = true
@@ -644,6 +658,8 @@ export default function TimelineView() {
           <div className="tl-stream">
             {loading ? (
               <div className="empty">loading…</div>
+            ) : inSearchMode && searching && groups.length === 0 ? (
+              <div className="empty">searching…</div>
             ) : groups.length === 0 ? (
               <div className="empty">
                 {inSearchMode
