@@ -124,16 +124,10 @@ input, select, textarea {
   color: inherit;
   font-size: 14px;
 }
-/* iOS Safari auto-zooms the viewport when a focused input is smaller
-   than 16px. With LoginView's autoFocus email input that fires on the
-   *initial render*, leaving the page stuck zoomed in until you pinch.
-   Forcing inputs to 16px on phones avoids the trigger. */
-@media (max-width: 720px) {
-  input, select, textarea,
-  .input, .textarea, .select {
-    font-size: 16px;
-  }
-}
+/* iOS zoom-on-focus prevention is at the bottom of this file — it has
+   to win against later more-specific rules like .input (14px) and
+   .composer-input textarea (14.5px), and `font-size: 16px` here at the
+   top loses to those by source order. */
 
 /* Tabular numerals for date/count badges */
 .num { font-variant-numeric: tabular-nums; }
@@ -4521,4 +4515,35 @@ a.card { text-decoration: none; }
 @media (max-width: 720px) {
   .about-page { padding: 32px 16px calc(80px + var(--bottom-nav-h)); }
   .about-meta { grid-template-columns: 1fr; padding: 18px 20px; }
+}
+
+/* =====================================================================
+   iOS zoom-on-focus prevention — KEEP AT END OF FILE.
+   ---------------------------------------------------------------------
+   iOS Safari (and iOS Chrome) auto-zooms the viewport whenever a focused
+   form field has font-size < 16px. That's what makes the chat composer
+   and login pages "zoom in a bit" the moment the virtual keyboard
+   appears, and also what made the login page land already-zoomed-in on
+   first paint (the email input has autoFocus).
+
+   This block is intentionally at the bottom of the stylesheet. The form
+   inputs above set explicit font-sizes at varying specificities
+   (`input` 0,0,1 → 14px, `.input` 0,1,0 → 14px, `.composer-input
+   textarea` 0,1,1 → 14.5px) and an earlier @media block with
+   `font-size: 16px` loses to all of them by source order even when
+   specificity ties. Putting the override here lets source order break
+   the tie in our favor without needing !important.
+
+   New form-input rules go ABOVE this block. If you add a more-specific
+   selector for an input, add it to the selector list below too. */
+@media (max-width: 720px) {
+  input,
+  select,
+  textarea,
+  .input,
+  .textarea,
+  .select,
+  .composer-input textarea {
+    font-size: 16px;
+  }
 }
