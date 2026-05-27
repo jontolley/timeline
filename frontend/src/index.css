@@ -4543,7 +4543,8 @@ a.card { text-decoration: none; }
   .input,
   .textarea,
   .select,
-  .composer-input textarea {
+  .composer-input textarea,
+  .tl-search input {
     font-size: 16px;
   }
 }
