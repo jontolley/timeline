@@ -63,12 +63,20 @@ npm run build    # production build to dist/
 
 ## Local dev vs. production
 
-The app is deployed publicly (backend + Qdrant on Fly, MongoDB Atlas, frontend on Cloudflare Pages). Local dev runs the full stack from `docker-compose.yml` against the in-cluster Mongo + Qdrant. Things that keep the two environments cleanly separated:
+The app is deployed publicly at **`https://hindsite.pages.dev`** (backend + Qdrant on Fly, MongoDB Atlas, frontend on Cloudflare Pages project `hindsite`). The Pages project is Git-connected to `jontolley/timeline` with the `frontend/` directory as the build root, so **pushing to `main` triggers an auto-deploy** — no manual `wrangler` step required. Local dev runs the full stack from `docker-compose.yml` against the in-cluster Mongo + Qdrant. Things that keep the two environments cleanly separated:
 
 - **Mongo:** `docker-compose.yml` has `MONGO_URL: ${MONGO_URL:-mongodb://mongo:27017}` — falls back to the local container if `MONGO_URL` is unset. The Atlas connection string lives in `.env` under `ATLAS_MONGO_URL` (deliberately not `MONGO_URL`) so it does NOT override the local default. Renaming it to `MONGO_URL` would silently point dev at prod.
 - **Auth defaults:** `COOKIE_SECURE` defaults to `false`, `APP_BASE_URL` to `http://localhost:3000`, `CORS_ORIGINS` to the localhost origins. Magic-link emails still send via Resend in dev using the real `RESEND_API_KEY`. Set `AUTH_DISABLED=true` to bypass the flow entirely for API testing.
-- **Media (photos / videos / audio):** R2 is shared between dev and prod — there is no separate dev bucket. Test uploads land in the prod bucket, so clean them up. CORS allowlist for `timeline-photos` is managed via `wrangler r2 bucket cors`; both `localhost:3000`/`localhost:5173` and the prod origin must be in `allowed_origins`.
+- **Media (photos / videos / audio):** R2 is shared between dev and prod — there is no separate dev bucket. Test uploads land in the prod bucket, so clean them up. CORS allowlist for `timeline-photos` is managed via `wrangler r2 bucket cors`; the current set is `localhost:3000` + `localhost:5173` + `https://hindsite.pages.dev`. A new frontend origin must be added or photo uploads silently fail with a CORS error.
 - **`/api` routing:** the Cloudflare Pages Function at `frontend/functions/api/[[path]].js` only runs in production. Locally, nginx (Docker frontend) or the Vite dev server proxy (`vite.config.js`) handles `/api/*` → `localhost:8000`.
+
+## Deployment
+
+- **Frontend:** Cloudflare Pages project `hindsite` (`https://hindsite.pages.dev`). Production branch `main`, root directory `frontend`, build command `npm install && npm run build`, output `dist`. **Push-to-main auto-deploys via the Git integration.** For a manual one-off (e.g. CF build broken), run `npx wrangler pages deploy dist --project-name=hindsite --branch=main` from `frontend/` — you must be in `frontend/` so wrangler picks up the sibling `functions/` directory; running from the repo root silently skips the Function and the API proxy breaks.
+- **Backend:** `fly deploy` from `backend/` (Fly app `personal-timeline-api`, region `sjc`). Secrets — `flyctl secrets set X=Y -a personal-timeline-api` triggers a rolling restart.
+- **Qdrant:** `fly deploy` from `infra/qdrant/` (Fly app `timeline-qdrant`, persistent volume `qdrant_data`).
+- **Mongo:** Atlas M0 — managed via the Atlas UI, connection string lives in Fly secret `MONGO_URL`.
+- **Verifying a deploy:** the `/about` page renders the build's git short SHA (injected at build time by `vite.config.js`) plus the build timestamp — useful when CF/HTML caching disagrees with the latest deploy. Check there before debugging "why isn't my change showing up" issues.
 
 ## Architecture overview
 

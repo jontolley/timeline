@@ -191,7 +191,7 @@ def _google_redirect_uri() -> str:
     """Backend's own callback URL — must match what's registered in Google
     Cloud Console for the OAuth client. For local dev this is
     http://localhost:3000/api/auth/google/callback (frontend nginx proxies
-    /api to backend); for prod it's https://personal-timeline.pages.dev/...
+    /api to backend); for prod it's https://hindsite.pages.dev/...
     (Cloudflare Pages Function proxies to Fly)."""
     return f"{APP_BASE_URL}/api/auth/google/callback"
 

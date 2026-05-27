@@ -66,14 +66,16 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 
 ## Deployment
 
-This repo includes deployment configs for the stack used by the original author:
+The author's live deployment is at <https://hindsite.pages.dev>. This repo includes everything to host your own:
 
 - `backend/fly.toml` — backend on Fly.io
 - `infra/qdrant/fly.toml` — Qdrant on Fly with a mounted volume for the vector index
 - `frontend/functions/api/[[path]].js` — Cloudflare Pages Function that proxies `/api/*` to the Fly backend so the site stays same-origin (cookies + no CORS gymnastics)
 - MongoDB is on Atlas (M0 free tier)
 
-See `CLAUDE.md > Local dev vs. production` for the boundaries between the dockerized dev stack and the deployed stack.
+The frontend Pages project is Git-connected, so `git push origin main` auto-deploys; backend + Qdrant deploys are manual `fly deploy` from their respective directories.
+
+See `CLAUDE.md > Local dev vs. production` and `CLAUDE.md > Deployment` for the boundaries between the dockerized dev stack and the deployed stack, plus the exact deploy + verification commands.
 
 ## License
 
