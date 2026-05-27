@@ -202,6 +202,10 @@ export default function TimelineView() {
   //     direction you crossed the year boundary.
   useEffect(() => {
     let rafId = null
+    // Last observed scrollY, used to detect direction for the mobile
+    // band-hide gesture (rail + toolbar slide off-screen when scrolling
+    // down, slide back in when scrolling up — like Safari's address bar).
+    let lastY = window.scrollY
     const topbarHeight = () => {
       const el = document.querySelector('.topbar')
       return el ? el.getBoundingClientRect().height : 64
@@ -231,6 +235,23 @@ export default function TimelineView() {
         if (y) setActiveYear(y)
       }
 
+      // Band-hide (mobile only — CSS gates the transform on the breakpoint
+      // so this is a harmless no-op on desktop). Show the band when near
+      // the top of the page or when scrolling up; hide when scrolling
+      // down past the topbar. Small threshold (6px) so a tiny inertia
+      // wobble doesn't flap the visibility.
+      const y = window.scrollY
+      const dy = y - lastY
+      const root = document.documentElement
+      if (y < topbarH + 24) {
+        root.classList.remove('tl-band-hidden')
+      } else if (dy > 6) {
+        root.classList.add('tl-band-hidden')
+      } else if (dy < -6) {
+        root.classList.remove('tl-band-hidden')
+      }
+      lastY = y
+
       // Anchor tracking for nav-back scroll restoration.
       const cards = document.querySelectorAll('[data-event-id]')
       for (const card of cards) {
@@ -251,6 +272,8 @@ export default function TimelineView() {
     return () => {
       window.removeEventListener('scroll', onScroll)
       if (rafId !== null) cancelAnimationFrame(rafId)
+      // Don't strand the hidden class if we leave the timeline mid-scroll.
+      document.documentElement.classList.remove('tl-band-hidden')
     }
   }, [setAnchorId])
 

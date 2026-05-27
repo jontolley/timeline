@@ -1280,6 +1280,21 @@ input, select, textarea {
   .tl-toolbar .tl-filter-btn,
   .tl-toolbar .tl-add-split { display: none; }
   .tl-search { max-width: none; }
+
+  /* Auto-hide band: when scrolling down through events on mobile, the year
+     rail + search slide off-screen so the feed has the full viewport;
+     scrolling up re-reveals them. JS toggles .tl-band-hidden on <html>
+     based on scroll direction. The shift = rail height + ~64px (toolbar
+     padding + input). Topbar (z:30) covers them while shifted. */
+  .yearspine,
+  .tl-toolbar {
+    transition: transform .25s ease;
+    will-change: transform;
+  }
+  .tl-band-hidden .yearspine,
+  .tl-band-hidden .tl-toolbar {
+    transform: translateY(calc(-1 * (var(--year-rail-h, 56px) + 64px)));
+  }
   .yr-list {
     flex-direction: row;
     gap: 6px;
