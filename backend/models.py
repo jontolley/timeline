@@ -104,6 +104,10 @@ class UserRole(str, Enum):
 class UserBase(BaseModel):
     email: str
     role: UserRole = UserRole.user
+    # Populated for Google-OAuth users from id_token claims; null for
+    # magic-link users (the UI falls back to an initial avatar in that case).
+    name: Optional[str] = None
+    picture_url: Optional[str] = None
 
 
 class UserCreate(BaseModel):

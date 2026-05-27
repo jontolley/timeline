@@ -12,6 +12,10 @@ export const useAuthStore = create((set, get) => ({
   email: null,
   role: null,         // 'admin' | 'user' | null
   userId: null,
+  // Populated only for Google-OAuth users. Magic-link users have nulls and
+  // fall back to an initial-pill avatar.
+  name: null,
+  pictureUrl: null,
 
   check: async () => {
     console.log('[boot] useAuthStore.check() start')
@@ -24,6 +28,8 @@ export const useAuthStore = create((set, get) => ({
       email: result.email || null,
       role: result.role || null,
       userId,
+      name: result.name || null,
+      pictureUrl: result.picture_url || null,
     })
     // Keep the chat scoped to the signed-in user: same user across a reload
     // keeps their history, a different user (or a fresh sign-in after sign-out)
@@ -37,13 +43,13 @@ export const useAuthStore = create((set, get) => ({
 
   signOut: async () => {
     try { await apiLogout() } catch { /* clear local state regardless */ }
-    set({ status: 'unauthenticated', email: null, role: null, userId: null })
+    set({ status: 'unauthenticated', email: null, role: null, userId: null, name: null, pictureUrl: null })
     useChatStore.getState().reset()
   },
 
   markUnauthorized: () => {
     if (get().status !== 'unauthenticated') {
-      set({ status: 'unauthenticated', email: null, role: null, userId: null })
+      set({ status: 'unauthenticated', email: null, role: null, userId: null, name: null, pictureUrl: null })
       useChatStore.getState().reset()
     }
   },

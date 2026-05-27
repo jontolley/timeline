@@ -25,8 +25,10 @@ function isActive(pathname, to, end) {
   return pathname === to || pathname.startsWith(to + '/')
 }
 
-function UserMenu({ email, onSignOut }) {
+function UserMenu({ email, name, pictureUrl, onSignOut }) {
   const [open, setOpen] = useState(false)
+  // If the Google avatar URL 404s/fails to load, fall back to the initial pill.
+  const [imgFailed, setImgFailed] = useState(false)
   const menuRef = useRef(null)
   const navigate = useNavigate()
 
@@ -58,8 +60,8 @@ function UserMenu({ email, onSignOut }) {
     onSignOut()
   }
 
-  const name = email?.split('@')[0] ?? ''
   const initial = personInitials(email || '?').charAt(0)
+  const showPicture = !!pictureUrl && !imgFailed
 
   return (
     <div className="user-menu" ref={menuRef}>
@@ -69,16 +71,27 @@ function UserMenu({ email, onSignOut }) {
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-haspopup="menu"
+        aria-label={name || email || 'Account'}
       >
-        <span className="hs-account-avatar" aria-hidden="true">{initial}</span>
-        <span className="hs-account-who">
-          <span className="hs-account-name">{name}</span>
-          <span className="hs-account-email">{email}</span>
-        </span>
-        <span className="hs-account-caret" aria-hidden="true">▾</span>
+        {showPicture ? (
+          <img
+            src={pictureUrl}
+            alt=""
+            className="hs-account-avatar hs-account-avatar-img"
+            referrerPolicy="no-referrer"
+            onError={() => setImgFailed(true)}
+          />
+        ) : (
+          <span className="hs-account-avatar" aria-hidden="true">{initial}</span>
+        )}
       </button>
       {open && (
         <div className="user-menu-dropdown" role="menu">
+          <div className="user-menu-header">
+            {name && <span className="user-menu-header-name">{name}</span>}
+            <span className="user-menu-header-email">{email}</span>
+          </div>
+          <div className="user-menu-divider" />
           <button type="button" className="user-menu-item" onClick={goToSettings} role="menuitem">
             Settings
           </button>
@@ -96,7 +109,7 @@ function UserMenu({ email, onSignOut }) {
 }
 
 export default function Topbar() {
-  const { email, signOut } = useAuthStore()
+  const { email, name, pictureUrl, signOut } = useAuthStore()
   const { pathname } = useLocation()
   const ref = useRef(null)
 
@@ -138,7 +151,7 @@ export default function Topbar() {
       </nav>
       <div className="topbar-spacer" />
       <div className="topbar-actions" id="topbar-actions" />
-      {email && <UserMenu email={email} onSignOut={signOut} />}
+      {email && <UserMenu email={email} name={name} pictureUrl={pictureUrl} onSignOut={signOut} />}
     </header>
   )
 }

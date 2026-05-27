@@ -180,6 +180,8 @@ async def me(request: Request):
         "email": doc["email"],
         "role": doc.get("role", "user"),
         "user_id": str(doc["_id"]),
+        "name": doc.get("name"),
+        "picture_url": doc.get("picture_url"),
     }
 
 
@@ -208,7 +210,9 @@ async def google_start():
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": _google_redirect_uri(),
         "response_type": "code",
-        "scope": "openid email",
+        # `profile` gives us `name` + `picture` in the id_token claims, used
+        # for the user-menu avatar + display name. No extra API call needed.
+        "scope": "openid email profile",
         "state": state,
         "access_type": "online",
         "prompt": "select_account",
@@ -267,6 +271,22 @@ async def google_callback(code: str = "", state: str = ""):
         # We always issue 403 here (not 404) — the user has authenticated
         # with Google but hasn't been invited yet.
         raise HTTPException(status_code=403, detail=f"{email} is not authorized")
+
+    # Persist (and refresh on each sign-in) the user's display name + avatar
+    # URL from Google's claims. Magic-link sign-ins don't touch these fields,
+    # so a user who switches between methods keeps whichever Google last set.
+    profile_updates: dict = {}
+    google_name = (claims.get("name") or "").strip()
+    google_picture = (claims.get("picture") or "").strip()
+    if google_name:
+        profile_updates["name"] = google_name
+    if google_picture:
+        profile_updates["picture_url"] = google_picture
+    if profile_updates:
+        profile_updates["updated_at"] = datetime.now(timezone.utc)
+        await users_collection.update_one(
+            {"email": email}, {"$set": profile_updates}
+        )
 
     session_token = make_session_token(email)
     response = RedirectResponse(url=APP_BASE_URL, status_code=302)
