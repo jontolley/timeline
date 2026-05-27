@@ -2816,11 +2816,6 @@ a.card { text-decoration: none; }
   flex-direction: column;
   gap: 10px;
 }
-.composer-suggestions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
 .composer-input {
   display: flex;
   align-items: center;
@@ -2874,36 +2869,6 @@ a.card { text-decoration: none; }
   opacity: 0.7;
 }
 
-/* Suggestion chip — used by both the composer row and the empty state. */
-.suggestion {
-  background: var(--feature-bg);
-  border: 1px solid var(--rule);
-  padding: 8px 14px;
-  font-size: 13px;
-  border-radius: 999px;
-  color: var(--ink-soft);
-  font-family: var(--font-sans);
-  display: inline-flex;
-  align-items: center;
-  text-align: left;
-  cursor: pointer;
-  transition: border-color .15s, color .15s, background .15s;
-}
-.suggestion:hover:not(:disabled) {
-  color: var(--ink);
-  border-color: var(--ink);
-  background: var(--bg);
-}
-.suggestion:disabled { opacity: 0.6; cursor: not-allowed; }
-.suggestion .mono {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--ink-mute);
-  margin-right: 8px;
-}
-
 /* Empty state at the top of an unstarted conversation. */
 .chat-empty {
   text-align: center;
@@ -2943,15 +2908,6 @@ a.card { text-decoration: none; }
   line-height: 1.5;
   max-width: 44ch;
 }
-.chat-empty-suggestions {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  max-width: 420px;
-}
-.chat-empty-suggestions .suggestion { width: 100%; }
-
 @media (max-width: 720px) {
   .chat-head { padding: 24px 18px 14px; }
   .chat-thread-inner { padding: 22px 18px 20px; }

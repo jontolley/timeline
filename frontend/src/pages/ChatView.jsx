@@ -6,13 +6,6 @@ import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes
 import { usePeopleStore, useChatStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 
-const SUGGESTIONS = [
-  { mono: '?', text: 'What has my career journey looked like?' },
-  { mono: '?', text: 'Where have I travelled and when?' },
-  { mono: '+', text: 'Add a new event to my timeline' },
-  { mono: '+', text: 'Update an existing event' },
-]
-
 const FIELD_LABELS = {
   title: 'Title',
   date: 'Date',
@@ -139,7 +132,7 @@ export default function ChatView() {
       <div className="chat-thread" role="log" aria-live="polite">
         <div className="chat-thread-inner">
           {messages.length === 0 ? (
-            <EmptyState onPick={(text) => sendMessage(text)} />
+            <EmptyState />
           ) : (
             messages.map((msg, i) => (
               <MessageRow
@@ -159,21 +152,6 @@ export default function ChatView() {
 
       <div className="composer">
         <div className="composer-inner">
-          {messages.length > 0 && (
-            <div className="composer-suggestions">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s.text}
-                  type="button"
-                  className="suggestion"
-                  onClick={() => setDraft(s.text)}
-                  disabled={streaming}
-                >
-                  <span className="mono">{s.mono}</span>{s.text}
-                </button>
-              ))}
-            </div>
-          )}
           <div className="composer-input">
             <textarea
               ref={textareaRef}
@@ -214,7 +192,7 @@ function SendIcon() {
   )
 }
 
-function EmptyState({ onPick }) {
+function EmptyState() {
   return (
     <div className="chat-empty">
       <p className="chat-empty-eyebrow"><span className="pip" /> Talk to your timeline</p>
@@ -222,18 +200,6 @@ function EmptyState({ onPick }) {
       <p className="chat-empty-sub">
         Ask questions across your history. Or say "add an event" and I'll capture it for you.
       </p>
-      <div className="chat-empty-suggestions">
-        {SUGGESTIONS.map((s) => (
-          <button
-            key={s.text}
-            type="button"
-            className="suggestion"
-            onClick={() => onPick(s.text)}
-          >
-            <span className="mono">{s.mono}</span>{s.text}
-          </button>
-        ))}
-      </div>
     </div>
   )
 }
