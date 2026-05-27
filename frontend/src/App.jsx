@@ -27,6 +27,7 @@ export default function App() {
   const loadThreads = useThreadStore((s) => s.load)
 
   useEffect(() => {
+    console.log('[boot] App mounted, triggering auth check')
     check()
   }, [check])
 
@@ -35,8 +36,16 @@ export default function App() {
   // Threads drive the timeline chip + filter and the EventForm thread picker.
   useEffect(() => {
     if (status === 'authenticated') {
-      loadCategories().catch(() => {})
-      loadThreads().catch(() => {})
+      const tCat = performance.now()
+      console.log('[boot] loadCategories() start')
+      loadCategories()
+        .then(() => console.log(`[boot] loadCategories() done in ${Math.round(performance.now() - tCat)}ms`))
+        .catch((err) => console.log('[boot] loadCategories() failed', err))
+      const tThr = performance.now()
+      console.log('[boot] loadThreads() start')
+      loadThreads()
+        .then(() => console.log(`[boot] loadThreads() done in ${Math.round(performance.now() - tThr)}ms`))
+        .catch((err) => console.log('[boot] loadThreads() failed', err))
     }
   }, [status, loadCategories, loadThreads])
 
@@ -45,6 +54,8 @@ export default function App() {
     window.addEventListener('auth:unauthorized', handler)
     return () => window.removeEventListener('auth:unauthorized', handler)
   }, [markUnauthorized])
+
+  console.log(`[boot] App render: status=${status}`)
 
   if (status === 'loading') {
     return (

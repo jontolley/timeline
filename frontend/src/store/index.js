@@ -14,10 +14,13 @@ export const useAuthStore = create((set, get) => ({
   userId: null,
 
   check: async () => {
+    console.log('[boot] useAuthStore.check() start')
     const result = await fetchMe()
     const userId = result.user_id || null
+    const nextStatus = result.authenticated ? 'authenticated' : 'unauthenticated'
+    console.log(`[boot] useAuthStore.check() → ${nextStatus}`, { userId, role: result.role || null })
     set({
-      status: result.authenticated ? 'authenticated' : 'unauthenticated',
+      status: nextStatus,
       email: result.email || null,
       role: result.role || null,
       userId,
