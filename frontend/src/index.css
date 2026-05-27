@@ -2572,7 +2572,12 @@ a.card { text-decoration: none; }
    Chat (Hindsite — matches the timeline editorial layout)
    ===================================================================== */
 .chat-page {
+  /* dvh tracks the actual rendered viewport on iOS (Safari + Chrome),
+     accounting for the URL bar's show/hide state. 100vh on iOS reports
+     the *large* viewport (URL bar hidden), which made the composer
+     overflow under the fixed bottom-nav whenever the bar was visible. */
   height: calc(100vh - var(--topbar-h) - var(--bottom-nav-h));
+  height: calc(100dvh - var(--topbar-h) - var(--bottom-nav-h));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3630,7 +3635,10 @@ a.card { text-decoration: none; }
   max-width: none;
   margin: 0;
   padding: 0;
+  /* See .chat-page note — dvh tracks iOS URL-bar state, vh stays as
+     fallback for older browsers. */
   height: calc(100vh - var(--topbar-h) - var(--bottom-nav-h));
+  height: calc(100dvh - var(--topbar-h) - var(--bottom-nav-h));
   overflow: hidden;
 }
 .hs-settings-console {
