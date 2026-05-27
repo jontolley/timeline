@@ -51,6 +51,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **Photo-driven event entry.** Drop a photo, get an event with the date and GPS pre-filled from EXIF; optionally have Claude vision generate the title and description from the image.
 - **Photo, video, and audio attachments.** Upload to any event; videos get a poster frame and audio gets a waveform thumbnail, both rendered client-side.
 - **Semantic search via chat.** "Where have I travelled in the last two years?" hits a Qdrant nearest-neighbour search across your visible threads (own + subscribed) and feeds the matches to Claude as context.
+- **Keyword search on the timeline.** A toolbar search box runs a case-insensitive substring match across event title, description, location name/address, tags, and person names (debounced live as you type, no Claude/Qdrant involvement). Active filter chips narrow the results.
 - **People with color coding.** Attach people to events; filter the timeline by who was there.
 - **Categories.** Each user has their own editable category set with palette colors; events carry the slug, the UI renders the owner's label/color (even on cross-user shared events).
 - **Day One importer.** A standalone script (`tools/import_dayone.py`) ingests a Day One JSON export — entries, locations, photos, videos, audio — with Claude-summarized titles for entries that don't have one.
