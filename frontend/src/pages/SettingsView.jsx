@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
 import ThreadsSettings from '../components/ThreadsSettings'
@@ -26,6 +26,16 @@ export default function SettingsView() {
   const peopleCount = usePeopleStore((s) => s.people.length)
   const threadCount = useThreadStore((s) => s.threads.filter((t) => t.is_owner).length)
   const userCount = useUserStore((s) => s.users.length)
+
+  // Pre-fetch the stores backing the rail counts so the numbers are correct
+  // on first paint, not just after the matching tab is opened. `load()` is
+  // idempotent — it bails when the store is already loaded.
+  const loadPeople = usePeopleStore((s) => s.load)
+  const loadUsers = useUserStore((s) => s.load)
+  useEffect(() => {
+    loadPeople().catch(() => {})
+    if (role === 'admin') loadUsers().catch(() => {})
+  }, [role, loadPeople, loadUsers])
 
   const tabs = useMemo(
     () => (role === 'admin' ? [...BASE_TABS, ...ADMIN_TABS] : BASE_TABS),
