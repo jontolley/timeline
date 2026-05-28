@@ -555,6 +555,11 @@ export default function TimelineView() {
     return years[years.length - 1].year
   }, [years])
 
+  const totalEventCount = useMemo(
+    () => years.reduce((sum, y) => sum + (y.count || 0), 0),
+    [years],
+  )
+
   // In search mode the year rail should reflect the result set, not the
   // filter-only year counts the API gave us. Bucket searchResults by year
   // client-side (the result set is capped, so this is cheap). Outside
@@ -622,7 +627,7 @@ export default function TimelineView() {
                 </p>
               ) : events.length > 0 ? (
                 <p className="tl-feed-stats">
-                  <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
+                  <span>{totalEventCount.toLocaleString()} {totalEventCount === 1 ? 'event' : 'events'}</span>
                   {earliestYear && (
                     <>
                       <span className="sep" aria-hidden="true" />

@@ -451,3 +451,9 @@ app.include_router(uploads_router)
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+@app.get("/api/stats/public")
+async def public_stats():
+    total = await events_collection.count_documents({})
+    return {"event_count": total}

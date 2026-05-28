@@ -354,7 +354,7 @@ input, select, textarea {
   height: 32px;
   border-radius: 50%;
   background: var(--hi);
-  border: 1px solid var(--rule);
+  border: 2px solid var(--accent);
   display: grid;
   place-items: center;
   font-family: var(--font-serif);
@@ -367,8 +367,8 @@ input, select, textarea {
 }
 .hs-account-trigger:hover .hs-account-avatar,
 .hs-account-trigger[aria-expanded="true"] .hs-account-avatar {
-  border-color: var(--ink);
-  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 18%, transparent);
+  border-color: var(--accent-d, var(--accent));
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent);
 }
 .hs-account-avatar-img {
   object-fit: cover;
