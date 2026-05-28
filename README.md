@@ -66,7 +66,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 
 ## Deployment
 
-The author's live deployment is at <https://hindsite.pages.dev>. This repo includes everything to host your own:
+The author's live deployment is at <https://hindsite.app> (the legacy `https://hindsite.pages.dev` URL still resolves to the same site). This repo includes everything to host your own:
 
 - `backend/fly.toml` — backend on Fly.io
 - `infra/qdrant/fly.toml` — Qdrant on Fly with a mounted volume for the vector index
