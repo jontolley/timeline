@@ -1,7 +1,6 @@
 import { useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
-import BackupView from './BackupView'
 import CategoriesSettings from '../components/CategoriesSettings'
 import ThreadsSettings from '../components/ThreadsSettings'
 import UsersSettings from '../components/UsersSettings'
@@ -17,7 +16,6 @@ const BASE_TABS = [
   { value: 'people',     label: 'People' },
   { value: 'categories', label: 'Categories' },
   { value: 'threads',    label: 'Threads' },
-  { value: 'backup',     label: 'Backup' },
 ]
 const ADMIN_TABS = [
   { value: 'users',      label: 'Users' },
@@ -99,7 +97,6 @@ export default function SettingsView() {
           {active === 'people'     && <PeopleView embedded />}
           {active === 'categories' && <CategoriesSettings />}
           {active === 'threads'    && <ThreadsSettings />}
-          {active === 'backup'     && <BackupView embedded />}
           {active === 'users'      && role === 'admin' && <UsersSettings />}
         </main>
       </section>

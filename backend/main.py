@@ -22,7 +22,7 @@ from routes.people import router as people_router
 from routes.categories import router as categories_router
 from routes.threads import router as threads_router, subs_router as subscriptions_router
 from routes.users import router as users_router
-from routes.backup import router as backup_router
+from routes.threads_io import router as threads_io_router
 from routes.uploads import router as uploads_router
 from routes.auth import router as auth_router
 
@@ -444,7 +444,7 @@ app.include_router(categories_router)
 app.include_router(threads_router)
 app.include_router(subscriptions_router)
 app.include_router(users_router)
-app.include_router(backup_router)
+app.include_router(threads_io_router)
 app.include_router(uploads_router)
 
 

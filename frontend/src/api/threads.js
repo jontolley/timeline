@@ -89,6 +89,22 @@ export async function setSubscriptionVisible(subscriptionId, visible) {
   return res.json()
 }
 
+export function exportThreadUrl(threadId) {
+  return `${BASE}/${threadId}/export`
+}
+
+export async function importThread(threadName, file) {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('thread_name', threadName)
+  const res = await http(`${BASE}/import`, { method: 'POST', body: fd })
+  if (!res.ok) {
+    const detail = await res.json().catch(() => null)
+    throw new Error(detail?.detail || 'Failed to import thread')
+  }
+  return res.json()
+}
+
 export async function unsubscribeFromThread(subscriptionId) {
   const res = await http(`/api/subscriptions/${subscriptionId}`, { method: 'DELETE' })
   if (!res.ok) {

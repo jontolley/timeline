@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   createThread,
   deleteThread,
+  exportThreadUrl,
+  importThread,
   inviteToThread,
   listSubscribers,
   revokeSubscriber,
@@ -9,7 +11,7 @@ import {
   unsubscribeFromThread,
   updateThread,
 } from '../api/threads'
-import { useEventStore, useThreadStore } from '../store'
+import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import { PALETTE, personColor, personInitials } from '../utils/colors'
 import { useConfirm } from '../lib/confirm'
 import Modal from './Modal'
@@ -37,12 +39,22 @@ function XIcon() {
     </svg>
   )
 }
+function ExportIcon() {
+  return (
+    <svg viewBox="0 0 16 16" fill="none">
+      <path d="M8 2 V10 M5 7 L8 10 L11 7 M3 12 V13 H13 V12" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 const slugify = (s) => s.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || '—'
 
 export default function ThreadsSettings() {
   const { threads, loaded, load } = useThreadStore()
+  const reloadPeople = usePeopleStore((s) => s.load)
   const [modalState, setModalState] = useState(null) // { mode: 'new' | 'edit', id?, draft }
+  const [importOpen, setImportOpen] = useState(false)
+  const [importResult, setImportResult] = useState(null) // { thread_name, events_imported, ... }
   const [expandedId, setExpandedId] = useState(null)
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -169,7 +181,15 @@ export default function ThreadsSettings() {
             {sharedCount > 0 && <> · <strong>{sharedCount}</strong> shared</>}
           </p>
         </div>
-        <div className="hs-well-right">
+        <div className="hs-well-right" style={{ display: 'flex', gap: 8 }}>
+          <button
+            type="button"
+            className="btn"
+            onClick={() => { setImportResult(null); setImportOpen(true) }}
+            disabled={busy}
+          >
+            Import
+          </button>
           <button type="button" className="btn btn-primary" onClick={openNew}>
             <span className="hs-plus" aria-hidden="true" />
             New thread
@@ -185,6 +205,25 @@ export default function ThreadsSettings() {
       </p>
 
       {error && <p className="hs-modal-error" style={{ marginBottom: 14 }}>{error}</p>}
+
+      {importResult && (
+        <p
+          style={{
+            margin: '0 0 14px',
+            padding: '10px 14px',
+            fontSize: 13,
+            color: 'var(--success)',
+            background: 'color-mix(in oklab, var(--success) 8%, var(--surface))',
+            border: '1px solid var(--rule)',
+            borderRadius: 10,
+          }}
+        >
+          Imported <strong>{importResult.events_imported}</strong> event{importResult.events_imported === 1 ? '' : 's'} into{' '}
+          <strong>"{importResult.thread_name}"</strong>
+          {importResult.people_added > 0 && <> · added {importResult.people_added} new {importResult.people_added === 1 ? 'person' : 'people'}</>}
+          {importResult.events_skipped > 0 && <> · skipped {importResult.events_skipped} malformed</>}.
+        </p>
+      )}
 
       <div className="hs-rows">
         {ownThreads.length === 0 && (
@@ -223,6 +262,13 @@ export default function ThreadsSettings() {
                   )}
                 </div>
                 <div className="hs-row-actions" onClick={(e) => e.stopPropagation()}>
+                  <a
+                    className="hs-iconbtn"
+                    href={exportThreadUrl(t._id)}
+                    download
+                    aria-label="Export"
+                    title="Export thread as JSON"
+                  ><ExportIcon /></a>
                   <button
                     type="button"
                     className="hs-iconbtn"
@@ -326,7 +372,109 @@ export default function ThreadsSettings() {
           error={error}
         />
       )}
+
+      {importOpen && (
+        <ImportModal
+          onClose={() => setImportOpen(false)}
+          onDone={async (result) => {
+            setImportResult(result)
+            setImportOpen(false)
+            await refresh()
+            // People may have been created by the import — refresh the cache.
+            reloadPeople(true).catch(() => {})
+            // Cross-thread imports add events the timeline doesn't know about.
+            useEventStore.getState().invalidate()
+          }}
+        />
+      )}
     </>
+  )
+}
+
+function ImportModal({ onClose, onDone }) {
+  const [name, setName] = useState('')
+  const [file, setFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState(null)
+  const fileInputRef = useRef(null)
+
+  const submit = async (e) => {
+    e.preventDefault()
+    if (!file || !name.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      const result = await importThread(name.trim(), file)
+      onDone(result)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal
+      open
+      onClose={busy ? () => {} : onClose}
+      eyebrow="Import · thread"
+      title="Import a"
+      titleEm="thread."
+      sub="Upload an export JSON and we'll create a brand-new thread holding every event inside."
+      primary={
+        <button
+          type="submit"
+          form="hs-import-form"
+          className="btn btn-accent"
+          disabled={busy || !file || !name.trim()}
+        >
+          {busy ? 'Importing…' : 'Import'}
+        </button>
+      }
+      secondary={
+        <button type="button" className="btn" onClick={onClose} disabled={busy}>Cancel</button>
+      }
+    >
+      <form id="hs-import-form" onSubmit={submit}>
+        {error && <p className="hs-modal-error">{error}</p>}
+
+        <div className="field">
+          <div className="field-label">
+            <span>Thread name</span>
+            <span className="hint">required</span>
+          </div>
+          <input
+            className="field-input"
+            type="text"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="e.g. Family archive 2019"
+            autoFocus
+            required
+          />
+        </div>
+
+        <div className="field">
+          <div className="field-label">
+            <span>Export file</span>
+            <span className="hint">.json</span>
+          </div>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            style={{ fontSize: 13, color: 'var(--ink-soft)' }}
+            required
+          />
+        </div>
+
+        <p className="muted small" style={{ marginTop: 8, marginBottom: 0 }}>
+          People are matched against your existing list by name — duplicates aren't created.
+          Existing events and threads are not touched.
+        </p>
+      </form>
+    </Modal>
   )
 }
 

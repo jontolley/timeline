@@ -83,7 +83,7 @@ export default function App() {
         <Route path="/about" element={<AboutView />} />
         {/* Old pre-Settings paths redirect to the matching tab. */}
         <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
-        <Route path="/backup" element={<Navigate to="/settings?tab=backup" replace />} />
+        <Route path="/backup" element={<Navigate to="/settings?tab=threads" replace />} />
       </Routes>
       <BottomNav />
       </BrowserRouter>
