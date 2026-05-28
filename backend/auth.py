@@ -105,43 +105,60 @@ def verify_login_code(code: str, expected_hash: str) -> bool:
 
 
 def _email_html(*, eyebrow: str, heading: str, lede: str, cta_html: str) -> str:
-    """Branded HTML shell shared by both auth emails. Colors mirror the Hearth palette and all styles are inline so clients that strip <style> still render correctly."""
+    """Branded HTML shell shared by every auth email. Colors mirror the
+    Hindsite palette (indigo cream bg, denim accent, deep navy ink) and all
+    styles are inline so clients that strip <style> blocks still render
+    correctly. The heading uses Instrument Serif with a Times fallback so it
+    stays readable in clients that don't load web fonts."""
     return (
-        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#f1ece2;">'
-        '<div style="background:#f1ece2;padding:48px 16px;'
+        '<!DOCTYPE html><html><body style="margin:0;padding:0;background:#eef1f8;">'
+        '<div style="background:#eef1f8;padding:48px 16px;'
         'font-family:Geist,-apple-system,BlinkMacSystemFont,&quot;Segoe UI&quot;,sans-serif;'
-        'color:#1f2a35;-webkit-font-smoothing:antialiased;">'
+        'color:#131829;-webkit-font-smoothing:antialiased;">'
         '<div style="max-width:480px;margin:0 auto;background:#ffffff;'
-        'border:1px solid #d8d2c4;border-radius:14px;padding:40px 40px 32px;">'
-        # Brand mark + wordmark
-        '<div style="margin-bottom:32px;font-size:18px;color:#1f2a35;">'
-        '<svg width="22" height="22" viewBox="0 0 22 22" fill="none" '
-        'style="vertical-align:-5px;margin-right:9px;">'
-        '<circle cx="11" cy="11" r="9.5" stroke="#1f2a35" stroke-width="1.4"/>'
-        '<line x1="11" y1="3" x2="11" y2="11" stroke="#1f2a35" stroke-width="1.4" stroke-linecap="round"/>'
-        '<line x1="11" y1="11" x2="16" y2="14" stroke="#1f2a35" stroke-width="1.4" stroke-linecap="round"/>'
-        '</svg>'
-        '<strong style="font-weight:600;letter-spacing:-0.02em;">Timeline</strong>'
+        'border:1px solid #c0c8dc;border-radius:14px;padding:40px 40px 32px;">'
+        # Brand mark + wordmark. The clock mark is served as an external SVG
+        # file (frontend/public/brand-mark.svg, deployed to
+        # https://hindsite.app/brand-mark.svg) and pulled in via <img> so it
+        # renders in Gmail / Apple Mail / Yahoo. Clients that block remote
+        # images (some Outlook setups) just see the wordmark text, which
+        # carries the brand on its own. Wordmark is Instrument Serif with
+        # Times as the universal fallback.
+        '<div style="margin-bottom:32px;color:#131829;">'
+        '<img src="https://hindsite.app/brand-mark.svg" '
+        'width="22" height="22" alt="" '
+        'style="vertical-align:-5px;margin-right:9px;display:inline-block;'
+        'border:0;outline:none;text-decoration:none;">'
+        '<span style="font-family:&quot;Instrument Serif&quot;,&quot;Times New Roman&quot;,serif;'
+        'font-size:24px;font-weight:400;letter-spacing:-0.01em;">Hindsite</span>'
         '</div>'
         # Eyebrow (mono uppercase)
-        f'<div style="font-family:&quot;Geist Mono&quot;,ui-monospace,Menlo,monospace;'
+        f'<div style="font-family:&quot;JetBrains Mono&quot;,ui-monospace,Menlo,monospace;'
         'font-size:11px;letter-spacing:0.16em;text-transform:uppercase;'
-        f'color:#8a857a;margin-bottom:14px;">{eyebrow}</div>'
-        # Heading
-        f'<h1 style="margin:0 0 14px;font-size:30px;font-weight:500;'
-        'letter-spacing:-0.03em;line-height:1.1;color:#1f2a35;">'
-        f'{heading}</h1>'
+        f'color:#6c7589;margin-bottom:14px;">{eyebrow}</div>'
+        # Heading — serif to match in-app display headlines
+        f'<h1 style="margin:0 0 14px;'
+        'font-family:&quot;Instrument Serif&quot;,&quot;Times New Roman&quot;,serif;'
+        'font-size:36px;font-weight:400;letter-spacing:-0.01em;line-height:1.05;'
+        f'color:#131829;">{heading}</h1>'
         # Lede
         f'<p style="margin:0 0 28px;font-size:15px;line-height:1.55;'
-        f'color:#4d6680;">{lede}</p>'
+        f'color:#353e58;">{lede}</p>'
         f'{cta_html}'
         # Footer
-        '<hr style="border:0;border-top:1px solid #e6e1d3;margin:32px 0 18px;">'
-        '<p style="margin:0;font-size:12.5px;color:#8a857a;line-height:1.5;">'
+        '<hr style="border:0;border-top:1px solid #c0c8dc;margin:32px 0 18px;">'
+        '<p style="margin:0;font-size:12.5px;color:#6c7589;line-height:1.5;">'
         "If you didn't request this, you can safely ignore this email — "
         'the link or code won\'t work for anyone else.'
         '</p>'
-        '</div></div></body></html>'
+        '</div>'
+        # Footer wordmark below the card (subtle, matches Hindsite landing footer)
+        '<p style="max-width:480px;margin:18px auto 0;text-align:center;'
+        'font-family:&quot;JetBrains Mono&quot;,ui-monospace,Menlo,monospace;'
+        'font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:#6c7589;">'
+        'Hindsite · Look back, on purpose.'
+        '</p>'
+        '</div></body></html>'
     )
 
 
@@ -164,18 +181,21 @@ async def send_login_code(email: str, code: str) -> None:
         print(f"[auth] Login code for {email}: {code}", flush=True)
         return
     cta = (
-        '<div style="font-family:&quot;Geist Mono&quot;,ui-monospace,Menlo,monospace;'
-        'font-size:34px;letter-spacing:0.28em;text-align:center;color:#1f2a35;'
-        'background:#f7f3ea;border:1px solid #d8d2c4;border-radius:14px;'
+        '<div style="font-family:&quot;JetBrains Mono&quot;,ui-monospace,Menlo,monospace;'
+        'font-size:34px;letter-spacing:0.28em;text-align:center;color:#131829;'
+        'background:#f4f7fc;border:1px solid #c0c8dc;border-radius:14px;'
         f'padding:26px 16px;">{code}</div>'
     )
     html = _email_html(
         eyebrow="Sign-in code",
-        heading="Enter this to sign in.",
-        lede="Type this code into the sign-in screen to continue. It expires in 15 minutes.",
+        heading=(
+            'Enter this to sign '
+            '<em style="font-style:italic;color:#2e5bb0;">in.</em>'
+        ),
+        lede="Type this code into the Hindsite sign-in screen to continue. It expires in 15 minutes.",
         cta_html=cta,
     )
-    await _send_email(to=email, subject="Your timeline sign-in code", html=html)
+    await _send_email(to=email, subject="Your Hindsite sign-in code", html=html)
 
 
 async def send_invitation(email: str, inviter_email: str = None) -> None:
@@ -187,19 +207,22 @@ async def send_invitation(email: str, inviter_email: str = None) -> None:
         print(f"[auth] Invitation for {email}: {link}", flush=True)
         return
     cta = (
-        f'<a href="{link}" style="display:inline-block;background:#1f2a35;'
-        'color:#f1ece2;text-decoration:none;padding:14px 26px;border-radius:999px;'
+        f'<a href="{link}" style="display:inline-block;background:#2e5bb0;'
+        'color:#ffffff;text-decoration:none;padding:14px 26px;border-radius:999px;'
         'font-size:15px;font-weight:500;letter-spacing:-0.005em;">'
-        'Sign in to your timeline →'
+        'Sign in to Hindsite →'
         '</a>'
     )
     inviter_line = (
-        f"{inviter_email} added you to Timeline. "
-        if inviter_email else "You've been added to Timeline. "
+        f"{inviter_email} added you to Hindsite. "
+        if inviter_email else "You've been added to Hindsite. "
     )
     html = _email_html(
         eyebrow="Welcome",
-        heading="You're invited to Timeline.",
+        heading=(
+            "You're invited to "
+            '<em style="font-style:italic;color:#2e5bb0;">Hindsite.</em>'
+        ),
         lede=(
             f"{inviter_line}"
             "Sign in with the button below using your Google account or "
@@ -207,7 +230,7 @@ async def send_invitation(email: str, inviter_email: str = None) -> None:
         ),
         cta_html=cta,
     )
-    await _send_email(to=email, subject="You're invited to Timeline", html=html)
+    await _send_email(to=email, subject="You're invited to Hindsite", html=html)
 
 
 async def send_magic_link(email: str, link: str) -> None:
@@ -216,19 +239,22 @@ async def send_magic_link(email: str, link: str) -> None:
         print(f"[auth] Magic link for {email}: {link}", flush=True)
         return
     cta = (
-        f'<a href="{link}" style="display:inline-block;background:#1f2a35;'
-        'color:#f1ece2;text-decoration:none;padding:14px 26px;border-radius:999px;'
+        f'<a href="{link}" style="display:inline-block;background:#2e5bb0;'
+        'color:#ffffff;text-decoration:none;padding:14px 26px;border-radius:999px;'
         'font-size:15px;font-weight:500;letter-spacing:-0.005em;">'
-        'Sign in to your timeline →'
+        'Sign in to Hindsite →'
         '</a>'
     )
     html = _email_html(
         eyebrow="Sign-in link",
-        heading="One click and you're in.",
-        lede="Sign in to your timeline using the button below. The link expires in 15 minutes — if it does, request another from the sign-in screen.",
+        heading=(
+            "One click and you're "
+            '<em style="font-style:italic;color:#2e5bb0;">in.</em>'
+        ),
+        lede="Sign in to Hindsite using the button below. The link expires in 15 minutes — if it does, request another from the sign-in screen.",
         cta_html=cta,
     )
-    await _send_email(to=email, subject="Sign in to your timeline", html=html)
+    await _send_email(to=email, subject="Sign in to Hindsite", html=html)
 
 
 async def require_auth(request: Request) -> dict:
