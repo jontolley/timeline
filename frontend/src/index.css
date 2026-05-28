@@ -669,8 +669,14 @@ input, select, textarea {
    and its natural height gets distributed across both, leaving empty
    space above the toolbar when the feed is short (e.g. zero search
    results). On mobile, display:contents below collapses the wrapper so
-   the existing 3-row "head / rail / feed" template still works. */
+   the existing 3-row "head / rail / feed" template still works.
+
+   grid-column: 2 pins this to the right column explicitly — without it,
+   when YearRail returns null (no events → no years), .tl-col would
+   auto-flow into the empty rail column (140px wide) and squish every
+   child into a narrow strip. */
 .tl-col {
+  grid-column: 2;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1531,6 +1537,52 @@ a.card { text-decoration: none; }
   text-align: center;
   font-family: var(--font-mono);
   font-size: 13px;
+}
+
+/* Rich empty state for the timeline feed when the user has zero events
+   (not used for filter/search no-matches — those keep the minimal mono
+   .empty). Mirrors .chat-empty so the two views feel like siblings. */
+.tl-empty {
+  text-align: center;
+  padding: 80px 16px 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.tl-empty-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0 0 16px;
+}
+.tl-empty-eyebrow .pip {
+  width: 6px; height: 6px; border-radius: 50%; background: var(--accent);
+}
+.tl-empty-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(40px, 5vw, 56px);
+  line-height: 1.02;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  color: var(--ink);
+}
+.tl-empty-title em { font-style: italic; color: var(--accent); }
+.tl-empty-sub {
+  margin: 0 0 28px;
+  color: var(--ink-soft);
+  font-size: 16px;
+  line-height: 1.5;
+  max-width: 44ch;
+}
+@media (max-width: 720px) {
+  .tl-empty { padding: 48px 12px 24px; }
+  .tl-empty-title { font-size: 36px; }
 }
 
 .timeline-sentinel { height: 1px; }

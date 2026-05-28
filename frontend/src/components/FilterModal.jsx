@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Modal from './Modal'
 import { personColor } from '../utils/colors'
 import { useEventTypes } from '../utils/eventTypes'
@@ -16,6 +16,18 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
     person_ids: [...(filters.person_ids ?? [])],
     thread_ids: [...(filters.thread_ids ?? [])],
   }))
+  // Sync draft to current filters whenever the modal opens. Otherwise the
+  // useState initializer above only runs once on first mount, so if filters
+  // change externally (e.g. via the empty-state "Clear filters" button) the
+  // modal would still show the old draft the next time it opens.
+  useEffect(() => {
+    if (!open) return
+    setDraft({
+      event_type: filters.event_type ?? '',
+      person_ids: [...(filters.person_ids ?? [])],
+      thread_ids: [...(filters.thread_ids ?? [])],
+    })
+  }, [open, filters])
   const types = useEventTypes()
   const threads = useThreadStore((s) => s.threads)
   const categories = [{ value: '', label: 'All' }, ...types]

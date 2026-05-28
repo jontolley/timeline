@@ -378,11 +378,10 @@ export default function TimelineView() {
   }, [loadNewer, hasMoreNewer, loading, jumping, inSearchMode])
 
   const handleJumpToYear = useCallback(async (year) => {
-    // Year-rail click is a "leave search mode and go to this year" action —
-    // search results don't have a continuous year sequence the rail can map
-    // to, and the markers wouldn't necessarily be in the right place.
-    if (inSearchMode) setSearchQuery('')
-    // Find the year already loaded? Just scroll to its first card.
+    // Year-rail click: if the year is already on screen (either as part of
+    // the paginated timeline OR as part of the current search results),
+    // just scroll to it. Stays in search mode when applicable so clicking
+    // a year-with-matches navigates within the results instead of exiting.
     const existing = document.querySelector(`[data-year-marker="${year}"]`)
     if (existing) {
       anchorRestoredRef.current = true // skip the one-shot anchor restore on re-render
@@ -390,6 +389,10 @@ export default function TimelineView() {
       setActiveYear(year)
       return
     }
+    // Year isn't on screen. If we're in search mode, exit it first —
+    // otherwise we'd fetch a year window into a feed still showing
+    // search results.
+    if (inSearchMode) setSearchQuery('')
     // Not loaded — replace the list with a window that *straddles* the year:
     //   • a page of events strictly *after* Y/12/31 (newer years, providing
     //     context above the target year on first render)
@@ -552,6 +555,22 @@ export default function TimelineView() {
     return years[years.length - 1].year
   }, [years])
 
+  // In search mode the year rail should reflect the result set, not the
+  // filter-only year counts the API gave us. Bucket searchResults by year
+  // client-side (the result set is capped, so this is cheap). Outside
+  // search mode just pass through the API list.
+  const railYears = useMemo(() => {
+    if (!inSearchMode) return years
+    const counts = new Map()
+    for (const ev of searchResults) {
+      const y = yearOf(ev.date)
+      if (y) counts.set(y, (counts.get(y) || 0) + 1)
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[0] - a[0])
+      .map(([year, count]) => ({ year, count }))
+  }, [inSearchMode, searchResults, years])
+
   const filterCount =
     (filters.event_type ? 1 : 0) +
     (filters.person_ids?.length || 0) +
@@ -576,7 +595,7 @@ export default function TimelineView() {
         </div>
       )}
       <div className="tl-grid">
-        <YearRail years={years} activeYear={activeYear} onJump={handleJumpToYear} />
+        <YearRail years={railYears} activeYear={activeYear} onJump={handleJumpToYear} />
 
         {/* Wrap head + feed so the rail only competes against the combined
             column height for grid sizing. Otherwise the rail's natural height
@@ -601,7 +620,7 @@ export default function TimelineView() {
                     </>
                   )}
                 </p>
-              ) : (
+              ) : events.length > 0 ? (
                 <p className="tl-feed-stats">
                   <span>{events.length.toLocaleString()}{hasMoreOlder || hasMoreNewer ? '+' : ''} {events.length === 1 ? 'event' : 'events'}</span>
                   {earliestYear && (
@@ -623,7 +642,9 @@ export default function TimelineView() {
                     </>
                   )}
                 </p>
-              )
+              ) : null
+              /* events.length === 0 → omit the stats line entirely. The
+                 rich empty state below in .tl-feed handles the messaging. */
             )}
           </div>
         </header>
@@ -660,13 +681,37 @@ export default function TimelineView() {
               <div className="empty">loading…</div>
             ) : inSearchMode && searching && groups.length === 0 ? (
               <div className="empty">searching…</div>
+            ) : groups.length === 0 && inSearchMode ? (
+              <div className="empty">no matches for “{searchQuery.trim()}”</div>
+            ) : groups.length === 0 && isFiltered ? (
+              <div className="tl-empty">
+                <p className="tl-empty-eyebrow"><span className="pip" /> No matches</p>
+                <h2 className="tl-empty-title">Nothing fits <em>those filters.</em></h2>
+                <p className="tl-empty-sub">
+                  Try removing one or two — or clear them all to see your full timeline.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => handleFilterChange({ event_type: '', person_ids: [], thread_ids: [] })}
+                >
+                  Clear filters
+                </button>
+              </div>
             ) : groups.length === 0 ? (
-              <div className="empty">
-                {inSearchMode
-                  ? `no matches for “${searchQuery.trim()}”`
-                  : isFiltered
-                    ? 'no events match — clear filters?'
-                    : 'nothing here yet — capture a moment'}
+              <div className="tl-empty">
+                <p className="tl-empty-eyebrow"><span className="pip" /> Start your timeline</p>
+                <h2 className="tl-empty-title">No events <em>yet.</em></h2>
+                <p className="tl-empty-sub">
+                  Capture your first moment — a milestone, a trip, or any memory worth keeping.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => navigate('/events/new')}
+                >
+                  + Add event
+                </button>
               </div>
             ) : (
               <>
