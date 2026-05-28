@@ -10,11 +10,48 @@ import ChatView from './pages/ChatView'
 import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
+import UnauthorizedView from './pages/UnauthorizedView'
 import { useAuthStore, useCategoryStore, useThreadStore } from './store'
 import { ConfirmProvider } from './lib/confirm'
 
 function UnauthedShell() {
+  const isUnauthorized =
+    typeof window !== 'undefined' && window.location.pathname === '/unauthorized'
+  const unauthorizedEmail = isUnauthorized
+    ? new URLSearchParams(window.location.search).get('email') || ''
+    : ''
+
+  // If the user arrives on /unauthorized (after a Google sign-in by an
+  // address that isn't allowlisted), show the friendly screen first. The
+  // "use different email" button clears the URL and drops them into the
+  // normal sign-in form.
   const [showLogin, setShowLogin] = useState(false)
+  const [showUnauthorized, setShowUnauthorized] = useState(isUnauthorized)
+
+  const clearUnauthorizedUrl = () => {
+    if (typeof window !== 'undefined' && window.history?.replaceState) {
+      window.history.replaceState({}, '', '/')
+    }
+  }
+
+  if (showUnauthorized) {
+    return (
+      <UnauthorizedView
+        email={unauthorizedEmail}
+        onTryAnother={() => {
+          clearUnauthorizedUrl()
+          setShowUnauthorized(false)
+          setShowLogin(true)
+        }}
+        onBack={() => {
+          clearUnauthorizedUrl()
+          setShowUnauthorized(false)
+          setShowLogin(false)
+        }}
+      />
+    )
+  }
+
   if (showLogin) {
     return <LoginView onBack={() => setShowLogin(false)} />
   }

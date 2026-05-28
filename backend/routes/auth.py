@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -35,6 +35,16 @@ from database import auth_codes_collection, users_collection
 router = APIRouter(prefix="/api/auth")
 
 
+def _unauthorized_redirect(email: str) -> RedirectResponse:
+    """302 to the frontend's /unauthorized screen with the offending email
+    in the query string, so the user lands on a real page instead of a
+    raw FastAPI JSON 403."""
+    return RedirectResponse(
+        url=f"{APP_BASE_URL}/unauthorized?email={quote(email)}",
+        status_code=302,
+    )
+
+
 class LoginRequest(BaseModel):
     email: EmailStr
 
@@ -56,8 +66,13 @@ async def request_login(body: LoginRequest):
 @router.get("/verify")
 async def verify_login(token: str):
     email = verify_magic_token(token)
-    if not email or not await is_allowed(email):
+    if not email:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
+    if not await is_allowed(email):
+        # Token decoded fine but the user was removed from the allowlist
+        # between link-send and click — route them to the friendly screen
+        # instead of a 400.
+        return _unauthorized_redirect(email)
     session_token = make_session_token(email)
     response = RedirectResponse(url="/", status_code=302)
     response.set_cookie(
@@ -268,9 +283,11 @@ async def google_callback(code: str = "", state: str = ""):
     if not email:
         raise HTTPException(status_code=400, detail="No email in Google response")
     if not await is_allowed(email):
-        # We always issue 403 here (not 404) — the user has authenticated
-        # with Google but hasn't been invited yet.
-        raise HTTPException(status_code=403, detail=f"{email} is not authorized")
+        # The user authenticated with Google but isn't on the allowlist.
+        # Send them to the frontend's /unauthorized screen so they see a
+        # real page (with the offending email + a way back to sign-in)
+        # instead of a raw JSON 403 from FastAPI.
+        return _unauthorized_redirect(email)
 
     # Persist (and refresh on each sign-in) the user's display name + avatar
     # URL from Google's claims. Magic-link sign-ins don't touch these fields,
