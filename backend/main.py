@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from auth import ALLOWED_EMAILS
 from database import (
     auth_codes_collection,
-    categories_collection,
+    db,
     events_collection,
     people_collection,
     threads_collection,
@@ -19,7 +19,6 @@ from embeddings import EmbeddingService, COLLECTION_NAME
 from routes.events import router as events_router
 from routes.chat import router as chat_router
 from routes.people import router as people_router
-from routes.categories import router as categories_router
 from routes.threads import router as threads_router, subs_router as subscriptions_router
 from routes.users import router as users_router
 from routes.threads_io import router as threads_io_router
@@ -28,53 +27,12 @@ from routes.auth import router as auth_router
 
 embedding_service = EmbeddingService()
 
-SEED_EVENTS = [
-    {
-        "title": "Started first job as Software Engineer",
-        "description": "Joined a startup in San Francisco as a junior software engineer, working on backend APIs.",
-        "event_type": "career",
-        "date": datetime(2018, 6, 1, tzinfo=timezone.utc),
-        "location": {"name": "San Francisco, CA", "address": None, "lat": 37.7749, "lng": -122.4194},
-        "tags": ["engineering", "startup"],
-    },
-    {
-        "title": "Backpacking trip through Southeast Asia",
-        "description": "Three-week adventure through Thailand, Vietnam, and Cambodia.",
-        "event_type": "travel",
-        "date": datetime(2019, 3, 15, tzinfo=timezone.utc),
-        "location": {"name": "Southeast Asia", "address": "Thailand, Vietnam, Cambodia", "lat": None, "lng": None},
-        "tags": ["backpacking", "adventure", "asia"],
-    },
-    {
-        "title": "Promoted to Senior Engineer",
-        "description": "Recognised for leading the migration to microservices architecture.",
-        "event_type": "career",
-        "date": datetime(2020, 9, 1, tzinfo=timezone.utc),
-        "location": {"name": "San Francisco, CA", "address": None, "lat": 37.7749, "lng": -122.4194},
-        "tags": ["promotion", "engineering"],
-    },
-    {
-        "title": "Completed first marathon",
-        "description": "Ran the Big Sur International Marathon after six months of training.",
-        "event_type": "milestone",
-        "date": datetime(2021, 4, 25, tzinfo=timezone.utc),
-        "location": {"name": "Big Sur, CA", "address": None, "lat": 36.2704, "lng": -121.8081},
-        "tags": ["running", "fitness", "personal"],
-    },
-    {
-        "title": "Solo trip to Japan",
-        "description": "Spent two weeks in Tokyo, Kyoto, and Osaka exploring culture, food, and temples.",
-        "event_type": "travel",
-        "date": datetime(2023, 10, 5, tzinfo=timezone.utc),
-        "location": {"name": "Japan", "address": "Tokyo, Kyoto, and Osaka, Japan", "lat": 35.6762, "lng": 139.6503},
-        "tags": ["japan", "solo", "culture"],
-    },
-]
-
 
 def _serialize_doc(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
+    if doc.get("thread_id") is not None:
+        doc["thread_id"] = str(doc["thread_id"])
     for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
@@ -85,15 +43,6 @@ def _serialize_doc(doc: dict) -> dict:
     if isinstance(loc, str):
         doc["location"] = {"name": loc, "address": None, "lat": None, "lng": None}
     return doc
-
-
-DEFAULT_CATEGORIES = [
-    {"name": "career",    "label": "Career",    "color": "blue"},
-    {"name": "travel",    "label": "Travel",    "color": "emerald"},
-    {"name": "milestone", "label": "Milestone", "color": "violet"},
-    {"name": "family",    "label": "Family",    "color": "amber"},
-    {"name": "adventure", "label": "Adventure", "color": "cyan"},
-]
 
 
 async def _seed_default_thread_for(owner_id):
@@ -178,29 +127,13 @@ async def _backfill_event_threads():
             )
 
 
-async def _seed_categories_for(owner_id):
-    """Seed the five default categories for the given user if they have none.
-    Idempotent: called from the multi-user migration and on every new user
-    creation flow."""
-    count = await categories_collection.count_documents({"owner_id": owner_id})
-    if count > 0:
-        return
-    now = datetime.now(timezone.utc)
-    docs = [
-        dict(c, owner_id=owner_id, created_at=now, updated_at=now)
-        for c in DEFAULT_CATEGORIES
-    ]
-    await categories_collection.insert_many(docs)
-    print(f"[startup] Seeded {len(docs)} default categories for {owner_id}")
-
-
 async def _multiuser_migration():
     """Multi-user bootstrap, run on every startup but only acts on first
     encounter:
       1. Ensure a user record exists for every email in ALLOWED_EMAILS.
          The first allowed email is the admin; later ones are normal users.
-      2. Find any events / people / categories without an owner_id and
-         backfill them with the admin user's id.
+      2. Find any events / people without an owner_id and backfill them
+         with the admin user's id.
       3. Re-index those events in Qdrant so the owner_id ends up in the
          vector-search payload.
     """
@@ -236,7 +169,6 @@ async def _multiuser_migration():
     for collection, label in (
         (events_collection, "events"),
         (people_collection, "people"),
-        (categories_collection, "categories"),
     ):
         result = await collection.update_many(
             {"owner_id": {"$exists": False}},
@@ -245,11 +177,7 @@ async def _multiuser_migration():
         if result.modified_count:
             print(f"[startup] Backfilled owner_id on {result.modified_count} {label}")
 
-    # Step 3: seed categories for any user who has none yet.
-    async for user in users_collection.find():
-        await _seed_categories_for(user["_id"])
-
-    # Step 4: re-index every event into Qdrant so the owner_id payload
+    # Step 3: re-index every event into Qdrant so the owner_id payload
     # reaches search. Only does work for points that haven't been re-indexed
     # under the new schema (we detect by point absence of owner_id payload).
     # Simpler heuristic: check if any point has owner_id in its payload; if
@@ -279,6 +207,53 @@ async def _multiuser_migration():
             except Exception as exc:
                 print(f"[startup] Re-index failed for {doc.get('_id')}: {exc}")
         print(f"[startup] Re-indexed {reindexed} event(s)")
+
+
+async def _drop_event_type_and_categories():
+    """One-shot: strip the `event_type` field from every event, drop the
+    `categories` collection, and re-embed every event in Qdrant so the
+    stored vectors no longer carry the category word baked into their text.
+    Idempotent: each step only acts if there's anything left to do."""
+    unset_result = await events_collection.update_many(
+        {"event_type": {"$exists": True}},
+        {"$unset": {"event_type": ""}},
+    )
+    if unset_result.modified_count:
+        print(f"[startup] Unset event_type on {unset_result.modified_count} event(s)")
+
+    # `db.drop_collection` is a no-op when the collection doesn't exist.
+    collection_names = await db.list_collection_names()
+    if "categories" in collection_names:
+        await db.drop_collection("categories")
+        print("[startup] Dropped legacy `categories` collection")
+
+    # Re-embed every event so the stored vector no longer encodes the now-
+    # removed category word. Tracked via a one-shot doc in a tiny `meta`
+    # collection so we don't re-embed on every boot.
+    meta = db.meta
+    flag = await meta.find_one({"key": "reembed_after_category_removal"})
+    if flag:
+        return
+    reembedded = 0
+    failed = 0
+    async for doc in events_collection.find():
+        try:
+            await embedding_service.upsert_event(
+                _serialize_doc(doc),
+                owner_id=str(doc.get("owner_id")) if doc.get("owner_id") else None,
+            )
+            reembedded += 1
+        except Exception as exc:
+            failed += 1
+            print(f"[startup] Re-embed failed for {doc.get('_id')}: {exc}")
+    print(f"[startup] Re-embedded {reembedded} event(s) without category text ({failed} failed)")
+    # Only flip the flag when every event succeeded — otherwise a partial run
+    # would block the next boot from retrying.
+    if failed == 0:
+        await meta.insert_one({
+            "key": "reembed_after_category_removal",
+            "completed_at": datetime.now(timezone.utc),
+        })
 
 
 async def _migrate_photos_to_media():
@@ -367,14 +342,17 @@ async def _background_startup():
         await embedding_service.ensure_collection()
         await _migrate_photos_to_media()
         # Multi-user bootstrap: seeds users from ALLOWED_EMAILS, backfills
-        # owner_id on legacy docs, seeds per-user category defaults, and
-        # re-indexes Qdrant with owner_id payload.
+        # owner_id on legacy docs, and re-indexes Qdrant with owner_id payload.
         await _multiuser_migration()
         # Threads: seed one default thread per user + backfill thread_id on
         # any pre-Phase-2 events, then make sure existing Qdrant points
         # carry thread_id so chat search can filter on it.
         await _backfill_event_threads()
         await _backfill_qdrant_thread_id()
+        # Drop categories entirely: $unset event_type on events, drop the
+        # `categories` collection, and re-embed every event (one-time) so
+        # the stored vector no longer encodes the now-removed category word.
+        await _drop_event_type_and_categories()
 
         # Ensure every event has a Qdrant point. Useful after data restores.
         scroll_result = await embedding_service.qdrant.scroll(
@@ -440,7 +418,6 @@ app.include_router(auth_router)
 app.include_router(events_router)
 app.include_router(chat_router)
 app.include_router(people_router)
-app.include_router(categories_router)
 app.include_router(threads_router)
 app.include_router(subscriptions_router)
 app.include_router(users_router)

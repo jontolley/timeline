@@ -9,12 +9,10 @@ import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import { useAlert } from '../lib/confirm'
 import { hasTime } from '../utils/date'
-import { useEventTypes } from '../utils/eventTypes'
 
 const EMPTY_FORM = {
   title: '',
   description: '',
-  event_type: 'career',
   date: '',
   includeTime: false,
   time: '',
@@ -74,7 +72,6 @@ export default function EventForm() {
   const threads = useThreadStore((s) => s.threads)
   const ownedThreads = useMemo(() => threads.filter((t) => t.is_owner), [threads])
   const alert = useAlert()
-  const eventTypes = useEventTypes()
 
   const pendingMediaUrls = useMemo(
     () => pendingMedia.map((f) => URL.createObjectURL(f)),
@@ -152,7 +149,6 @@ export default function EventForm() {
         setForm({
           title: event.title ?? '',
           description: event.description ?? '',
-          event_type: event.event_type ?? 'career',
           date: event.date ? event.date.slice(0, 10) : '',
           includeTime: eventHasTime,
           time: eventHasTime
@@ -287,22 +283,6 @@ export default function EventForm() {
               onChange={setTitle}
             />
           </div>
-        </div>
-
-        <div className="field">
-          <label className="field-label" htmlFor="ef-type">
-            Type<span className="field-required">*</span>
-          </label>
-          <select
-            id="ef-type"
-            className="select"
-            value={form.event_type}
-            onChange={set('event_type')}
-          >
-            {eventTypes.map((t) => (
-              <option key={t.value} value={t.value}>{t.label}</option>
-            ))}
-          </select>
         </div>
 
         {ownedThreads.length > 1 && (

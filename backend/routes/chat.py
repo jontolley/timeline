@@ -12,7 +12,6 @@ from anthropic import AsyncAnthropic
 from auth import require_auth
 from embeddings import EmbeddingService
 from database import (
-    categories_collection,
     events_collection,
     people_collection,
     thread_subscriptions_collection,
@@ -63,13 +62,12 @@ Schema:
     "title": string or null,
     "date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" (if time mentioned) or null,
     "end_date": "YYYY-MM-DD" or "YYYY-MM-DDTHH:MM" or null,
-    "event_type": string from the valid list given in the preamble, or null,
     "description": string or null,
     "location": { "name": string or null, "address": string or null } or null,
     "tags": [string] or null,
     "people": [string] or null
   },
-  "missing_required": ["title", "date", "event_type", "location", "description", "people"],
+  "missing_required": ["title", "date", "location", "description", "people"],
   "event_search": string or null
 }
 
@@ -78,16 +76,11 @@ Rules:
 - intent=edit    → user wants to update / change / modify an existing event
 - intent=query   → everything else (questions, search, general chat)
 - missing_required: list fields that should still be collected before creating the event:
-  * Always include "title", "date", "event_type" if not yet provided by the user
+  * Always include "title", "date" if not yet provided by the user
   * Include "location" ONLY IF: location has not been provided AND the assistant has not already asked for location in this conversation
   * Include "description" ONLY IF: description has not been provided AND the assistant has not already asked for description in this conversation
   * Include "people" ONLY IF: people has not been provided AND the assistant has not already asked for people in this conversation
   * Do NOT re-add "location", "description", or "people" if the assistant already asked and the user skipped or ignored them
-- Infer event_type from context using the slug list in the preamble. Examples
-  for the defaults: job/promotion/startup → career, trip/travel/visit/journey
-  → travel, graduation/marriage/achievement → milestone, wedding/birth/family
-  reunion/parenting → family, hike/climb/raft/backpacking/outdoor expedition
-  → adventure. If a user-defined category obviously matches better, prefer it
 - Convert relative dates ("last June", "two years ago", "in 2019") to YYYY-MM-DD
 - event_search: short phrase describing which event to find, for edit intent
 - tags: split any comma- or space-separated tags into an array
@@ -132,13 +125,12 @@ _DESCRIPTION_MAX_CHARS = 280
 
 def _format_event_line(e: dict, people_names: dict | None = None) -> str:
     date = str(e.get("date", ""))[:10]
-    etype = e.get("event_type", "").capitalize()
     title = e.get("title", "")
     location = e.get("location", "")
     if isinstance(location, dict):
         location = location.get("name") or location.get("address") or ""
     tags = " ".join(f"#{t}" for t in (e.get("tags") or []))
-    parts = [f"[{date}] {etype}: {title}"]
+    parts = [f"[{date}] {title}"]
     if location:
         parts.append(f"({location})")
     if people_names:
@@ -193,38 +185,26 @@ def _parse_date(date_str: str) -> datetime:
         return datetime.now(timezone.utc)
 
 
-async def _category_names(owner_id=None) -> list[str]:
-    """Live list of category slugs for the given user — used to build the
-    INTENT prompt preamble so the model picks valid event_type values."""
-    query = {} if owner_id is None else {"owner_id": owner_id}
-    cursor = categories_collection.find(query, {"name": 1, "_id": 0})
-    return sorted([doc["name"] async for doc in cursor])
-
-
-def _system_blocks(static_system: str, dynamic_suffix: str = "") -> list[dict]:
+def _system_blocks(static_system: str) -> list[dict]:
     """Build a system-prompt list with a dynamic date preamble followed by
     the cached static prompt. The preamble must NOT be cached — it changes
-    daily — but the bulk of the prompt still hits the cache. Callers can
-    inject extra non-cached context (e.g. the live category list) via
-    `dynamic_suffix`."""
+    daily — but the bulk of the prompt still hits the cache."""
     today = datetime.now(timezone.utc)
     preamble = f"Today is {today.strftime('%A, %Y-%m-%d')} (UTC)."
-    if dynamic_suffix:
-        preamble = f"{preamble} {dynamic_suffix}"
     return [
         {"type": "text", "text": preamble},
         {"type": "text", "text": static_system, "cache_control": {"type": "ephemeral"}},
     ]
 
 
-async def _anthropic_json(system: str, user_content: str, dynamic_suffix: str = "") -> dict:
+async def _anthropic_json(system: str, user_content: str) -> dict:
     """Non-streaming Anthropic call that returns parsed JSON. The static
     system block is cached via cache_control; a small dynamic preamble with
     today's date sits in front so the model can resolve relative dates."""
     response = await async_anthropic.messages.create(
         model=ANTHROPIC_MODEL,
         max_tokens=2048,
-        system=_system_blocks(system, dynamic_suffix),
+        system=_system_blocks(system),
         messages=[{"role": "user", "content": user_content}],
     )
     text = next((b.text for b in response.content if b.type == "text"), "")
@@ -236,7 +216,6 @@ async def _anthropic_json(system: str, user_content: str, dynamic_suffix: str = 
 async def _keyword_search(
     query: str,
     limit: int,
-    event_type_filter: str = None,
     visible_thread_ids=None,
 ) -> list[dict]:
     """Full-text search via Mongo's $text index (events_text_search, created at
@@ -249,8 +228,6 @@ async def _keyword_search(
     mongo_query: dict = {"$text": {"$search": query}}
     if visible_thread_ids is not None:
         mongo_query["thread_id"] = {"$in": visible_thread_ids}
-    if event_type_filter and event_type_filter != "all":
-        mongo_query["event_type"] = event_type_filter
     cursor = (
         events_collection
         .find(mongo_query, {"score": {"$meta": "textScore"}})
@@ -280,7 +257,6 @@ async def _visible_thread_ids(viewer_id) -> list:
 async def _hybrid_event_search(
     query: str,
     top_k: int = 3,
-    event_type_filter: str = None,
     visible_thread_ids=None,
 ) -> list[dict]:
     """Combine semantic vector search and keyword text search via reciprocal rank
@@ -289,13 +265,11 @@ async def _hybrid_event_search(
     vector_hits = await embedding_service.search(
         query,
         top_k=pool_size,
-        event_type_filter=event_type_filter,
         visible_thread_ids=visible_thread_ids,
     )
     text_hits = await _keyword_search(
         query,
         pool_size,
-        event_type_filter=event_type_filter,
         visible_thread_ids=visible_thread_ids,
     )
 
@@ -488,7 +462,6 @@ class PendingAction(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: list[Message]
-    event_filter: str = "all"
     action: PendingAction | None = None
 
 
@@ -519,13 +492,8 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
             )
 
             # ── Step 1: intent detection (fast, non-streaming JSON call) ──
-            cat_names = await _category_names(owner_id)
-            cat_suffix = (
-                f"Valid event_type values (use exactly these slugs): {', '.join(cat_names)}."
-                if cat_names else ""
-            )
             try:
-                intent_data = await _anthropic_json(INTENT_SYSTEM, transcript, cat_suffix)
+                intent_data = await _anthropic_json(INTENT_SYSTEM, transcript)
             except Exception as exc:
                 intent_data = {"intent": "query", "fields": {}, "missing_required": []}
 
@@ -589,7 +557,6 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                     doc = {
                         "title": fields["title"],
                         "description": fields.get("description"),
-                        "event_type": fields["event_type"],
                         "date": date_val,
                         "end_date": end_date_val,
                         "location": location_val,
@@ -607,7 +574,7 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
 
                     saved_people_names = [n for n in (fields.get("people") or []) if n not in unknown_people]
                     confirm_prompt = (
-                        f"Just created a {fields['event_type']} event: \"{fields['title']}\" "
+                        f"Just created an event: \"{fields['title']}\" "
                         f"on {fields['date']}."
                         + (f" Location: {fields.get('location')}." if fields.get("location") else "")
                         + (f" People: {', '.join(saved_people_names)}." if saved_people_names else "")
@@ -708,7 +675,6 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                     hits = await _hybrid_event_search(
                         q,
                         top_k=per_query_top_k,
-                        event_type_filter=req.event_filter,
                         visible_thread_ids=visible_thread_ids,
                     )
                     for hit in hits:

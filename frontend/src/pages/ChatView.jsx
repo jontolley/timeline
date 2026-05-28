@@ -2,15 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { formatDate, formatDateRange } from '../utils/date'
 import { locationDisplay } from '../utils/location'
-import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
-import { usePeopleStore, useChatStore } from '../store'
+import { personColor } from '../utils/colors'
+import { usePeopleStore, useChatStore, useThreadStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 
 const FIELD_LABELS = {
   title: 'Title',
   date: 'Date',
   end_date: 'End date',
-  event_type: 'Type',
   description: 'Description',
   location: 'Location',
   tags: 'Tags',
@@ -248,17 +247,24 @@ function MessageRow({ msg, messageIndex, streaming, peopleById, onConfirm, onCan
 
 function EventActionCard({ action, event, peopleById }) {
   const isCreated = action === 'created'
+  const { threads, byId: threadsById } = useThreadStore()
+  const showThreadLabel = threads.length > 1
+  const thread = event.thread_id ? threadsById[event.thread_id] : null
+  const threadColor = thread ? personColor(thread.color) : null
+  const style = threadColor ? { '--cat-color': threadColor } : undefined
   return (
     <Link
       to={`/events/${event._id}`}
-      className={`event-receipt ${categoryClass(event.event_type)}`}
-      style={categoryStyle(event.event_type)}
+      className="event-receipt cat-color"
+      style={style}
     >
       <div className="receipt-head">
         <span className={`receipt-status ${isCreated ? '' : 'updated'}`}>
           ✓ event {isCreated ? 'created' : 'updated'}
         </span>
-        <span className="receipt-cat">{categoryLabel(event.event_type) || event.event_type}</span>
+        {showThreadLabel && thread && (
+          <span className="receipt-cat">{thread.name}</span>
+        )}
       </div>
       <p className="receipt-title">{event.title}</p>
       <div className="receipt-date">

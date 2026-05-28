@@ -5,9 +5,8 @@ import { getEvent, deleteEvent, attachMedia, removeMedia } from '../api/events'
 import { uploadMedia } from '../api/uploads'
 import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
-import { useEventStore, usePeopleStore } from '../store'
+import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
-import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { personColor } from '../utils/colors'
 import { useAlert, useConfirm } from '../lib/confirm'
 
@@ -35,6 +34,7 @@ export default function EventDetail() {
   const [loading, setLoading] = useState(true)
   const [lightboxIndex, setLightboxIndex] = useState(null)
   const { peopleById, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
+  const { threads, byId: threadsById } = useThreadStore()
   const confirm = useConfirm()
   const alert = useAlert()
 
@@ -106,22 +106,20 @@ export default function EventDetail() {
   const location = locationDisplay(event.location)
   const mapUrl = locationMapUrl(event.location)
   const isShared = event.is_owner === false
-  const denormCat = event.category_display
-  const cls = isShared && denormCat ? 'cat-color' : categoryClass(event.event_type)
-  const catStyle = isShared && denormCat
-    ? { '--cat-color': personColor(denormCat.color) }
-    : categoryStyle(event.event_type)
-  const catTagText = isShared && denormCat
-    ? denormCat.label
-    : (categoryLabel(event.event_type) || event.event_type)
+  const showThreadLabel = threads.length > 1
+  const thread = event.thread_id ? threadsById[event.thread_id] : null
+  const threadColor = thread ? personColor(thread.color) : null
+  const pageStyle = threadColor ? { '--cat-color': threadColor } : undefined
 
   return (
-    <div className={`page-narrow ${cls}`} style={catStyle}>
+    <div className="page-narrow cat-color" style={pageStyle}>
       <Link to="/" className="back-link">← Back to timeline</Link>
 
       <div className="event-meta" style={{ marginBottom: 8 }}>
-        <span className="cat-tag">{catTagText}</span>
-        <span className="event-range">· {dateRange}</span>
+        {showThreadLabel && thread && (
+          <span className="cat-tag">{thread.name}</span>
+        )}
+        <span className="event-range">{showThreadLabel && thread ? '· ' : ''}{dateRange}</span>
         {isShared && <span className="shared-event-banner">shared (read-only)</span>}
       </div>
       <h1 className="page-title" style={{ fontSize: 44, marginBottom: 18 }}>

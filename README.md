@@ -45,7 +45,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 
 ## Features
 
-- **Multi-user with private timelines.** Each user has their own events, people, categories, threads, and media — hard isolation across the data layer. Admins invite people from Settings → Users (or, in dev, they're seeded from the `ALLOWED_EMAIL` env var on first boot).
+- **Multi-user with private timelines.** Each user has their own events, people, threads, and media — hard isolation across the data layer. Admins invite people from Settings → Users (or, in dev, they're seeded from the `ALLOWED_EMAIL` env var on first boot).
 - **Threads + selective sharing.** Group events into threads (e.g. "Family travels", "Work"). Mark a thread shared and invite specific users — they see its events on their own timeline (read-only) and can toggle visibility per-thread.
 - **Chat-driven event entry.** "Add a trip to Tokyo last March with Sam" creates an event with the right type, date, and people. Relative dates ("3 days ago", "last June") are resolved against today's date.
 - **Photo-driven event entry.** Drop a photo, get an event with the date and GPS pre-filled from EXIF; optionally have Claude vision generate the title and description from the image.
@@ -53,7 +53,6 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **Semantic search via chat.** "Where have I travelled in the last two years?" hits a Qdrant nearest-neighbour search across your visible threads (own + subscribed) and feeds the matches to Claude as context.
 - **Keyword search on the timeline.** A toolbar search box runs a case-insensitive substring match across event title, description, location name/address, tags, and person names (debounced live as you type, no Claude/Qdrant involvement). Active filter chips narrow the results.
 - **People with color coding.** Attach people to events; filter the timeline by who was there.
-- **Categories.** Each user has their own editable category set with palette colors; events carry the slug, the UI renders the owner's label/color (even on cross-user shared events).
 - **Day One importer.** A standalone script (`tools/import_dayone.py`) ingests a Day One JSON export — entries, locations, photos, videos, audio — with Claude-summarized titles for entries that don't have one.
 - **Paginated timeline with year navigation.** Events group year → month → day with editorial month headers and a per-day date column. A sticky **year spine** on the left shows every year with a density bar (filter-aware) and jumps you directly to the first month of that year; scrolling back up lazily loads the years in between. Loads 20 events at a time in either direction. Scroll position is preserved across event-detail navigation.
 - **Auth.** Sign in with Google OAuth or a magic-link email. The users collection is the live allowlist — adding a user is an admin action in-app.

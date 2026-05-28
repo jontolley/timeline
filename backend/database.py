@@ -8,7 +8,6 @@ db = client.timeline_db
 users_collection = db.users
 events_collection = db.events
 people_collection = db.people
-categories_collection = db.categories
 threads_collection = db.threads
 thread_subscriptions_collection = db.thread_subscriptions
 auth_codes_collection = db.auth_codes

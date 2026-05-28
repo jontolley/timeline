@@ -17,7 +17,6 @@ const PAGE_SIZE = 20
 
 function buildFilterParams(filters) {
   const params = {}
-  if (filters.event_type) params.event_type = filters.event_type
   if (filters.person_ids?.length) params.person_id = filters.person_ids
   if (filters.thread_ids?.length) params.thread_id = filters.thread_ids
   return params
@@ -577,7 +576,6 @@ export default function TimelineView() {
   }, [inSearchMode, searchResults, years])
 
   const filterCount =
-    (filters.event_type ? 1 : 0) +
     (filters.person_ids?.length || 0) +
     (filters.thread_ids?.length || 0)
   const isFiltered = filterCount > 0
@@ -698,7 +696,7 @@ export default function TimelineView() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => handleFilterChange({ event_type: '', person_ids: [], thread_ids: [] })}
+                  onClick={() => handleFilterChange({ person_ids: [], thread_ids: [] })}
                 >
                   Clear filters
                 </button>

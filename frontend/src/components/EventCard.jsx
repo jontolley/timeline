@@ -1,6 +1,5 @@
 import { useNavigate } from 'react-router-dom'
 import { locationDisplay } from '../utils/location'
-import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { usePeopleStore, useThreadStore } from '../store'
 import { personColor } from '../utils/colors'
 
@@ -24,23 +23,15 @@ export default function EventCard({ event }) {
   const navigate = useNavigate()
   const peopleById = usePeopleStore((s) => s.peopleById)
   const { threads, byId: threadsById } = useThreadStore()
-  const showThreadChip = threads.length > 1
+  const showThreadLabel = threads.length > 1
   const thread = event.thread_id ? threadsById[event.thread_id] : null
   const isShared = event.is_owner === false
   const media = event.media ?? event.photos ?? []
   const shown = media.slice(0, MAX_MEDIA)
   const extra = Math.max(0, media.length - shown.length)
 
-  // For shared events, use the denormalized category info from the backend so
-  // we render the owner's color/label without needing their category store.
-  const denormCat = event.category_display
-  const cls = isShared && denormCat ? 'cat-color' : categoryClass(event.event_type)
-  const catStyle = isShared && denormCat
-    ? { '--cat-color': personColor(denormCat.color) }
-    : categoryStyle(event.event_type)
-  const catTagText = isShared && denormCat
-    ? denormCat.label
-    : (categoryLabel(event.event_type) || event.event_type)
+  const threadColor = thread ? personColor(thread.color) : null
+  const cardStyle = threadColor ? { '--cat-color': threadColor } : undefined
 
   const location = locationDisplay(event.location)
 
@@ -65,28 +56,30 @@ export default function EventCard({ event }) {
     }
   }
 
+  const showMetaRow = (showThreadLabel && thread) || isShared
+
   return (
     <article
-      className={`event ${cls}${shown.length === 1 ? ' photo-feature' : ''}`}
+      className={`event cat-color${shown.length === 1 ? ' photo-feature' : ''}`}
       data-event-id={event._id}
       data-event-date={event.date}
-      style={catStyle}
+      style={cardStyle}
       onClick={open}
       onKeyDown={onKey}
       role="link"
       tabIndex={0}
     >
-      <div className="e-meta">
-        <span className="swatch" style={{ background: 'var(--cat-color)' }} aria-hidden="true" />
-        <span>{catTagText}</span>
-        {isShared && <span className="e-shared">shared</span>}
-        {showThreadChip && thread && (
-          <span className="thread-pill" style={{ '--thread-color': personColor(thread.color) }}>
-            <span className="dot" />
-            {thread.name}
-          </span>
-        )}
-      </div>
+      {showMetaRow && (
+        <div className="e-meta">
+          {showThreadLabel && thread && (
+            <>
+              <span className="swatch" style={{ background: 'var(--cat-color)' }} aria-hidden="true" />
+              <span>{thread.name}</span>
+            </>
+          )}
+          {isShared && <span className="e-shared">shared</span>}
+        </div>
+      )}
 
       <h3 className="e-title">{event.title}</h3>
 

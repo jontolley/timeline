@@ -290,7 +290,7 @@ function DeleteConfirmModal({ email, footprint, busy, onCancel, onConfirm }) {
   const loading = footprint === null
   const hasData = footprint && (
     footprint.events > 0 || footprint.media > 0 ||
-    footprint.people > 0 || footprint.categories > 0
+    footprint.people > 0
   )
   return (
     <Modal
@@ -323,7 +323,6 @@ function DeleteConfirmModal({ email, footprint, busy, onCancel, onConfirm }) {
             <li><strong>{footprint.events}</strong> events</li>
             <li><strong>{footprint.media}</strong> photos / videos / audio (incl. their R2 objects)</li>
             <li><strong>{footprint.people}</strong> people</li>
-            <li><strong>{footprint.categories}</strong> categories</li>
           </ul>
           {!hasData && (
             <p className="muted small" style={{ marginTop: 12 }}>

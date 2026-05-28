@@ -9,7 +9,6 @@ from qdrant_client.models import (
     PointStruct,
     Filter,
     FieldCondition,
-    MatchValue,
     MatchAny,
     PointIdsList,
 )
@@ -86,7 +85,7 @@ class EmbeddingService:
         date_range = f"{date} to {end_date}" if end_date else date
         people_text = await self._people_names_text(event.get("people") or [])
         text = (
-            f"{date_range} {event.get('event_type', '')}: {event.get('title', '')}. "
+            f"{date_range}: {event.get('title', '')}. "
             f"{event.get('description', '')}. "
             f"Location: {loc_text}. Tags: {tags}. People: {people_text}"
         )
@@ -124,7 +123,6 @@ class EmbeddingService:
         self,
         question: str,
         top_k: int = 5,
-        event_type_filter: str = None,
         visible_thread_ids: list[str] = None,
     ) -> list[dict]:
         """Semantic search restricted to a viewer's visible threads (their
@@ -133,10 +131,6 @@ class EmbeddingService:
         jobs that index everything)."""
         vector = await self.embed(question)
         conditions = []
-        if event_type_filter and event_type_filter != "all":
-            conditions.append(FieldCondition(
-                key="event_type", match=MatchValue(value=event_type_filter),
-            ))
         if visible_thread_ids is not None:
             if not visible_thread_ids:
                 # User has no visible threads — return nothing.

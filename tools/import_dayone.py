@@ -46,19 +46,6 @@ PHOTO_FULL_QUALITY = 85
 PHOTO_THUMB_QUALITY = 80
 VIDEO_POSTER_MAX = 400
 
-# Day One tag → personal-timeline event_type
-TAG_TYPE_MAP = {
-    "Vacation": "travel",
-    "Road Trip": "travel",
-    "Backpacking": "travel",
-    "Family Event": "family",
-    "Doctor": "milestone",
-    "Home Improvement": "milestone",
-    "Rock Climbing": "milestone",
-    "Shooting": "milestone",
-}
-DEFAULT_TYPE = "family"
-
 # File ext → MIME type for upload presign. We re-encode photos as JPEG,
 # so source photo extensions don't matter for the upload content type.
 VIDEO_MIME = {"mov": "video/quicktime", "mp4": "video/mp4"}
@@ -167,13 +154,6 @@ def clean_description(entry, title):
     text = _IMAGE_REF_RE.sub("", text)
     text = re.sub(r"\n{3,}", "\n\n", text).strip()
     return text or None
-
-
-def map_event_type(tags):
-    for tag in tags or []:
-        if tag in TAG_TYPE_MAP:
-            return TAG_TYPE_MAP[tag]
-    return DEFAULT_TYPE
 
 
 def build_location(entry):
@@ -398,7 +378,6 @@ def process_entry(api, anthropic_client, zf, entry, tmpdir, dry_run, idx, total,
             title = first_line[:80] or f"Entry from {date_short}"
 
     tags = list(entry.get("tags") or [])
-    event_type = map_event_type(tags)
     if f"dayone:{uuid}" not in tags:
         tags.append(f"dayone:{uuid}")
 
@@ -407,7 +386,6 @@ def process_entry(api, anthropic_client, zf, entry, tmpdir, dry_run, idx, total,
     date_iso = date_in_local_tz(entry.get("creationDate"), entry.get("timeZone"))
 
     print(f"    title : {title!r}")
-    print(f"    type  : {event_type}")
     if location and location.get("name"):
         print(f"    loc   : {location['name']}")
 
@@ -454,7 +432,6 @@ def process_entry(api, anthropic_client, zf, entry, tmpdir, dry_run, idx, total,
     payload = {
         "title": title,
         "description": description,
-        "event_type": event_type,
         "date": date_iso,
         "end_date": None,
         "location": location,

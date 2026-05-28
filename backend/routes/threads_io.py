@@ -209,9 +209,8 @@ def _normalize_media(m: dict) -> dict | None:
 
 def _normalize_event(e: dict) -> dict | None:
     title = (e.get("title") or "").strip()
-    event_type = (e.get("event_type") or "").strip()
     date_val = _parse_iso(e.get("date"))
-    if not title or not event_type or date_val is None:
+    if not title or date_val is None:
         return None
     now = datetime.now(timezone.utc)
     location = e.get("location")
@@ -232,7 +231,6 @@ def _normalize_event(e: dict) -> dict | None:
     return {
         "title": title,
         "description": e.get("description"),
-        "event_type": event_type,
         "date": date_val,
         "end_date": _parse_iso(e.get("end_date")),
         "location": location,
@@ -342,8 +340,7 @@ async def import_thread(
         people_created += 1
 
     # 3) Normalize + insert events, remapping people IDs and stamping the new
-    # thread + owner. event_type is NOT validated against the importer's
-    # categories — missing categories just fall back to default display.
+    # thread + owner.
     event_docs = []
     skipped = 0
     for e in raw_events:

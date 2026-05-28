@@ -1,12 +1,10 @@
 import { useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
-import CategoriesSettings from '../components/CategoriesSettings'
 import ThreadsSettings from '../components/ThreadsSettings'
 import UsersSettings from '../components/UsersSettings'
 import {
   useAuthStore,
-  useCategoryStore,
   usePeopleStore,
   useThreadStore,
   useUserStore,
@@ -14,7 +12,6 @@ import {
 
 const BASE_TABS = [
   { value: 'people',     label: 'People' },
-  { value: 'categories', label: 'Categories' },
   { value: 'threads',    label: 'Threads' },
 ]
 const ADMIN_TABS = [
@@ -27,7 +24,6 @@ export default function SettingsView() {
   const role = useAuthStore((s) => s.role)
 
   const peopleCount = usePeopleStore((s) => s.people.length)
-  const categoryCount = useCategoryStore((s) => s.categories.length)
   const threadCount = useThreadStore((s) => s.threads.filter((t) => t.is_owner).length)
   const userCount = useUserStore((s) => s.users.length)
 
@@ -49,7 +45,6 @@ export default function SettingsView() {
   const countFor = (value) => {
     switch (value) {
       case 'people':     return peopleCount
-      case 'categories': return categoryCount
       case 'threads':    return threadCount
       case 'users':      return userCount
       default:           return null
@@ -95,7 +90,6 @@ export default function SettingsView() {
 
         <main className="hs-well">
           {active === 'people'     && <PeopleView embedded />}
-          {active === 'categories' && <CategoriesSettings />}
           {active === 'threads'    && <ThreadsSettings />}
           {active === 'users'      && role === 'admin' && <UsersSettings />}
         </main>

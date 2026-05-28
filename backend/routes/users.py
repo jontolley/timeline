@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from auth import require_admin, send_invitation
 from database import (
-    categories_collection,
     events_collection,
     people_collection,
     thread_subscriptions_collection,
@@ -16,23 +15,12 @@ from embeddings import EmbeddingService, COLLECTION_NAME
 from models import UserCreate, UserUpdate
 import storage
 
-# Mirror of main.py's defaults so we can seed a brand-new invitee with the
-# same baseline (one default thread + five default categories) without
-# waiting for the next backend startup.
-DEFAULT_CATEGORIES = [
-    {"name": "career",    "label": "Career",    "color": "blue"},
-    {"name": "travel",    "label": "Travel",    "color": "emerald"},
-    {"name": "milestone", "label": "Milestone", "color": "violet"},
-    {"name": "family",    "label": "Family",    "color": "amber"},
-    {"name": "adventure", "label": "Adventure", "color": "cyan"},
-]
-
 
 async def _seed_new_user(user_id):
     """Idempotent seed of a fresh user's baseline data: one default thread
-    ('My Timeline') and the five default categories. Called from invite_user
-    so newly invited users can start using the app immediately, without
-    waiting for the next backend startup."""
+    ('My Timeline'). Called from invite_user so newly invited users can
+    start using the app immediately, without waiting for the next backend
+    startup."""
     now = datetime.now(timezone.utc)
     if await threads_collection.count_documents({"owner_id": user_id}) == 0:
         await threads_collection.insert_one({
@@ -43,12 +31,6 @@ async def _seed_new_user(user_id):
             "created_at": now,
             "updated_at": now,
         })
-    if await categories_collection.count_documents({"owner_id": user_id}) == 0:
-        docs = [
-            dict(c, owner_id=user_id, created_at=now, updated_at=now)
-            for c in DEFAULT_CATEGORIES
-        ]
-        await categories_collection.insert_many(docs)
 
 router = APIRouter(prefix="/api/users", dependencies=[Depends(require_admin)])
 embedding_service = EmbeddingService()
@@ -89,8 +71,8 @@ async def invite_user(body: UserCreate, admin=Depends(require_admin)):
     }
     result = await users_collection.insert_one(doc)
     created = await users_collection.find_one({"_id": result.inserted_id})
-    # Seed the invitee with their default thread + categories so they're not
-    # locked out of creating events until the next backend restart.
+    # Seed the invitee with their default thread so they're not locked out
+    # of creating events until the next backend restart.
     await _seed_new_user(created["_id"])
     # Send the welcome / sign-in email — best-effort. If Resend is down or the
     # address bounces, the user record still exists and the admin can resend
@@ -132,13 +114,12 @@ async def _user_footprint(user_oid: ObjectId) -> dict:
     pre-delete confirmation in the UI and for telemetry on cascade delete."""
     events = await events_collection.count_documents({"owner_id": user_oid})
     people = await people_collection.count_documents({"owner_id": user_oid})
-    categories = await categories_collection.count_documents({"owner_id": user_oid})
     media = 0
     async for doc in events_collection.find(
         {"owner_id": user_oid}, {"media": 1}
     ):
         media += len(doc.get("media") or [])
-    return {"events": events, "people": people, "categories": categories, "media": media}
+    return {"events": events, "people": people, "media": media}
 
 
 @router.get("/{user_id}/footprint")
@@ -199,7 +180,6 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
     # they hold OR that exist against their threads.
     await events_collection.delete_many({"owner_id": owner_id})
     await people_collection.delete_many({"owner_id": owner_id})
-    await categories_collection.delete_many({"owner_id": owner_id})
     await threads_collection.delete_many({"owner_id": owner_id})
     await thread_subscriptions_collection.delete_many({
         "$or": [
@@ -216,7 +196,6 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
         "email": target["email"],
         "events_deleted": counts["events"],
         "people_deleted": counts["people"],
-        "categories_deleted": counts["categories"],
         "media_deleted": media_deleted,
         "media_failed": media_failed,
     }

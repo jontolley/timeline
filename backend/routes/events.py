@@ -6,7 +6,6 @@ from pydantic import BaseModel
 from bson import ObjectId
 from auth import require_auth
 from database import (
-    categories_collection,
     events_collection,
     people_collection,
     thread_subscriptions_collection,
@@ -18,19 +17,6 @@ import storage
 
 router = APIRouter(prefix="/api/events")
 embedding_service = EmbeddingService()
-
-
-async def _validate_event_type(event_type: Optional[str], owner_id: ObjectId):
-    """Reject event_type values that don't match a category owned by the
-    current user. Skipped when None (PATCH-style updates that don't include the field)."""
-    if event_type is None:
-        return
-    exists = await categories_collection.find_one({"name": event_type, "owner_id": owner_id})
-    if not exists:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown event_type '{event_type}' — see GET /api/categories",
-        )
 
 
 async def _resolve_thread_id(thread_id: Optional[str], owner_id: ObjectId) -> ObjectId:
@@ -59,14 +45,10 @@ async def _resolve_thread_id(thread_id: Optional[str], owner_id: ObjectId) -> Ob
 
 
 async def _build_denorm_context(docs: list[dict], viewer_id) -> dict:
-    """Pre-load the foreign owners' category labels + people names for any
-    events not owned by `viewer_id`. Avoids N+1 lookups during _serialize."""
-    foreign_owner_ids = {d.get("owner_id") for d in docs if d.get("owner_id") and d.get("owner_id") != viewer_id}
-    cat_map: dict = {}  # (owner_id, name) -> {label, color}
-    if foreign_owner_ids:
-        async for c in categories_collection.find({"owner_id": {"$in": list(foreign_owner_ids)}}):
-            cat_map[(c["owner_id"], c["name"])] = {"label": c["label"], "color": c["color"]}
-
+    """Pre-load the foreign owners' people names for any events not owned by
+    `viewer_id`. Avoids N+1 lookups during _serialize. Thread name + color are
+    fetched client-side from the viewer's thread store — they're in there
+    because the viewer is subscribed to those threads."""
     people_ids: set = set()
     for d in docs:
         if d.get("owner_id") != viewer_id:
@@ -84,7 +66,7 @@ async def _build_denorm_context(docs: list[dict], viewer_id) -> dict:
         except Exception:
             pass
 
-    return {"viewer_id": viewer_id, "categories": cat_map, "people": people_map}
+    return {"viewer_id": viewer_id, "people": people_map}
 
 
 async def _serialize(doc: dict, context: dict = None) -> dict:
@@ -93,9 +75,9 @@ async def _serialize(doc: dict, context: dict = None) -> dict:
     Tolerates legacy docs that still have `photos` instead of `media`.
 
     When `context` is provided (from `_build_denorm_context`), events whose
-    owner_id != context["viewer_id"] get denormalized category + people
-    metadata embedded so the viewer's UI can render them without doing
-    cross-user lookups against stores it doesn't have access to."""
+    owner_id != context["viewer_id"] get denormalized people metadata embedded
+    so the viewer's UI can render them without doing cross-user lookups
+    against stores it doesn't have access to."""
     doc = dict(doc)
     raw_owner_id = doc.get("owner_id")
     doc["_id"] = str(doc["_id"])
@@ -143,13 +125,9 @@ async def _serialize(doc: dict, context: dict = None) -> dict:
     doc["media"] = enriched
     doc.pop("photos", None)
 
-    # Denormalize category + people for shared events so the viewer's UI can
-    # render the owner's category color/label and the owner's people names
-    # without cross-user lookups.
+    # Denormalize people names for shared events so the viewer's UI can
+    # render the owner's people names without cross-user lookups.
     if is_foreign and context is not None:
-        cat = context["categories"].get((raw_owner_id, doc.get("event_type")))
-        if cat:
-            doc["category_display"] = {"label": cat["label"], "color": cat["color"]}
         people_disp = []
         for pid in (doc.get("people") or []):
             if isinstance(pid, str):
@@ -196,7 +174,6 @@ async def _visible_thread_filter(viewer_id, thread_id_filter: Optional[list[str]
 
 @router.get("")
 async def list_events(
-    event_type: Optional[str] = None,
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
     thread_id: Optional[list[str]] = Query(None),
@@ -223,8 +200,6 @@ async def list_events(
         return []
 
     query: dict = {"thread_id": thread_clause}
-    if event_type:
-        query["event_type"] = event_type
     if tag:
         query["tags"] = tag
     if person_id:
@@ -303,7 +278,6 @@ async def list_events(
 
 @router.get("/years")
 async def list_event_years(
-    event_type: Optional[str] = None,
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
     thread_id: Optional[list[str]] = Query(None),
@@ -320,8 +294,6 @@ async def list_event_years(
         return []
 
     match: dict = {"thread_id": thread_clause}
-    if event_type:
-        match["event_type"] = event_type
     if tag:
         match["tags"] = tag
     if person_id:
@@ -341,7 +313,6 @@ async def list_event_years(
 @router.get("/search")
 async def search_events(
     q: str = "",
-    event_type: Optional[str] = None,
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
     thread_id: Optional[list[str]] = Query(None),
@@ -391,8 +362,6 @@ async def search_events(
         or_clauses.append({"people": {"$in": matching_people_ids}})
 
     query: dict = {"thread_id": thread_clause}
-    if event_type:
-        query["event_type"] = event_type
     if tag:
         query["tags"] = tag
     if person_id:
@@ -412,7 +381,6 @@ async def search_events(
 
 @router.post("")
 async def create_event(event: EventCreate, user: dict = Depends(require_auth)):
-    await _validate_event_type(event.event_type, user["_id"])
     resolved_thread = await _resolve_thread_id(event.thread_id, user["_id"])
     now = datetime.now(timezone.utc)
     doc = event.model_dump()
@@ -447,7 +415,6 @@ async def get_event(event_id: str, user: dict = Depends(require_auth)):
 
 @router.put("/{event_id}")
 async def update_event(event_id: str, event: EventUpdate, user: dict = Depends(require_auth)):
-    await _validate_event_type(event.event_type, user["_id"])
     updates = event.model_dump(exclude_unset=True)
     # If the caller is changing the thread, validate the new one before write.
     if "thread_id" in updates and updates["thread_id"] is not None:

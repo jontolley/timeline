@@ -11,7 +11,7 @@ import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
 import UnauthorizedView from './pages/UnauthorizedView'
-import { useAuthStore, useCategoryStore, useThreadStore } from './store'
+import { useAuthStore, useThreadStore } from './store'
 import { ConfirmProvider } from './lib/confirm'
 
 function UnauthedShell() {
@@ -60,7 +60,6 @@ function UnauthedShell() {
 
 export default function App() {
   const { status, check, markUnauthorized } = useAuthStore()
-  const loadCategories = useCategoryStore((s) => s.load)
   const loadThreads = useThreadStore((s) => s.load)
 
   useEffect(() => {
@@ -68,23 +67,16 @@ export default function App() {
     check()
   }, [check])
 
-  // Categories drive event colors + the type dropdown, so load them as soon
-  // as the user is authenticated. Pages read from the store synchronously.
   // Threads drive the timeline chip + filter and the EventForm thread picker.
   useEffect(() => {
     if (status === 'authenticated') {
-      const tCat = performance.now()
-      console.log('[boot] loadCategories() start')
-      loadCategories()
-        .then(() => console.log(`[boot] loadCategories() done in ${Math.round(performance.now() - tCat)}ms`))
-        .catch((err) => console.log('[boot] loadCategories() failed', err))
       const tThr = performance.now()
       console.log('[boot] loadThreads() start')
       loadThreads()
         .then(() => console.log(`[boot] loadThreads() done in ${Math.round(performance.now() - tThr)}ms`))
         .catch((err) => console.log('[boot] loadThreads() failed', err))
     }
-  }, [status, loadCategories, loadThreads])
+  }, [status, loadThreads])
 
   useEffect(() => {
     const handler = () => markUnauthorized()

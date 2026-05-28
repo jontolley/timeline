@@ -1,6 +1,5 @@
 import { create } from 'zustand'
 import { persist, createJSONStorage } from 'zustand/middleware'
-import { listCategories } from '../api/categories'
 import { listPeople } from '../api/people'
 import { listThreads } from '../api/threads'
 import { listUsers } from '../api/users'
@@ -101,7 +100,7 @@ export const useUserStore = create((set, get) => ({
 // preserves the loaded pages and the user's scroll position. Position is
 // anchored on an event _id (not a pixel offset) so it survives image-load
 // height shifts. Cache is invalidated on event create/update/delete.
-const DEFAULT_FILTERS = { event_type: '', person_ids: [], thread_ids: [] }
+const DEFAULT_FILTERS = { person_ids: [], thread_ids: [] }
 
 export const useEventStore = create((set, get) => ({
   events: [],
@@ -175,30 +174,6 @@ export const usePeopleStore = create((set, get) => ({
       set({ loading: false })
     }
   },
-}))
-
-// Categories drive event_type slugs + colors on the timeline. Loaded once
-// per session; consumers call `load()` from a useEffect and read the list /
-// byName lookup. Mutators on the Settings page call `invalidate()` then
-// re-`load(true)` so changes flow through immediately.
-export const useCategoryStore = create((set, get) => ({
-  categories: [],
-  byName: {},
-  loaded: false,
-  loading: false,
-  load: async (force = false) => {
-    if (get().loading) return
-    if (get().loaded && !force) return
-    set({ loading: true })
-    try {
-      const categories = await listCategories()
-      const byName = Object.fromEntries(categories.map((c) => [c.name, c]))
-      set({ categories, byName, loaded: true })
-    } finally {
-      set({ loading: false })
-    }
-  },
-  invalidate: () => set({ loaded: false }),
 }))
 
 // Chat session lives in the store (not component state) so it persists when
