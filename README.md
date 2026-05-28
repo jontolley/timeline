@@ -57,7 +57,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **Day One importer.** A standalone script (`tools/import_dayone.py`) ingests a Day One JSON export — entries, locations, photos, videos, audio — with Claude-summarized titles for entries that don't have one.
 - **Paginated timeline with year navigation.** Events group year → month → day with editorial month headers and a per-day date column. A sticky **year spine** on the left shows every year with a density bar (filter-aware) and jumps you directly to the first month of that year; scrolling back up lazily loads the years in between. Loads 20 events at a time in either direction. Scroll position is preserved across event-detail navigation.
 - **Auth.** Sign in with Google OAuth or a magic-link email. The users collection is the live allowlist — adding a user is an admin action in-app.
-- **Backup/restore.** Lossless JSON export scoped to the current user, with a confirmation-gated restore.
+- **Per-thread import/export.** Download a single thread (with its events and referenced people) to a JSON file from Settings → Threads, and import it back as a brand-new thread on the same or another account. Additive — never overwrites existing data; people are deduped by name so re-imports stay clean.
 - **Mobile-friendly.** Responsive layout tested on phone and desktop.
 
 ## Documentation
