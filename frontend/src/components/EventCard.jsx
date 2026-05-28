@@ -1,5 +1,4 @@
 import { useNavigate } from 'react-router-dom'
-import { hasTime, formatTime } from '../utils/date'
 import { locationDisplay } from '../utils/location'
 import { categoryClass, categoryLabel, categoryStyle } from '../utils/eventTypes'
 import { usePeopleStore, useThreadStore } from '../store'
@@ -19,22 +18,6 @@ function MapPin() {
       <circle cx="6" cy="5" r="1.2" fill="currentColor" />
     </svg>
   )
-}
-
-/** Short descriptor that sits next to the category in the meta row. */
-function deriveTypeLabel(event) {
-  if (event.end_date) {
-    const start = new Date(event.date)
-    const end = new Date(event.end_date)
-    const days = Math.max(1, Math.round((end - start) / 86400000) + 1)
-    return `trip · ${days} day${days === 1 ? '' : 's'}`
-  }
-  const media = event.media ?? event.photos ?? []
-  if (media.some((m) => (m.kind || 'photo') === 'photo')) return 'photo'
-  if (media.some((m) => m.kind === 'video')) return 'video'
-  if (media.some((m) => m.kind === 'audio')) return 'audio'
-  if (hasTime(event.date)) return formatTime(event.date)
-  return 'note'
 }
 
 export default function EventCard({ event }) {
@@ -60,7 +43,6 @@ export default function EventCard({ event }) {
     : (categoryLabel(event.event_type) || event.event_type)
 
   const location = locationDisplay(event.location)
-  const typeLabel = deriveTypeLabel(event)
 
   // Photo grid is always 4-col so every tile is the same size regardless
   // of how many photos the event has.
@@ -97,8 +79,6 @@ export default function EventCard({ event }) {
       <div className="e-meta">
         <span className="swatch" style={{ background: 'var(--cat-color)' }} aria-hidden="true" />
         <span>{catTagText}</span>
-        <span className="sep" aria-hidden="true" />
-        <span>{typeLabel}</span>
         {isShared && <span className="e-shared">shared</span>}
         {showThreadChip && thread && (
           <span className="thread-pill" style={{ '--thread-color': personColor(thread.color) }}>
