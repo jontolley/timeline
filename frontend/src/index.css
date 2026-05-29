@@ -1751,12 +1751,6 @@ a.card { text-decoration: none; }
   color: var(--ink);
   cursor: pointer;
 }
-.hs-nav-links {
-  display: flex; gap: 28px;
-  font-size: 14px; color: var(--ink-soft);
-}
-.hs-nav-links a { transition: color .2s; cursor: pointer; }
-.hs-nav-links a:hover { color: var(--ink); }
 .hs-nav-cta {
   display: inline-flex; gap: 8px; align-items: center;
   font-size: 14px;
@@ -1795,34 +1789,6 @@ a.card { text-decoration: none; }
   border-color: rgba(244,247,252,0.5);
 }
 .hs-btn-big { padding: 16px 26px; font-size: 15px; }
-
-/* ---------- BURGER + MOBILE MENU ---------- */
-.hs-burger {
-  display: none;
-  width: 42px; height: 42px;
-  border: 1px solid var(--ink);
-  background: var(--bg);
-  border-radius: 999px;
-  padding: 0; cursor: pointer;
-  align-items: center; justify-content: center;
-  flex-direction: column; gap: 4px;
-  transition: background .2s, color .2s, border-color .2s;
-  color: var(--ink);
-  position: relative; z-index: 110;
-}
-.hs-burger:hover { background: var(--bg-elev); }
-.hs-burger span {
-  display: block; width: 16px; height: 1.5px;
-  background: var(--ink); border-radius: 2px;
-  transition: transform .25s ease, opacity .2s ease, background .2s ease;
-}
-.hs-burger.is-open {
-  background: var(--ink); color: var(--bg);
-}
-.hs-burger.is-open span { background: var(--bg); }
-.hs-burger.is-open span:nth-child(1) { transform: translateY(5.5px) rotate(45deg); }
-.hs-burger.is-open span:nth-child(2) { opacity: 0; }
-.hs-burger.is-open span:nth-child(3) { transform: translateY(-5.5px) rotate(-45deg); }
 
 .hs-mobile-menu {
   position: fixed; inset: 0;
@@ -2514,12 +2480,8 @@ a.card { text-decoration: none; }
   .hs-footer-grid { grid-template-columns: 1.4fr 1fr 1fr 1fr; }
   .hs-footer-grid > div:nth-child(5) { display: none; }
   .hs-m2 { right: 14%; }
-  .hs-nav-links { gap: 22px; }
 }
 @media (max-width: 960px) {
-  .hs-nav-links { display: none; }
-  .hs-nav-cta { display: none; }
-  .hs-burger { display: inline-flex; }
   .hs-footer-grid { grid-template-columns: 1.4fr 1fr 1fr; }
   .hs-footer-grid > div:nth-child(4) { display: none; }
   .hs-h1 { font-size: clamp(52px, 9vw, 96px); }
