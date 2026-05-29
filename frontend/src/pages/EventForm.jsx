@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { attachMedia, createEvent, getEvent, updateEvent } from '../api/events'
 import { extractAudioWaveformUrl, extractPdfPosterUrl, extractVideoPosterUrl, uploadMedia } from '../api/uploads'
+import AddMediaButton from '../components/AddMediaButton'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
@@ -54,7 +55,6 @@ export default function EventForm() {
   // Parallel array of video poster URLs (null for non-video files). Populated
   // asynchronously as files are added; revoked when files are removed.
   const [pendingPosters, setPendingPosters] = useState(() => pendingMedia.map(() => null))
-  const mediaInputRef = useRef(null)
   const [photoNotice] = useState(() => {
     if (id || !prefill) return null
     if (prefill.has_exif) return 'Pre-filled from photo. Edit anything you like.'
@@ -79,9 +79,9 @@ export default function EventForm() {
   )
   useEffect(() => () => pendingMediaUrls.forEach(URL.revokeObjectURL), [pendingMediaUrls])
 
-  const handleAddMedia = (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
+  // Append files to the pending queue and kick off background poster/waveform/
+  // page-1 extraction. Shared by the file picker and the combine-to-PDF modal.
+  const appendMediaFiles = (files) => {
     if (!files.length) return
     // Add immediately with null posters; extract video posters / audio
     // waveforms in the background and patch them into pendingPosters.
@@ -464,21 +464,7 @@ export default function EventForm() {
               <label className="field-label" style={{ margin: 0 }}>
                 Media{pendingMedia.length > 0 ? ` · ${pendingMedia.length}` : ''}
               </label>
-              <button
-                type="button"
-                className="btn"
-                onClick={() => mediaInputRef.current?.click()}
-              >
-                + Add media
-              </button>
-              <input
-                ref={mediaInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/mp4,application/pdf,.jpg,.jpeg,.png,.webp,.mp4,.mov,.mp3,.m4a,.pdf"
-                multiple
-                style={{ display: 'none' }}
-                onChange={handleAddMedia}
-              />
+              <AddMediaButton onFiles={appendMediaFiles} />
             </div>
             {pendingMedia.length === 0 ? (
               <p className="field-hint" style={{ marginTop: 10 }}>

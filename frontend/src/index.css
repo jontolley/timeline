@@ -3403,6 +3403,60 @@ a.card { text-decoration: none; }
 }
 .detail-photo:hover .delete { opacity: 1; }
 
+/* Combine-to-PDF reorder strip: draggable image tiles with a page-number
+   badge and a drop-target highlight. */
+.cpdf-tile { cursor: grab; }
+.cpdf-tile:active { cursor: grabbing; }
+.cpdf-tile.drag-over {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cpdf-page-no {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+/* Touch-friendly reorder controls — always visible (no hover on mobile). */
+.cpdf-move {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+}
+.cpdf-move button {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+.cpdf-move button:disabled { opacity: 0.35; cursor: default; }
+
+/* The shared media split button sits at the right of its toolbar. */
+.photo-toolbar .media-add-split { margin-left: 0; }
+
 .detail-photos-empty {
   font-size: 12.5px;
   color: var(--ink-mute);

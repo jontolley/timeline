@@ -7,6 +7,7 @@ import { uploadMedia } from '../api/uploads'
 import { formatDateRange, shortDate } from '../utils/date'
 import { locationDisplay, locationMapUrl } from '../utils/location'
 import { useEventStore, usePeopleStore, useThreadStore } from '../store'
+import AddMediaButton from '../components/AddMediaButton'
 import PeopleChips from '../components/PeopleChips'
 import { personColor } from '../utils/colors'
 import { useAlert, useConfirm } from '../lib/confirm'
@@ -222,21 +223,7 @@ export default function EventDetail() {
   )
 }
 
-// Include both MIME types AND extensions — some browsers (Safari especially)
-// match only on extension for files like .m4a that report as audio/x-m4a.
-const MEDIA_ACCEPT = [
-  'image/jpeg', 'image/png', 'image/webp',
-  'video/mp4', 'video/quicktime',
-  'audio/mpeg', 'audio/mp4',
-  'application/pdf',
-  '.jpg', '.jpeg', '.png', '.webp',
-  '.mp4', '.mov',
-  '.mp3', '.m4a',
-  '.pdf',
-].join(',')
-
 function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
-  const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
 
   const visual = media.filter((m) => {
@@ -246,9 +233,7 @@ function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
   const audio = media.filter((m) => m.kind === 'audio')
   const pdfs = media.filter((m) => m.kind === 'pdf')
 
-  const handleChange = async (e) => {
-    const files = Array.from(e.target.files || [])
-    e.target.value = ''
+  const handleFiles = async (files) => {
     if (!files.length) return
     setUploading(true)
     try {
@@ -264,24 +249,7 @@ function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
         <span className="label">
           Media{media.length > 0 ? ` · ${media.length}` : ''}
         </span>
-        {!readOnly && (
-          <button
-            type="button"
-            className="btn"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={uploading}
-          >
-            {uploading ? 'Uploading…' : '+ Add media'}
-          </button>
-        )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept={MEDIA_ACCEPT}
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleChange}
-        />
+        {!readOnly && <AddMediaButton onFiles={handleFiles} busy={uploading} />}
       </div>
       {media.length === 0 ? (
         <p className="detail-photos-empty">No media yet.</p>

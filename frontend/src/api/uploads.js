@@ -1,14 +1,14 @@
 import { http } from './http'
 import { pdfjs } from '../lib/pdfjs'
 
-const FULL_MAX_DIM = 2000
+export const FULL_MAX_DIM = 2000
 const THUMB_MAX_DIM = 400
-const FULL_QUALITY = 0.85
+export const FULL_QUALITY = 0.85
 const THUMB_QUALITY = 0.8
 
 // Load a File into an HTMLImageElement. Modern browsers auto-apply EXIF
 // orientation when drawing to canvas, so no manual rotation handling needed.
-async function loadImage(file) {
+export async function loadImage(file) {
   const url = URL.createObjectURL(file)
   try {
     return await new Promise((resolve, reject) => {
@@ -23,7 +23,7 @@ async function loadImage(file) {
   }
 }
 
-function renderResized(img, maxDim, quality, filename) {
+export function renderResized(img, maxDim, quality, filename) {
   const longest = Math.max(img.width, img.height)
   const scale = longest > maxDim ? maxDim / longest : 1
   const width = Math.round(img.width * scale)
