@@ -14,7 +14,7 @@ The repo and package are still named `personal-timeline`; **Hindsite** is the us
 - **Vector search:** Qdrant (semantic retrieval for chat)
 - **Chat:** Anthropic Claude (default: Sonnet 4.6 for chat, Haiku 4.5 for photo captions)
 - **Embeddings:** OpenAI `text-embedding-3-small` (1536-dim)
-- **Media storage:** Cloudflare R2 (photos, videos, audio)
+- **Media storage:** Cloudflare R2 (photos, videos, audio, PDFs)
 - **Auth:** Google OAuth or magic-link email (via Resend); per-user data isolation managed in-app
 
 ## Quick start
@@ -49,7 +49,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **Threads + selective sharing.** Group events into threads (e.g. "Family travels", "Work"). Mark a thread shared and invite specific users — they see its events on their own timeline (read-only) and can toggle visibility per-thread.
 - **Chat-driven event entry.** "Add a trip to Tokyo last March with Sam" creates an event with the right type, date, and people. Relative dates ("3 days ago", "last June") are resolved against today's date.
 - **Photo-driven event entry.** Drop a photo, get an event with the date and GPS pre-filled from EXIF; optionally have Claude vision generate the title and description from the image.
-- **Photo, video, and audio attachments.** Upload to any event; videos get a poster frame and audio gets a waveform thumbnail, both rendered client-side.
+- **Photo, video, audio, and PDF attachments.** Upload to any event; videos get a poster frame, audio gets a waveform thumbnail, and PDFs get a page-1 render — all generated client-side. The event detail view opens PDFs in an inline multi-page viewer with prev/next paging.
 - **Semantic search via chat.** "Where have I travelled in the last two years?" hits a Qdrant nearest-neighbour search across your visible threads (own + subscribed) and feeds the matches to Claude as context.
 - **Keyword search on the timeline.** A toolbar search box runs a case-insensitive substring match across event title, description, location name/address, tags, and person names (debounced live as you type, no Claude/Qdrant involvement). Active filter chips narrow the results.
 - **People with color coding.** Attach people to events; filter the timeline by who was there.
