@@ -4569,6 +4569,126 @@ a.card { text-decoration: none; }
   .about-meta { grid-template-columns: 1fr; padding: 18px 20px; }
 }
 
+/* ---- Privacy page ----
+   Mirrors .about-page layout (narrow centered column, serif italic
+   accent title, mono eyebrow). Adds typography for prose sections
+   (h2, p, ul, code) since the about page doesn't need them. */
+.privacy-page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+  color: var(--ink);
+}
+/* Brand block at the top — mirrors the Topbar brand (clock mark + serif
+   "Hindsite") so the page reads as a real Hindsite page rather than a
+   stranded legal doc. Acts as a "home" link, works whether the visitor
+   is signed in (no double-brand because Topbar isn't rendered above
+   the privacy main element when this page mounts standalone) or not. */
+.privacy-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 36px;
+}
+.privacy-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink);
+}
+.privacy-brand-word {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.privacy-brand:hover .privacy-brand-word { color: var(--accent); }
+.privacy-head { margin-bottom: 32px; }
+.privacy-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.privacy-eyebrow .pip {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.privacy-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(40px, 5vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 14px;
+  color: var(--ink);
+}
+.privacy-title em { font-style: italic; color: var(--accent); }
+.privacy-updated {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  margin: 0;
+}
+.privacy-block { margin-top: 32px; font-size: 15px; line-height: 1.65; }
+.privacy-block h2 {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.privacy-block p { margin: 0 0 10px; color: var(--ink-soft); }
+.privacy-block ul {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  color: var(--ink-soft);
+}
+.privacy-block li { margin: 4px 0; }
+.privacy-block a { color: var(--accent); text-decoration: none; }
+.privacy-block a:hover { text-decoration: underline; }
+.privacy-block strong { color: var(--ink); font-weight: 600; }
+.privacy-block code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 1px 6px;
+  background: var(--feature-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink);
+}
+.privacy-back {
+  margin: 48px 0 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.privacy-back a { color: var(--accent); text-decoration: none; }
+.privacy-back a:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  .privacy-page { padding: 32px 16px calc(80px + var(--bottom-nav-h)); }
+}
+
+/* ---- Landing footer link (Privacy etc.) ---- */
+.hs-footer-link {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid currentColor;
+  opacity: 0.7;
+}
+.hs-footer-link:hover { opacity: 1; }
+
 /* =====================================================================
    iOS zoom-on-focus prevention — KEEP AT END OF FILE.
    ---------------------------------------------------------------------

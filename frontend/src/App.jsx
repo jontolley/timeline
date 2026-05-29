@@ -11,12 +11,14 @@ import SettingsView from './pages/SettingsView'
 import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
 import UnauthorizedView from './pages/UnauthorizedView'
+import PrivacyView from './pages/PrivacyView'
 import { useAuthStore, useThreadStore } from './store'
 import { ConfirmProvider } from './lib/confirm'
 
 function UnauthedShell() {
-  const isUnauthorized =
-    typeof window !== 'undefined' && window.location.pathname === '/unauthorized'
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/'
+  const isUnauthorized = pathname === '/unauthorized'
+  const isPrivacy = pathname === '/privacy'
   const unauthorizedEmail = isUnauthorized
     ? new URLSearchParams(window.location.search).get('email') || ''
     : ''
@@ -27,6 +29,12 @@ function UnauthedShell() {
   // normal sign-in form.
   const [showLogin, setShowLogin] = useState(false)
   const [showUnauthorized, setShowUnauthorized] = useState(isUnauthorized)
+
+  // /privacy is reachable from the landing-page footer and via direct link.
+  // It's static, so we render it as-is — the page's own "← Back to
+  // Hindsite" link uses a full-page <a href="/"> to return. Placed after
+  // the useState calls so the hook order stays consistent across renders.
+  if (isPrivacy) return <PrivacyView />
 
   const clearUnauthorizedUrl = () => {
     if (typeof window !== 'undefined' && window.history?.replaceState) {
@@ -110,6 +118,7 @@ export default function App() {
         <Route path="/chat" element={<ChatView />} />
         <Route path="/settings" element={<SettingsView />} />
         <Route path="/about" element={<AboutView />} />
+        <Route path="/privacy" element={<PrivacyView />} />
         {/* Old pre-Settings paths redirect to the matching tab. */}
         <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
         <Route path="/backup" element={<Navigate to="/settings?tab=threads" replace />} />

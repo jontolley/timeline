@@ -83,6 +83,7 @@ export default function LandingPage({ onEnter }) {
 
         <div className="hs-footer-bottom">
           <span>© {new Date().getFullYear()} Hindsite · Look back, on purpose.</span>
+          <a href="/privacy" className="hs-footer-link">Privacy</a>
         </div>
       </footer>
     </div>
