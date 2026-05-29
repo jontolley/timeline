@@ -458,13 +458,14 @@ async def delete_event(event_id: str, user: dict = Depends(require_auth)):
 
 
 class MediaAttachRequest(BaseModel):
-    kind: str = "photo"  # photo | video | audio
+    kind: str = "photo"  # photo | video | audio | pdf
     key: str
     thumb_key: Optional[str] = None
     content_type: str
     width: Optional[int] = None
     height: Optional[int] = None
     duration_seconds: Optional[float] = None
+    page_count: Optional[int] = None
 
 
 @router.post("/{event_id}/media")
@@ -472,7 +473,7 @@ async def attach_media(event_id: str, media: MediaAttachRequest, user: dict = De
     if not storage.is_configured():
         raise HTTPException(status_code=503, detail="Storage backend not configured")
 
-    if media.kind not in {"photo", "video", "audio"}:
+    if media.kind not in {"photo", "video", "audio", "pdf"}:
         raise HTTPException(status_code=400, detail=f"Unsupported media kind: {media.kind}")
 
     if not await storage.object_exists(media.key):
@@ -487,6 +488,7 @@ async def attach_media(event_id: str, media: MediaAttachRequest, user: dict = De
         "width": media.width,
         "height": media.height,
         "duration_seconds": media.duration_seconds,
+        "page_count": media.page_count,
         "uploaded_at": now,
     }
     result = await events_collection.update_one(

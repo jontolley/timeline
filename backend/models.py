@@ -15,16 +15,18 @@ class MediaKind(str, Enum):
     photo = "photo"
     video = "video"
     audio = "audio"
+    pdf = "pdf"
 
 
 class MediaRef(BaseModel):
     kind: MediaKind = MediaKind.photo
     key: str
-    thumb_key: Optional[str] = None  # photo thumbnail or video poster frame; absent for audio
+    thumb_key: Optional[str] = None  # photo thumb, video poster, audio waveform, or pdf page-1 render
     content_type: str
     width: Optional[int] = None
     height: Optional[int] = None
     duration_seconds: Optional[float] = None  # set for video/audio
+    page_count: Optional[int] = None  # set for pdf
     uploaded_at: Optional[datetime] = None
 
 

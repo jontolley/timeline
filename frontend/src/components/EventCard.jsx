@@ -108,7 +108,9 @@ export default function EventCard({ event }) {
               >
                 {!src && kind === 'audio' && <span aria-hidden="true">♪ audio</span>}
                 {!src && kind === 'video' && <span aria-hidden="true">video</span>}
+                {!src && kind === 'pdf' && <span aria-hidden="true">📄 PDF</span>}
                 {kind === 'video' && src && <span className="media-badge" aria-hidden="true">▶</span>}
+                {kind === 'pdf' && src && <span className="media-badge pdf" aria-hidden="true">PDF</span>}
                 {isLast && extra > 0 && (
                   <div className="ph-more">+{extra}</div>
                 )}

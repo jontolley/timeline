@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { attachMedia, createEvent, getEvent, updateEvent } from '../api/events'
-import { extractAudioWaveformUrl, extractVideoPosterUrl, uploadMedia } from '../api/uploads'
+import { extractAudioWaveformUrl, extractPdfPosterUrl, extractVideoPosterUrl, uploadMedia } from '../api/uploads'
 import TagInput from '../components/TagInput'
 import LocationPicker from '../components/LocationPicker'
 import PeoplePicker from '../components/PeoplePicker'
@@ -89,11 +89,15 @@ export default function EventForm() {
       const baseIdx = arr.length
       files.forEach((file, i) => {
         const type = file.type || ''
+        const ext = (file.name.split('.').pop() || '').toLowerCase()
+        const isPdf = type === 'application/pdf' || ext === 'pdf'
         const extractor = type.startsWith('video/')
           ? extractVideoPosterUrl
           : type.startsWith('audio/')
             ? extractAudioWaveformUrl
-            : null
+            : isPdf
+              ? extractPdfPosterUrl
+              : null
         if (!extractor) return
         extractor(file)
           .then((url) => {
@@ -470,7 +474,7 @@ export default function EventForm() {
               <input
                 ref={mediaInputRef}
                 type="file"
-                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/mp4,.jpg,.jpeg,.png,.webp,.mp4,.mov,.mp3,.m4a"
+                accept="image/jpeg,image/png,image/webp,video/mp4,video/quicktime,audio/mpeg,audio/mp4,application/pdf,.jpg,.jpeg,.png,.webp,.mp4,.mov,.mp3,.m4a,.pdf"
                 multiple
                 style={{ display: 'none' }}
                 onChange={handleAddMedia}
@@ -478,13 +482,20 @@ export default function EventForm() {
             </div>
             {pendingMedia.length === 0 ? (
               <p className="field-hint" style={{ marginTop: 10 }}>
-                Photos, videos, or audio you add here will attach when you save.
+                Photos, videos, audio, or PDFs you add here will attach when you save.
               </p>
             ) : (
               <div className="detail-photos" style={{ marginTop: 10 }}>
                 {pendingMedia.map((file, i) => {
                   const t = file.type || ''
-                  const kind = t.startsWith('video/') ? 'video' : t.startsWith('audio/') ? 'audio' : 'photo'
+                  const ext = (file.name.split('.').pop() || '').toLowerCase()
+                  const kind = t.startsWith('video/')
+                    ? 'video'
+                    : t.startsWith('audio/')
+                      ? 'audio'
+                      : t === 'application/pdf' || ext === 'pdf'
+                        ? 'pdf'
+                        : 'photo'
                   const posterUrl = pendingPosters[i]
                   return (
                     <div key={`${file.name}-${i}`} className={`detail-photo media-${kind}`}>
@@ -501,11 +512,18 @@ export default function EventForm() {
                         <div className="tile">
                           <img src={posterUrl} alt="" loading="lazy" />
                         </div>
+                      ) : kind === 'pdf' && posterUrl ? (
+                        <div className="tile">
+                          <img src={posterUrl} alt="" loading="lazy" />
+                          <span className="media-badge pdf" aria-hidden="true">PDF</span>
+                        </div>
                       ) : (
                         <div className="audio-placeholder">
-                          <span className="audio-placeholder-icon" aria-hidden="true">♪</span>
+                          <span className="audio-placeholder-icon" aria-hidden="true">
+                            {kind === 'pdf' ? '📄' : '♪'}
+                          </span>
                           <span className="audio-placeholder-label">
-                            {kind === 'video' ? 'Video' : 'Audio'}
+                            {kind === 'video' ? 'Video' : kind === 'pdf' ? 'PDF' : 'Audio'}
                           </span>
                         </div>
                       )}

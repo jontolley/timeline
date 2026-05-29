@@ -29,7 +29,16 @@ ALLOWED_AUDIO_TYPES = {
     "audio/mp4",   # .m4a
 }
 
-ALLOWED_MEDIA_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES | ALLOWED_AUDIO_TYPES
+ALLOWED_DOCUMENT_TYPES = {
+    "application/pdf",
+}
+
+ALLOWED_MEDIA_TYPES = (
+    ALLOWED_IMAGE_TYPES
+    | ALLOWED_VIDEO_TYPES
+    | ALLOWED_AUDIO_TYPES
+    | ALLOWED_DOCUMENT_TYPES
+)
 
 EXT_FOR_TYPE = {
     "image/jpeg": "jpg",
@@ -39,6 +48,7 @@ EXT_FOR_TYPE = {
     "video/quicktime": "mov",
     "audio/mpeg": "mp3",
     "audio/mp4": "m4a",
+    "application/pdf": "pdf",
 }
 
 # Maps MIME type → MediaKind value (kept here so frontend/backend agree).
@@ -46,6 +56,7 @@ KIND_FOR_TYPE = {
     **{t: "photo" for t in ALLOWED_IMAGE_TYPES},
     **{t: "video" for t in ALLOWED_VIDEO_TYPES},
     **{t: "audio" for t in ALLOWED_AUDIO_TYPES},
+    **{t: "pdf" for t in ALLOWED_DOCUMENT_TYPES},
 }
 
 _session = aioboto3.Session()

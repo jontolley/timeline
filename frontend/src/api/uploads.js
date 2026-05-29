@@ -1,4 +1,5 @@
 import { http } from './http'
+import { pdfjs } from '../lib/pdfjs'
 
 const FULL_MAX_DIM = 2000
 const THUMB_MAX_DIM = 400
@@ -84,6 +85,7 @@ const EXT_TO_MIME = {
   mov: 'video/quicktime',
   mp3: 'audio/mpeg',
   m4a: 'audio/mp4',
+  pdf: 'application/pdf',
 }
 const ALLOWED_MIMES = new Set(Object.values(EXT_TO_MIME))
 
@@ -356,6 +358,84 @@ async function uploadAudio(file) {
   }
 }
 
+// Render page 1 of a PDF File to a JPEG thumbnail at THUMB_MAX_DIM longest edge.
+// Returns { file, width, height, pageCount } so the caller can both upload the
+// thumb and pick up the page count for the media metadata.
+async function generatePdfPageOneThumb(file) {
+  const arrayBuffer = await file.arrayBuffer()
+  const doc = await pdfjs.getDocument({ data: arrayBuffer }).promise
+  try {
+    const pageCount = doc.numPages
+    const page = await doc.getPage(1)
+    const baseViewport = page.getViewport({ scale: 1 })
+    const longest = Math.max(baseViewport.width, baseViewport.height)
+    const scale = longest > 0 ? THUMB_MAX_DIM / longest : 1
+    const viewport = page.getViewport({ scale })
+    const width = Math.round(viewport.width)
+    const height = Math.round(viewport.height)
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, width, height)
+    await page.render({ canvas, canvasContext: ctx, viewport }).promise
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('PDF thumb encoding failed'))),
+        'image/jpeg',
+        THUMB_QUALITY,
+      )
+    })
+    return {
+      file: new File([blob], 'pdf-page-1.jpg', { type: 'image/jpeg' }),
+      width,
+      height,
+      pageCount,
+    }
+  } finally {
+    doc.destroy?.()
+  }
+}
+
+// Preview helper for the EventForm queue — returns an object URL of the page-1
+// thumb. Caller revokes when done.
+export async function extractPdfPosterUrl(file) {
+  const { file: thumbFile } = await generatePdfPageOneThumb(file)
+  return URL.createObjectURL(thumbFile)
+}
+
+async function uploadPdf(file) {
+  // Render page-1 thumb first; we want pageCount + a poster regardless of
+  // upload order. If rendering fails (encrypted PDF, etc.) we still attach
+  // the original without a thumb.
+  let thumb = null
+  try {
+    thumb = await generatePdfPageOneThumb(file)
+  } catch {
+    // Best-effort — PDF still attaches without poster.
+  }
+  const fullPromise = putToR2({ file, width: null, height: null })
+  let thumbMeta = null
+  if (thumb) {
+    try {
+      thumbMeta = await putToR2({ file: thumb.file, width: thumb.width, height: thumb.height })
+    } catch {
+      // Best-effort.
+    }
+  }
+  const fullMeta = await fullPromise
+  return {
+    kind: 'pdf',
+    key: fullMeta.key,
+    thumb_key: thumbMeta?.key || null,
+    content_type: fullMeta.content_type,
+    width: thumb?.width || null,
+    height: thumb?.height || null,
+    page_count: thumb?.pageCount ?? null,
+  }
+}
+
 // Routes a File to the right upload pipeline based on its MIME type
 // (with extension fallback for files the browser tags weirdly, e.g. m4a).
 export async function uploadMedia(file) {
@@ -363,5 +443,6 @@ export async function uploadMedia(file) {
   if (type.startsWith('image/')) return uploadPhoto(file)
   if (type.startsWith('video/')) return uploadVideo(file)
   if (type.startsWith('audio/')) return uploadAudio(file)
+  if (type === 'application/pdf') return uploadPdf(file)
   throw new Error(`Unsupported media type: ${type || 'unknown'}`)
 }

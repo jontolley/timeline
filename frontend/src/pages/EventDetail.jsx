@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { MapContainer, TileLayer, Marker } from 'react-leaflet'
+import { Document, Page } from 'react-pdf'
 import { getEvent, deleteEvent, attachMedia, removeMedia } from '../api/events'
 import { uploadMedia } from '../api/uploads'
 import { formatDateRange, shortDate } from '../utils/date'
@@ -9,6 +10,9 @@ import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
 import { personColor } from '../utils/colors'
 import { useAlert, useConfirm } from '../lib/confirm'
+import '../lib/pdfjs'
+import 'react-pdf/dist/Page/AnnotationLayer.css'
+import 'react-pdf/dist/Page/TextLayer.css'
 
 async function geocodeLocation(loc) {
   const q = loc.address || loc.name
@@ -176,7 +180,10 @@ export default function EventDetail() {
 
       {lightboxIndex !== null && (
         <Lightbox
-          items={(event.media || event.photos || []).filter((m) => (m.kind || 'photo') !== 'audio')}
+          items={(event.media || event.photos || []).filter((m) => {
+            const k = m.kind || 'photo'
+            return k !== 'audio' && k !== 'pdf'
+          })}
           index={lightboxIndex}
           onClose={() => setLightboxIndex(null)}
           onChange={setLightboxIndex}
@@ -221,17 +228,23 @@ const MEDIA_ACCEPT = [
   'image/jpeg', 'image/png', 'image/webp',
   'video/mp4', 'video/quicktime',
   'audio/mpeg', 'audio/mp4',
+  'application/pdf',
   '.jpg', '.jpeg', '.png', '.webp',
   '.mp4', '.mov',
   '.mp3', '.m4a',
+  '.pdf',
 ].join(',')
 
 function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
   const fileInputRef = useRef(null)
   const [uploading, setUploading] = useState(false)
 
-  const visual = media.filter((m) => (m.kind || 'photo') !== 'audio')
+  const visual = media.filter((m) => {
+    const k = m.kind || 'photo'
+    return k !== 'audio' && k !== 'pdf'
+  })
   const audio = media.filter((m) => m.kind === 'audio')
+  const pdfs = media.filter((m) => m.kind === 'pdf')
 
   const handleChange = async (e) => {
     const files = Array.from(e.target.files || [])
@@ -330,8 +343,126 @@ function MediaSection({ media, onSelect, onDelete, onOpen, readOnly = false }) {
               ))}
             </div>
           )}
+          {pdfs.length > 0 && (
+            <div className="detail-pdf-list">
+              {pdfs.map((m) => (
+                <PdfViewer
+                  key={m.key}
+                  item={m}
+                  onDelete={readOnly ? null : () => onDelete(m.key)}
+                />
+              ))}
+            </div>
+          )}
         </>
       )}
+    </div>
+  )
+}
+
+function PdfViewer({ item, onDelete }) {
+  const containerRef = useRef(null)
+  const [numPages, setNumPages] = useState(item.page_count || null)
+  const [pageNumber, setPageNumber] = useState(1)
+  const [width, setWidth] = useState(0)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width
+      if (w > 0) setWidth(Math.floor(w))
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+
+  const goPrev = () => setPageNumber((n) => Math.max(1, n - 1))
+  const goNext = () => setPageNumber((n) => Math.min(numPages || n, n + 1))
+  const total = numPages || item.page_count || '?'
+
+  if (!item.url) {
+    return (
+      <div className="detail-pdf-row">
+        <span className="media-fallback">PDF unavailable</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="detail-pdf-row">
+      <div className="detail-pdf-toolbar">
+        <span className="media-badge pdf static" aria-hidden="true">PDF</span>
+        <div className="detail-pdf-pager">
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={goPrev}
+            disabled={pageNumber <= 1}
+            aria-label="Previous page"
+          >
+            ‹
+          </button>
+          <span className="detail-pdf-pagenum mono">
+            {pageNumber} / {total}
+          </span>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            onClick={goNext}
+            disabled={!!numPages && pageNumber >= numPages}
+            aria-label="Next page"
+          >
+            ›
+          </button>
+        </div>
+        <div className="detail-pdf-actions">
+          <a
+            href={item.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn btn-ghost"
+            title="Open in new tab"
+          >
+            ↗
+          </a>
+          {onDelete && (
+            <button
+              type="button"
+              className="audio-remove"
+              onClick={onDelete}
+              aria-label="Remove PDF"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="detail-pdf-canvas" ref={containerRef}>
+        {error ? (
+          <span className="media-fallback">{error}</span>
+        ) : (
+          <Document
+            file={item.url}
+            onLoadSuccess={({ numPages: n }) => {
+              setNumPages(n)
+              setError(null)
+            }}
+            onLoadError={() => setError('Could not load PDF')}
+            loading={<span className="muted small">Loading PDF…</span>}
+          >
+            {width > 0 && (
+              <Page
+                pageNumber={pageNumber}
+                width={width}
+                renderTextLayer={false}
+                renderAnnotationLayer={false}
+              />
+            )}
+          </Document>
+        )}
+      </div>
     </div>
   )
 }
