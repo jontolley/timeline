@@ -1,4 +1,5 @@
 import { FULL_MAX_DIM, FULL_QUALITY, loadImage, renderResized } from '../api/uploads'
+import { scanDocument } from './documentScan'
 
 // HEIC/HEIF aren't decodable via <img> outside Safari, so we route them
 // through heic2any (lazy-loaded — it's large and only needed for Apple photos).
@@ -12,7 +13,9 @@ export function isHeic(file) {
 // Decode an image File to resized JPEG bytes suitable for embedding in a PDF.
 // HEIC is converted to JPEG first so it works in every browser; everything
 // else goes straight through the canvas resize used by the photo upload path.
-async function decodeToJpeg(file) {
+// When documentScan is set, each image is run through page detection +
+// perspective correction first, falling back to the original on failure.
+async function decodeToJpeg(file, documentScan) {
   let source = file
   if (isHeic(file)) {
     const { default: heic2any } = await import('heic2any')
@@ -22,9 +25,18 @@ async function decodeToJpeg(file) {
   }
   const { img, url } = await loadImage(source)
   try {
+    // renderResized works with any drawable (img or canvas), so the deskewed
+    // scan canvas drops straight in when detection succeeds.
+    let drawable = img
+    if (documentScan) {
+      try {
+        const scanned = await scanDocument(img)
+        if (scanned) drawable = scanned
+      } catch { /* keep the original image */ }
+    }
     const baseName = source.name.replace(/\.\w+$/, '')
     const { file: jpeg, width, height } = await renderResized(
-      img,
+      drawable,
       FULL_MAX_DIM,
       FULL_QUALITY,
       `${baseName}.jpg`,
@@ -43,13 +55,13 @@ async function decodeToJpeg(file) {
 //
 // The filename is never shown to the user (R2 generates its own key), so it
 // defaults to a GUID. onProgress(done, total) fires after each image is placed.
-export async function imagesToPdf(files, { name, onProgress } = {}) {
+export async function imagesToPdf(files, { name, onProgress, documentScan = false } = {}) {
   if (!files.length) throw new Error('No images selected')
   const { PDFDocument } = await import('pdf-lib')
   const doc = await PDFDocument.create()
 
   for (let i = 0; i < files.length; i++) {
-    const { bytes, width, height } = await decodeToJpeg(files[i])
+    const { bytes, width, height } = await decodeToJpeg(files[i], documentScan)
     const embedded = await doc.embedJpg(bytes)
     const page = doc.addPage([width, height])
     page.drawImage(embedded, { x: 0, y: 0, width, height })

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
 import { imagesToPdf, isHeic } from '../lib/imagesToPdf'
+import { warmUpDocumentScan } from '../lib/documentScan'
 
 let uid = 0
 
@@ -14,6 +15,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
   const [progress, setProgress] = useState(null) // { done, total }
   const [error, setError] = useState(null)
   const [dragOver, setDragOver] = useState(null)
+  const [docScan, setDocScan] = useState(false)
   const fileInputRef = useRef(null)
   const dragFrom = useRef(null)
 
@@ -26,6 +28,13 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
     setError(null)
     setProgress(null)
     setDragOver(null)
+    setDocScan(false)
+  }
+  // Start downloading OpenCV/jscanify the moment the box is ticked, so the
+  // first page isn't blocked on a cold ~10MB fetch at generate time.
+  const toggleDocScan = (checked) => {
+    setDocScan(checked)
+    if (checked) warmUpDocumentScan()
   }
   useEffect(() => {
     if (!open) reset()
@@ -82,7 +91,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
     try {
       const file = await imagesToPdf(
         items.map((it) => it.file),
-        { onProgress: (done, total) => setProgress({ done, total }) },
+        { documentScan: docScan, onProgress: (done, total) => setProgress({ done, total }) },
       )
       onCreate(file)
       onClose()
@@ -144,6 +153,22 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
           onChange={handleAdd}
         />
       </div>
+
+      <label className="checkbox-row" style={{ marginTop: 12 }}>
+        <input
+          type="checkbox"
+          checked={docScan}
+          onChange={(e) => toggleDocScan(e.target.checked)}
+          disabled={generating}
+        />
+        These are photos of documents — crop &amp; straighten each page
+      </label>
+      {docScan && (
+        <p className="field-hint" style={{ marginTop: 6 }}>
+          Detection is automatic and best-effort; any page it can&apos;t find is kept as-is.
+          First use loads a one-time scanner download.
+        </p>
+      )}
 
       {error && <p className="form-error" style={{ marginTop: 10 }}>{error}</p>}
 
