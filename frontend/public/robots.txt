@@ -1,0 +1,13 @@
+# Hindsite is an invite-only personal timeline app. The landing page and
+# privacy policy are public; everything else is auth-gated and not useful
+# for indexing (each URL serves the same SPA shell to crawlers).
+
+User-agent: *
+Disallow: /api/
+Disallow: /events/
+Disallow: /chat
+Disallow: /settings
+Disallow: /about
+Disallow: /people
+Disallow: /backup
+Disallow: /unauthorized

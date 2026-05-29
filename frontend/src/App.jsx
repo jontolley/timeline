@@ -12,6 +12,8 @@ import LoginView from './pages/LoginView'
 import LandingPage from './pages/LandingPage'
 import UnauthorizedView from './pages/UnauthorizedView'
 import PrivacyView from './pages/PrivacyView'
+import NotFoundView from './pages/NotFoundView'
+import ErrorBoundary from './components/ErrorBoundary'
 import { useAuthStore, useThreadStore } from './store'
 import { ConfirmProvider } from './lib/confirm'
 
@@ -103,28 +105,36 @@ export default function App() {
   }
 
   if (status === 'unauthenticated') {
-    return <UnauthedShell />
+    return (
+      <ErrorBoundary>
+        <UnauthedShell />
+      </ErrorBoundary>
+    )
   }
 
   return (
-    <ConfirmProvider>
-      <BrowserRouter>
-        <Topbar />
-        <Routes>
-        <Route path="/" element={<TimelineView />} />
-        <Route path="/events/new" element={<EventForm />} />
-        <Route path="/events/:id" element={<EventDetail />} />
-        <Route path="/events/:id/edit" element={<EventForm />} />
-        <Route path="/chat" element={<ChatView />} />
-        <Route path="/settings" element={<SettingsView />} />
-        <Route path="/about" element={<AboutView />} />
-        <Route path="/privacy" element={<PrivacyView />} />
-        {/* Old pre-Settings paths redirect to the matching tab. */}
-        <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
-        <Route path="/backup" element={<Navigate to="/settings?tab=threads" replace />} />
-      </Routes>
-      <BottomNav />
-      </BrowserRouter>
-    </ConfirmProvider>
+    <ErrorBoundary>
+      <ConfirmProvider>
+        <BrowserRouter>
+          <Topbar />
+          <Routes>
+            <Route path="/" element={<TimelineView />} />
+            <Route path="/events/new" element={<EventForm />} />
+            <Route path="/events/:id" element={<EventDetail />} />
+            <Route path="/events/:id/edit" element={<EventForm />} />
+            <Route path="/chat" element={<ChatView />} />
+            <Route path="/settings" element={<SettingsView />} />
+            <Route path="/about" element={<AboutView />} />
+            <Route path="/privacy" element={<PrivacyView />} />
+            {/* Old pre-Settings paths redirect to the matching tab. */}
+            <Route path="/people" element={<Navigate to="/settings?tab=people" replace />} />
+            <Route path="/backup" element={<Navigate to="/settings?tab=threads" replace />} />
+            {/* Catchall — must stay last. */}
+            <Route path="*" element={<NotFoundView />} />
+          </Routes>
+          <BottomNav />
+        </BrowserRouter>
+      </ConfirmProvider>
+    </ErrorBoundary>
   )
 }

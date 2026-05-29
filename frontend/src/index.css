@@ -4689,6 +4689,179 @@ a.card { text-decoration: none; }
 }
 .hs-footer-link:hover { opacity: 1; }
 
+/* ---- 404 page ----
+   Same shape as the privacy/about pages — narrow centered column with
+   the Hindsite brand block at the top so the page reads as part of the
+   app rather than a generic 404. */
+.notfound-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+  color: var(--ink);
+}
+.notfound-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 56px;
+}
+.notfound-brand-mark { display: inline-flex; color: var(--ink); }
+.notfound-brand-word {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.notfound-brand:hover .notfound-brand-word { color: var(--accent); }
+.notfound-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.notfound-eyebrow .pip {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.notfound-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(48px, 6vw, 72px);
+  line-height: 0.95;
+  letter-spacing: -0.025em;
+  margin: 0 0 18px;
+  color: var(--ink);
+}
+.notfound-title em { font-style: italic; color: var(--accent); }
+.notfound-path {
+  font-size: 15px;
+  color: var(--ink-soft);
+  margin: 0 0 14px;
+}
+.notfound-path code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 1px 6px;
+  background: var(--feature-bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  color: var(--ink);
+}
+.notfound-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 28px;
+}
+.notfound-back {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.notfound-back a { color: var(--accent); text-decoration: none; }
+.notfound-back a:hover { text-decoration: underline; }
+@media (max-width: 720px) {
+  .notfound-page { padding: 32px 16px calc(80px + var(--bottom-nav-h)); }
+}
+
+/* ---- Error boundary fallback page ----
+   Reuses the 404 shape (same narrow centered column with brand block);
+   adds a button row + collapsed details for the stack trace. */
+.errboundary-page {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 56px 32px 96px;
+  color: var(--ink);
+}
+.errboundary-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--ink);
+  text-decoration: none;
+  margin-bottom: 56px;
+}
+.errboundary-brand-mark { display: inline-flex; color: var(--ink); }
+.errboundary-brand-word {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.errboundary-brand:hover .errboundary-brand-word { color: var(--accent); }
+.errboundary-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+.errboundary-eyebrow .pip {
+  width: 5px; height: 5px; border-radius: 50%; background: var(--accent);
+}
+.errboundary-title {
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(40px, 5vw, 56px);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  margin: 0 0 18px;
+  color: var(--ink);
+}
+.errboundary-title em { font-style: italic; color: var(--accent); }
+.errboundary-body {
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+  margin: 0 0 28px;
+}
+.errboundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 0 36px;
+}
+.errboundary-details {
+  margin-top: 12px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-mute);
+}
+.errboundary-details summary {
+  cursor: pointer;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+.errboundary-details pre {
+  white-space: pre-wrap;
+  background: var(--feature-bg);
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--ink);
+  max-height: 280px;
+  overflow: auto;
+}
+@media (max-width: 720px) {
+  .errboundary-page { padding: 32px 16px calc(80px + var(--bottom-nav-h)); }
+}
+
 /* =====================================================================
    iOS zoom-on-focus prevention — KEEP AT END OF FILE.
    ---------------------------------------------------------------------
