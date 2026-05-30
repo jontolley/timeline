@@ -105,6 +105,10 @@ const DEFAULT_FILTERS = { person_ids: [], thread_ids: [] }
 export const useEventStore = create((set, get) => ({
   events: [],
   filters: DEFAULT_FILTERS,
+  // Keyword-search query. Lives in the store (not TimelineView local state) so
+  // it survives navigating to an event and back — the timeline re-filters by
+  // it on remount. Cleared explicitly via the × / Esc / year-jump paths.
+  searchQuery: '',
   // Bidirectional pagination. `hasMoreOlder` is the bottom edge (scroll down
   // loads older events); `hasMoreNewer` is the top edge (after a year-jump,
   // scroll up loads newer events back toward today). On a normal "page 1
@@ -123,6 +127,8 @@ export const useEventStore = create((set, get) => ({
       anchorId: null,
       loaded: false,
     }),
+
+  setSearchQuery: (q) => set({ searchQuery: q }),
 
   setInitialPage: (events, hasMoreOlder) =>
     set({ events, hasMoreOlder, hasMoreNewer: false, loaded: true }),

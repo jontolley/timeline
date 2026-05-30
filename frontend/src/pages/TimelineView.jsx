@@ -50,6 +50,8 @@ export default function TimelineView() {
     prependNewer,
     jumpToWindow,
     setAnchorId,
+    searchQuery,
+    setSearchQuery,
   } = useEventStore()
   const [loading, setLoading] = useState(!loaded)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -65,11 +67,11 @@ export default function TimelineView() {
   const [years, setYears] = useState([])
   const [activeYear, setActiveYear] = useState(null)
   const [filterOpen, setFilterOpen] = useState(false)
-  // Keyword-search state. Local (not in the store) so it auto-clears when
-  // the user navigates away — search isn't a "stuck" mode. While non-empty
-  // we substitute searchResults for the paginated `events` list and disable
-  // the top/bottom sentinels.
-  const [searchQuery, setSearchQuery] = useState('')
+  // Keyword-search state. `searchQuery` lives in the store so it persists when
+  // the user opens an event and returns — the timeline re-filters by it on
+  // remount. `searchResults` stays local and is refetched from the query on
+  // mount. While the query is non-empty we substitute searchResults for the
+  // paginated `events` list and disable the top/bottom sentinels.
   const [searchResults, setSearchResults] = useState([])
   // True while the debounce is waiting or the fetch is in flight, so the
   // empty state can say "searching…" instead of "no matches for X" during
