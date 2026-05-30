@@ -330,7 +330,9 @@ async def search_events(
     immediately without re-indexing event docs.
     """
     q = q.strip()
-    if not q:
+    tag = (tag or "").strip()
+    # Need at least one of a text query or a tag to search on.
+    if not q and not tag:
         return []
 
     viewer_id = user["_id"]
@@ -340,34 +342,36 @@ async def search_events(
 
     capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
 
-    needle = {"$regex": re.escape(q), "$options": "i"}
-    # Events store person refs as strings, not ObjectIds, so stringify here
-    # to match the storage type. Using ObjectIds in the $in below would
-    # silently never match.
-    matching_people_ids = [
-        str(p["_id"]) async for p in people_collection.find(
-            {"owner_id": viewer_id, "name": needle},
-            {"_id": 1},
-        )
-    ]
-
-    or_clauses = [
-        {"title": needle},
-        {"description": needle},
-        {"location.name": needle},
-        {"location.address": needle},
-        {"tags": needle},
-    ]
-    if matching_people_ids:
-        or_clauses.append({"people": {"$in": matching_people_ids}})
-
     query: dict = {"thread_id": thread_clause}
     if tag:
-        query["tags"] = tag
+        # Exact tag match, case-insensitive (tags are stored lowercased). The
+        # "#birthday" search syntax maps here — anchored so it matches the whole
+        # tag, not a substring. Used alone, or as a narrowing AND with `q`.
+        query["tags"] = {"$regex": f"^{re.escape(tag)}$", "$options": "i"}
     if person_id:
         # Filter chip narrows alongside the search match — both must hold.
         query["people"] = {"$in": person_id}
-    query["$or"] = or_clauses
+    if q:
+        needle = {"$regex": re.escape(q), "$options": "i"}
+        # Events store person refs as strings, not ObjectIds, so stringify here
+        # to match the storage type. Using ObjectIds in the $in below would
+        # silently never match.
+        matching_people_ids = [
+            str(p["_id"]) async for p in people_collection.find(
+                {"owner_id": viewer_id, "name": needle},
+                {"_id": 1},
+            )
+        ]
+        or_clauses = [
+            {"title": needle},
+            {"description": needle},
+            {"location.name": needle},
+            {"location.address": needle},
+            {"tags": needle},
+        ]
+        if matching_people_ids:
+            or_clauses.append({"people": {"$in": matching_people_ids}})
+        query["$or"] = or_clauses
 
     cursor = (
         events_collection.find(query)

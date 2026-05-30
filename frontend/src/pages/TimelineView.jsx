@@ -22,6 +22,18 @@ function buildFilterParams(filters) {
   return params
 }
 
+// A query starting with '#' is an exact tag search ("#birthday" → match the
+// tag), vs. the default substring-across-everything text match ("q"). Returns
+// null for a bare "#" (no tag yet) so the caller can skip the fetch.
+function buildSearchParams(query) {
+  const raw = query.trim()
+  if (raw.startsWith('#')) {
+    const tag = raw.slice(1).trim()
+    return tag ? { tag } : null
+  }
+  return { q: raw }
+}
+
 function buildListParams(filters, { before = null, after = null } = {}) {
   const params = { limit: PAGE_SIZE, ...buildFilterParams(filters) }
   if (before) {
@@ -168,10 +180,16 @@ export default function TimelineView() {
       setSearching(false)
       return undefined
     }
+    const searchParams = buildSearchParams(searchQuery)
+    if (!searchParams) {
+      setSearchResults([])
+      setSearching(false)
+      return undefined
+    }
     let cancelled = false
     setSearching(true)
     const handle = window.setTimeout(() => {
-      searchEvents({ q: searchQuery.trim(), ...buildFilterParams(filters) })
+      searchEvents({ ...searchParams, ...buildFilterParams(filters) })
         .then((data) => {
           if (cancelled) return
           setSearchResults(data)
