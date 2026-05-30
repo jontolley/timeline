@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
+import { MapIcon, MapPinIcon } from './Icons'
 
 const DEFAULT_CENTER = [37.7749, -122.4194]
 
@@ -133,13 +134,27 @@ function LocationPickerInner({ value, onChange }) {
   return (
     <div className="location-picker">
       <div className="location-search">
-        <input
-          type="text"
-          className="input"
-          value={query}
-          onChange={handleQueryChange}
-          placeholder="Search for a place or address…"
-        />
+        <div className="ef-ibox">
+          <span className="ef-lead"><MapPinIcon size={17} /></span>
+          <input
+            type="text"
+            className="ef-inp"
+            value={query}
+            onChange={handleQueryChange}
+            placeholder="Search for a place or address…"
+          />
+          <span className="ef-trail">
+            <button
+              type="button"
+              className={`ef-iconbtn${showMap ? ' on' : ''}`}
+              onClick={() => setShowMap((s) => !s)}
+              aria-label={showMap ? 'Hide map' : 'Pick on map'}
+              aria-pressed={showMap}
+            >
+              <MapIcon size={18} />
+            </button>
+          </span>
+        </div>
         {searching && <span className="location-searching">Searching…</span>}
         {results.length > 0 && (
           <ul className="location-results" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
@@ -153,14 +168,6 @@ function LocationPickerInner({ value, onChange }) {
           </ul>
         )}
       </div>
-
-      <button
-        type="button"
-        className="location-pick-toggle"
-        onClick={() => setShowMap((s) => !s)}
-      >
-        {showMap ? '▾ Hide map' : '▸ Pick on map'}
-      </button>
 
       {showMap && (
         <div className="location-map">

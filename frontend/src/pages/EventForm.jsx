@@ -1,14 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom'
 import { attachMedia, createEvent, getEvent, updateEvent } from '../api/events'
+import { createThread } from '../api/threads'
 import { extractAudioWaveformUrl, extractPdfPosterUrl, extractVideoPosterUrl, uploadMedia } from '../api/uploads'
 import AddMediaButton from '../components/AddMediaButton'
-import TagInput from '../components/TagInput'
+import DateField from '../components/DateField'
 import LocationPicker from '../components/LocationPicker'
-import PeoplePicker from '../components/PeoplePicker'
+import ThreadModal from '../components/ThreadModal'
+import { ArrowLeftIcon, CheckIcon, PlusIcon, XIcon } from '../components/Icons'
 import { consumePendingCaption, consumePendingPhoto } from '../lib/photoHandoff'
 import { useEventStore, usePeopleStore, useThreadStore } from '../store'
 import { useAlert } from '../lib/confirm'
+import { personColor, personInitials } from '../utils/colors'
 import { hasTime } from '../utils/date'
 
 const EMPTY_FORM = {
@@ -27,12 +30,23 @@ const EMPTY_FORM = {
   thread_id: '',
 }
 
+const EMPTY_THREAD_DRAFT = { name: '', color: 'slate', visibility: 'private' }
+
+// Local calendar date (YYYY-MM-DD). Used as the create-page default so a new
+// event lands on today unless a photo's EXIF supplies a date.
+function todayLocalIso() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 function buildInitialForm(prefill) {
-  if (!prefill) return EMPTY_FORM
+  const base = { ...EMPTY_FORM, date: todayLocalIso() }
+  if (!prefill) return base
   const hasCoords = prefill.lat != null && prefill.lng != null
   return {
-    ...EMPTY_FORM,
-    date: prefill.date || '',
+    ...base,
+    date: prefill.date || todayLocalIso(),
     includeTime: !!prefill.time,
     time: prefill.time || '',
     location: hasCoords
@@ -52,7 +66,7 @@ export default function EventForm() {
     const initial = consumePendingPhoto()
     return initial ? [initial] : []
   })
-  // Parallel array of video poster URLs (null for non-video files). Populated
+  // Parallel array of poster URLs (null for non-poster files). Populated
   // asynchronously as files are added; revoked when files are removed.
   const [pendingPosters, setPendingPosters] = useState(() => pendingMedia.map(() => null))
   const [photoNotice] = useState(() => {
@@ -62,12 +76,20 @@ export default function EventForm() {
   })
   const [captionPromise] = useState(() => (id ? null : consumePendingCaption()))
   const [captionStatus, setCaptionStatus] = useState(() => (captionPromise ? 'pending' : 'idle'))
-  // Lets us decide whether to auto-fill: only do so if the user hasn't typed.
   const titleTouchedRef = useRef(false)
   const descriptionTouchedRef = useRef(false)
+  const geoTriedRef = useRef(false)
   const [loading, setLoading] = useState(!!id)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
+  const [tagInput, setTagInput] = useState('')
+  const [tagFocus, setTagFocus] = useState(false)
+
+  // New-thread dialog (reuses the Settings → Threads modal).
+  const [threadModal, setThreadModal] = useState(null)
+  const [threadBusy, setThreadBusy] = useState(false)
+  const [threadErr, setThreadErr] = useState(null)
+
   const { people, loaded: peopleLoaded, load: loadPeople } = usePeopleStore()
   const threads = useThreadStore((s) => s.threads)
   const ownedThreads = useMemo(() => threads.filter((t) => t.is_owner), [threads])
@@ -83,8 +105,6 @@ export default function EventForm() {
   // page-1 extraction. Shared by the file picker and the combine-to-PDF modal.
   const appendMediaFiles = (files) => {
     if (!files.length) return
-    // Add immediately with null posters; extract video posters / audio
-    // waveforms in the background and patch them into pendingPosters.
     setPendingMedia((arr) => {
       const baseIdx = arr.length
       files.forEach((file, i) => {
@@ -131,15 +151,42 @@ export default function EventForm() {
     if (!peopleLoaded) loadPeople().catch(() => {})
   }, [peopleLoaded, loadPeople])
 
-  // On the create path, default the thread picker to the user's oldest owned
-  // thread once the threads store has loaded. Edit path keeps whatever the
-  // event has. Subscribed (read-only) threads are excluded — you can't write
-  // to a thread you don't own.
+  // On the create path, default the thread to the user's oldest owned thread
+  // once the store has loaded. Edit keeps whatever the event has.
   useEffect(() => {
     if (id) return
     if (!ownedThreads.length) return
     setForm((f) => (f.thread_id ? f : { ...f, thread_id: ownedThreads[0]._id }))
   }, [id, ownedThreads])
+
+  // On the create path, if a photo didn't supply a location, fall back to the
+  // browser's geolocation (reverse-geocoded to an address). Best-effort — a
+  // permission denial or error is silently ignored, and we never overwrite a
+  // location that's already set.
+  useEffect(() => {
+    if (id || geoTriedRef.current) return
+    geoTriedRef.current = true
+    if (form.location && form.location.lat != null) return
+    if (!('geolocation' in navigator)) return
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const lat = pos.coords.latitude
+        const lng = pos.coords.longitude
+        let loc = { name: '', address: '', lat, lng }
+        try {
+          const res = await fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`,
+            { headers: { 'Accept-Language': 'en' } },
+          )
+          const data = await res.json()
+          if (data.display_name) loc = { name: data.name || '', address: data.display_name, lat, lng }
+        } catch { /* keep coords-only */ }
+        setForm((f) => (f.location && f.location.lat != null ? f : { ...f, location: loc }))
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 10000, maximumAge: 600000 },
+    )
+  }, [id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!id) return
@@ -176,8 +223,6 @@ export default function EventForm() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }))
-
   const setTitle = (e) => {
     titleTouchedRef.current = true
     setForm((f) => ({ ...f, title: e.target.value }))
@@ -206,6 +251,72 @@ export default function EventForm() {
     })
     return () => { cancelled = true }
   }, [captionPromise])
+
+  // ---- date / time / range toggles ----
+  const toggleTime = () => setForm((f) => {
+    const on = !f.includeTime
+    return { ...f, includeTime: on, time: on ? f.time : '' }
+  })
+  const toggleRange = () => setForm((f) => {
+    const on = !f.includeEndDate
+    return {
+      ...f,
+      includeEndDate: on,
+      end_date: on ? f.end_date : '',
+      includeEndTime: on ? f.includeEndTime : false,
+      end_time: on ? f.end_time : '',
+    }
+  })
+  const toggleEndTime = () => setForm((f) => {
+    const on = !f.includeEndTime
+    return { ...f, includeEndTime: on, end_time: on ? f.end_time : '' }
+  })
+
+  // ---- tags ----
+  const addTag = (raw) => {
+    const trimmed = raw.trim().replace(/,$/, '').toLowerCase()
+    if (!trimmed) return
+    setForm((f) => (f.tags.includes(trimmed) ? f : { ...f, tags: [...f.tags, trimmed] }))
+  }
+  const removeTag = (tag) => setForm((f) => ({ ...f, tags: f.tags.filter((t) => t !== tag) }))
+  const onTagKeyDown = (e) => {
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault()
+      addTag(tagInput)
+      setTagInput('')
+    } else if (e.key === 'Backspace' && tagInput === '' && form.tags.length) {
+      removeTag(form.tags[form.tags.length - 1])
+    }
+  }
+
+  // ---- people ----
+  const togglePerson = (pid) => setForm((f) => ({
+    ...f,
+    people: f.people.includes(pid) ? f.people.filter((x) => x !== pid) : [...f.people, pid],
+  }))
+
+  // ---- new thread ----
+  const openNewThread = () => { setThreadErr(null); setThreadModal({ mode: 'new', draft: EMPTY_THREAD_DRAFT }) }
+  const saveThread = async (e) => {
+    e.preventDefault()
+    if (!threadModal) return
+    setThreadBusy(true)
+    setThreadErr(null)
+    try {
+      const created = await createThread({
+        name: threadModal.draft.name.trim(),
+        color: threadModal.draft.color,
+        visibility: threadModal.draft.visibility,
+      })
+      await useThreadStore.getState().load(true)
+      setForm((f) => ({ ...f, thread_id: created._id }))
+      setThreadModal(null)
+    } catch (err) {
+      setThreadErr(err.message)
+    } finally {
+      setThreadBusy(false)
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -253,225 +364,242 @@ export default function EventForm() {
     }
   }
 
-  if (loading) return <div className="page-narrow"><p className="muted small">Loading…</p></div>
+  if (loading) return <div className="eventform"><p className="muted small">Loading…</p></div>
 
   return (
-    <div className="page-narrow">
-      <Link to={id ? `/events/${id}` : '/'} className="back-link">
-        ← {id ? 'Back to event' : 'Back to timeline'}
-      </Link>
-      <h1 className="page-title" style={{ fontSize: 40, marginBottom: 28 }}>
-        {id ? 'Edit event' : 'New event'}
-      </h1>
-      {error && <p className="form-error" style={{ marginBottom: 18 }}>{error}</p>}
-      {photoNotice && (
-        <p className="form-notice" style={{ marginBottom: 18 }}>
-          {photoNotice}
-        </p>
-      )}
+    <>
+      <form className="eventform" id="eventForm" autoComplete="off" onSubmit={handleSubmit}>
+        <button type="button" className="ef-back" onClick={() => navigate(id ? `/events/${id}` : '/')}>
+          <ArrowLeftIcon size={16} /> {id ? 'Back to event' : 'Back to timeline'}
+        </button>
+        <h1 className="ef-title">{id ? 'Edit event' : 'New event'}</h1>
 
-      <form className="form" onSubmit={handleSubmit}>
-        <div className="field">
-          <label className="field-label" htmlFor="ef-title">
-            Title<span className="field-required">*</span>
-            {captionStatus === 'pending' && (
-              <span className="field-hint-inline"> · AI is captioning…</span>
-            )}
-          </label>
-          <div className={captionStatus === 'pending' ? 'skeleton-wrap' : ''}>
-            <input
-              id="ef-title"
-              className="input"
-              required
-              value={form.title}
-              onChange={setTitle}
-            />
+        {error && <p className="ef-error">{error}</p>}
+        {photoNotice && <p className="ef-notice">{photoNotice}</p>}
+
+        {/* TITLE */}
+        <div className="ef-field">
+          <div className="ef-lab">
+            Title <span className="req">*</span>
+            {captionStatus === 'pending' && <span className="ef-lab-hint">· AI is captioning…</span>}
           </div>
-        </div>
-
-        {ownedThreads.length > 1 && (
-          <div className="field">
-            <label className="field-label" htmlFor="ef-thread">
-              Thread<span className="field-required">*</span>
-            </label>
-            <select
-              id="ef-thread"
-              className="select"
-              value={form.thread_id}
-              onChange={set('thread_id')}
-            >
-              {ownedThreads.map((t) => (
-                <option key={t._id} value={t._id}>{t.name}</option>
-              ))}
-            </select>
-          </div>
-        )}
-
-        <div className="field">
-          <label className="field-label" htmlFor="ef-date">
-            Date<span className="field-required">*</span>
-          </label>
           <input
-            id="ef-date"
-            className="input"
-            type="date"
+            className="ef-inp title"
+            type="text"
+            placeholder="What happened?"
             required
-            value={form.date}
-            onChange={set('date')}
+            value={form.title}
+            onChange={setTitle}
           />
         </div>
 
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={form.includeTime}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                includeTime: e.target.checked,
-                time: e.target.checked ? f.time : '',
-              }))
-            }
-          />
-          Include time
-        </label>
-
-        {form.includeTime && (
-          <div className="field">
-            <label className="field-label" htmlFor="ef-time">Time</label>
-            <input
-              id="ef-time"
-              className="input"
-              type="time"
-              value={form.time}
-              onChange={set('time')}
-            />
+        {/* THREAD */}
+        <div className="ef-field">
+          <div className="ef-lab">Thread <span className="req">*</span></div>
+          <div className="ef-pillrow" role="group" aria-label="Thread">
+            {ownedThreads.map((t) => (
+              <button
+                key={t._id}
+                type="button"
+                className="ef-pill"
+                aria-pressed={form.thread_id === t._id}
+                onClick={() => setForm((f) => ({ ...f, thread_id: t._id }))}
+              >
+                <span className="dot" style={{ background: personColor(t.color) }} />
+                {t.name}
+              </button>
+            ))}
+            <button type="button" className="ef-pill ghost" onClick={openNewThread}>
+              <PlusIcon size={15} /> New thread
+            </button>
           </div>
-        )}
+        </div>
 
-        <label className="checkbox-row">
-          <input
-            type="checkbox"
-            checked={form.includeEndDate}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                includeEndDate: e.target.checked,
-                end_date: e.target.checked ? f.end_date : '',
-                includeEndTime: e.target.checked ? f.includeEndTime : false,
-                end_time: e.target.checked ? f.end_time : '',
-              }))
-            }
+        {/* DATE */}
+        <div className="ef-field">
+          <div className="ef-lab">Date <span className="req">*</span></div>
+          <DateField
+            id="ef-date"
+            value={form.date}
+            onChange={(v) => setForm((f) => ({ ...f, date: v }))}
+            required
           />
-          Include end date
-        </label>
 
-        {form.includeEndDate && (
-          <>
-            <div className="field">
-              <label className="field-label" htmlFor="ef-end-date">End date</label>
-              <input
-                id="ef-end-date"
-                className="input"
-                type="date"
-                value={form.end_date}
-                onChange={set('end_date')}
-                min={form.date || undefined}
-              />
-            </div>
-            <label className="checkbox-row">
-              <input
-                type="checkbox"
-                checked={form.includeEndTime}
-                onChange={(e) =>
-                  setForm((f) => ({
-                    ...f,
-                    includeEndTime: e.target.checked,
-                    end_time: e.target.checked ? f.end_time : '',
-                  }))
-                }
-              />
-              Include end time
-            </label>
-            {form.includeEndTime && (
-              <div className="field">
-                <label className="field-label" htmlFor="ef-end-time">End time</label>
-                <input
-                  id="ef-end-time"
-                  className="input"
-                  type="time"
-                  value={form.end_time}
-                  onChange={set('end_time')}
-                />
+          <div className="ef-dtoggles">
+            <button
+              type="button"
+              className="ef-dtoggle"
+              aria-pressed={form.includeTime}
+              onClick={toggleTime}
+            >
+              <span className="ic"><PlusIcon size={14} /></span> Add a time
+            </button>
+            <button
+              type="button"
+              className="ef-dtoggle"
+              aria-pressed={form.includeEndDate}
+              onClick={toggleRange}
+            >
+              <span className="ic"><PlusIcon size={14} /></span> Make it a range
+            </button>
+          </div>
+
+          <div className={`ef-reveal${form.includeTime ? ' show' : ''}`}>
+            <div className="inner">
+              <div className="ef-two">
+                <div>
+                  <div className="ef-mini-lab">Time</div>
+                  <input
+                    className="ef-inp"
+                    type="time"
+                    value={form.time}
+                    onChange={(e) => setForm((f) => ({ ...f, time: e.target.value }))}
+                  />
+                </div>
               </div>
-            )}
-          </>
-        )}
+            </div>
+          </div>
 
-        <div className="field">
-          <label className="field-label">Location</label>
+          <div className={`ef-reveal${form.includeEndDate ? ' show' : ''}`}>
+            <div className="inner">
+              <div className="ef-mini-lab">Ends</div>
+              <DateField
+                value={form.end_date}
+                onChange={(v) => setForm((f) => ({ ...f, end_date: v }))}
+                min={form.date || undefined}
+                placeholder="May 21, 1997"
+              />
+              <div className="ef-dtoggles" style={{ marginTop: 10 }}>
+                <button
+                  type="button"
+                  className="ef-dtoggle"
+                  aria-pressed={form.includeEndTime}
+                  onClick={toggleEndTime}
+                >
+                  <span className="ic"><PlusIcon size={14} /></span> Add a time
+                </button>
+              </div>
+              <div className={`ef-reveal${form.includeEndTime ? ' show' : ''}`}>
+                <div className="inner">
+                  <div className="ef-two">
+                    <div>
+                      <div className="ef-mini-lab">End time</div>
+                      <input
+                        className="ef-inp"
+                        type="time"
+                        value={form.end_time}
+                        onChange={(e) => setForm((f) => ({ ...f, end_time: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* LOCATION */}
+        <div className="ef-field">
+          <div className="ef-lab">Location</div>
           <LocationPicker
             value={form.location}
             onChange={(loc) => setForm((f) => ({ ...f, location: loc }))}
           />
         </div>
 
-        <div className="field">
-          <label className="field-label" htmlFor="ef-desc">
+        {/* DESCRIPTION */}
+        <div className="ef-field">
+          <div className="ef-lab">
             Description
-            {captionStatus === 'pending' && (
-              <span className="field-hint-inline"> · AI is captioning…</span>
-            )}
-            {captionStatus === 'error' && (
-              <span className="field-hint-inline"> · auto-caption failed — please write one</span>
-            )}
-          </label>
-          <div className={captionStatus === 'pending' ? 'skeleton-wrap' : ''}>
-            <textarea
-              id="ef-desc"
-              className="textarea"
-              rows={3}
-              spellCheck="true"
-              value={form.description}
-              onChange={setDescription}
+            {captionStatus === 'pending' && <span className="ef-lab-hint">· AI is captioning…</span>}
+            {captionStatus === 'error' && <span className="ef-lab-hint">· auto-caption failed — please write one</span>}
+          </div>
+          <textarea
+            className="ef-inp"
+            rows={3}
+            spellCheck="true"
+            placeholder="Tell the story…"
+            value={form.description}
+            onChange={setDescription}
+          />
+        </div>
+
+        {/* TAGS */}
+        <div className="ef-field">
+          <div className="ef-lab">Tags</div>
+          <div
+            className={`ef-tagbox${tagFocus ? ' focus' : ''}`}
+            onClick={(e) => { if (e.target === e.currentTarget) e.currentTarget.querySelector('input')?.focus() }}
+          >
+            {form.tags.map((tag) => (
+              <span key={tag} className="ef-chip">
+                <span>{tag}</span>
+                <span className="x" onClick={() => removeTag(tag)} role="button" aria-label={`Remove ${tag}`}>
+                  <XIcon size={13} />
+                </span>
+              </span>
+            ))}
+            <input
+              type="text"
+              value={tagInput}
+              onChange={(e) => setTagInput(e.target.value)}
+              onKeyDown={onTagKeyDown}
+              onFocus={() => setTagFocus(true)}
+              onBlur={() => { setTagFocus(false); if (tagInput.trim()) { addTag(tagInput); setTagInput('') } }}
+              placeholder="Type a tag, press Enter"
             />
           </div>
         </div>
 
-        <div className="field">
-          <label className="field-label">Tags</label>
-          <TagInput
-            tags={form.tags}
-            onChange={(tags) => setForm((f) => ({ ...f, tags }))}
-          />
-        </div>
-
-        <div className="field">
-          <label className="field-label">People</label>
-          <p className="field-hint" style={{ marginBottom: 10 }}>
+        {/* PEOPLE */}
+        <div className="ef-field">
+          <div className="ef-lab">People</div>
+          <p className="ef-help" style={{ margin: '-3px 2px 11px' }}>
             Leave empty for events not tied to a specific person.
           </p>
-          <PeoplePicker
-            people={people}
-            selectedIds={form.people}
-            onChange={(ids) => setForm((f) => ({ ...f, people: ids }))}
-          />
+          {people.length === 0 ? (
+            <p className="ef-help">
+              No people yet.{' '}
+              <Link to="/people" style={{ color: 'var(--accent)', borderBottom: '1px solid currentColor' }}>
+                Add some
+              </Link>{' '}
+              to associate with this event.
+            </p>
+          ) : (
+            <div className="ef-people" role="group" aria-label="People">
+              {people.map((p) => {
+                const selected = form.people.includes(p._id)
+                return (
+                  <button
+                    key={p._id}
+                    type="button"
+                    className="ef-person"
+                    aria-pressed={selected}
+                    onClick={() => togglePerson(p._id)}
+                  >
+                    <span className="av" style={{ background: personColor(p.color) }}>
+                      {personInitials(p.name).charAt(0)}
+                      {selected && <span className="tick"><CheckIcon size={15} /></span>}
+                    </span>
+                    {p.name}
+                  </button>
+                )
+              })}
+            </div>
+          )}
         </div>
 
+        {/* MEDIA (create only — edit manages media on the detail page) */}
         {!id && (
-          <div className="field">
-            <div className="photo-toolbar">
-              <label className="field-label" style={{ margin: 0 }}>
-                Media{pendingMedia.length > 0 ? ` · ${pendingMedia.length}` : ''}
-              </label>
+          <div className="ef-field" style={{ marginBottom: 0 }}>
+            <div className="ef-lab">Media{pendingMedia.length > 0 ? ` · ${pendingMedia.length}` : ''}</div>
+            <div className="ef-media-row">
               <AddMediaButton onFiles={appendMediaFiles} />
             </div>
             {pendingMedia.length === 0 ? (
-              <p className="field-hint" style={{ marginTop: 10 }}>
-                Photos, videos, audio, or PDFs you add here will attach when you save.
-              </p>
+              <p className="ef-help">Photos, videos, audio, or PDFs you add here will attach when you save.</p>
             ) : (
-              <div className="detail-photos" style={{ marginTop: 10 }}>
+              <div className="detail-photos" style={{ marginTop: 12 }}>
                 {pendingMedia.map((file, i) => {
                   const t = file.type || ''
                   const ext = (file.name.split('.').pop() || '').toLowerCase()
@@ -486,18 +614,14 @@ export default function EventForm() {
                   return (
                     <div key={`${file.name}-${i}`} className={`detail-photo media-${kind}`}>
                       {kind === 'photo' ? (
-                        <div className="tile">
-                          <img src={pendingMediaUrls[i]} alt="" loading="lazy" />
-                        </div>
+                        <div className="tile"><img src={pendingMediaUrls[i]} alt="" loading="lazy" /></div>
                       ) : kind === 'video' && posterUrl ? (
                         <div className="tile">
                           <img src={posterUrl} alt="" loading="lazy" />
                           <span className="media-play" aria-hidden="true">▶</span>
                         </div>
                       ) : kind === 'audio' && posterUrl ? (
-                        <div className="tile">
-                          <img src={posterUrl} alt="" loading="lazy" />
-                        </div>
+                        <div className="tile"><img src={posterUrl} alt="" loading="lazy" /></div>
                       ) : kind === 'pdf' && posterUrl ? (
                         <div className="tile">
                           <img src={posterUrl} alt="" loading="lazy" />
@@ -528,16 +652,30 @@ export default function EventForm() {
             )}
           </div>
         )}
+      </form>
 
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={saving}>
+      <div className="ef-footer">
+        <div className="ef-footer-inner">
+          <button type="submit" form="eventForm" className="ef-btn ef-save" disabled={saving}>
             {saving ? 'Saving…' : 'Save event'}
           </button>
-          <button type="button" className="btn" onClick={() => navigate(-1)}>
+          <button type="button" className="ef-btn ef-cancel" onClick={() => navigate(-1)}>
             Cancel
           </button>
+          <span className="ef-req-note"><span style={{ color: 'var(--danger)' }}>*</span> required</span>
         </div>
-      </form>
-    </div>
+      </div>
+
+      {threadModal && (
+        <ThreadModal
+          modalState={threadModal}
+          setDraft={(updater) => setThreadModal((s) => ({ ...s, draft: updater(s.draft) }))}
+          onClose={() => { setThreadModal(null); setThreadErr(null) }}
+          onSubmit={saveThread}
+          busy={threadBusy}
+          error={threadErr}
+        />
+      )}
+    </>
   )
 }
