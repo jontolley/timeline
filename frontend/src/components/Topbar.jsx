@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { useAuthStore } from '../store'
+import { useAuthStore, useThemeStore } from '../store'
 import { personInitials } from '../utils/colors'
 
 const LINKS = [
@@ -29,6 +29,8 @@ function UserMenu({ email, name, pictureUrl, onSignOut }) {
   const [open, setOpen] = useState(false)
   // If the Google avatar URL 404s/fails to load, fall back to the initial pill.
   const [imgFailed, setImgFailed] = useState(false)
+  const theme = useThemeStore((s) => s.theme)
+  const toggleTheme = useThemeStore((s) => s.toggle)
   const menuRef = useRef(null)
   const navigate = useNavigate()
 
@@ -95,6 +97,18 @@ function UserMenu({ email, name, pictureUrl, onSignOut }) {
           <button type="button" className="user-menu-item" onClick={goToSettings} role="menuitem">
             Settings
           </button>
+          <label className="user-menu-toggle">
+            <span>Dark mode</span>
+            <span className="hs-switch">
+              <input
+                type="checkbox"
+                checked={theme === 'dark'}
+                onChange={toggleTheme}
+                aria-label="Toggle dark mode"
+              />
+              <span className="hs-switch-track"><span className="hs-switch-thumb" /></span>
+            </span>
+          </label>
           <button type="button" className="user-menu-item" onClick={goToAbout} role="menuitem">
             About
           </button>

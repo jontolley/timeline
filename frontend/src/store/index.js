@@ -333,3 +333,47 @@ export const useChatStore = create(persist((set, get) => ({
     )
   },
 }))
+
+// ---------------------------------------------------------------------------
+// Theme (light / dark). Persisted to localStorage under the same key the
+// inline no-flash script in index.html reads, so the boot-time attribute and
+// the store agree. applyTheme is the single writer of the <html data-theme>
+// attribute + the iOS theme-color meta tint.
+// ---------------------------------------------------------------------------
+const THEME_KEY = 'hindsite-theme'
+
+function applyTheme(theme) {
+  const t = theme === 'dark' ? 'dark' : 'light'
+  document.documentElement.setAttribute('data-theme', t)
+  try { localStorage.setItem(THEME_KEY, t) } catch { /* private mode */ }
+  const meta = document.querySelector('meta[name="theme-color"]')
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#0d1320' : '#eef1f8')
+}
+
+function initialTheme() {
+  try {
+    const saved = localStorage.getItem(THEME_KEY)
+    if (saved === 'dark' || saved === 'light') return saved
+  } catch { /* private mode */ }
+  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
+  return 'light'
+}
+
+export const useThemeStore = create((set, get) => ({
+  theme: initialTheme(),
+  setTheme: (theme) => {
+    const t = theme === 'dark' ? 'dark' : 'light'
+    applyTheme(t)
+    set({ theme: t })
+  },
+  toggle: () => {
+    const next = get().theme === 'dark' ? 'light' : 'dark'
+    applyTheme(next)
+    set({ theme: next })
+  },
+}))
+
+// Sync the attribute + meta tint with the persisted/system value at boot. The
+// inline script already set the attribute to avoid a flash; this also keeps the
+// theme-color meta in step and reasserts state after hydration.
+applyTheme(useThemeStore.getState().theme)
