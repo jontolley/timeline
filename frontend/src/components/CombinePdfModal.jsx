@@ -132,52 +132,55 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
         </button>
       }
     >
-      <div className="photo-toolbar cpdf-toolbar">
-        <label className="field-label" style={{ margin: 0 }}>
-          Images{items.length ? ` · ${items.length}` : ''}
-        </label>
-        <button
-          type="button"
-          className="btn"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={generating}
-        >
-          + Add images
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
-          multiple
-          style={{ display: 'none' }}
-          onChange={handleAdd}
-        />
-      </div>
+      <div className="cpdf-wrap">
+        <div className="cpdf-static">
+          <div className="photo-toolbar cpdf-toolbar">
+            <label className="field-label" style={{ margin: 0 }}>
+              Images{items.length ? ` · ${items.length}` : ''}
+            </label>
+            <button
+              type="button"
+              className="btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={generating}
+            >
+              + Add images
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.jpg,.jpeg,.png,.webp,.heic,.heif"
+              multiple
+              style={{ display: 'none' }}
+              onChange={handleAdd}
+            />
+          </div>
 
-      <label className="checkbox-row cpdf-docscan" style={{ marginTop: 12 }}>
-        <input
-          type="checkbox"
-          checked={docScan}
-          onChange={(e) => toggleDocScan(e.target.checked)}
-          disabled={generating}
-        />
-        These are photos of documents — crop &amp; straighten each page
-      </label>
-      {docScan && (
-        <p className="field-hint cpdf-docscan" style={{ marginTop: 6 }}>
-          Detection is automatic and best-effort; any page it can&apos;t find is kept as-is.
-          First use loads a one-time scanner download.
-        </p>
-      )}
+          <label className="checkbox-row cpdf-docscan" style={{ marginTop: 12 }}>
+            <input
+              type="checkbox"
+              checked={docScan}
+              onChange={(e) => toggleDocScan(e.target.checked)}
+              disabled={generating}
+            />
+            These are photos of documents — crop &amp; straighten each page
+          </label>
+          {docScan && (
+            <p className="field-hint cpdf-docscan" style={{ marginTop: 6 }}>
+              Detection is automatic and best-effort; any page it can&apos;t find is kept as-is.
+              First use loads a one-time scanner download.
+            </p>
+          )}
 
-      {error && <p className="form-error" style={{ marginTop: 10 }}>{error}</p>}
+          {error && <p className="form-error" style={{ marginTop: 10 }}>{error}</p>}
+        </div>
 
       {items.length === 0 ? (
         <p className="field-hint" style={{ marginTop: 10 }}>
           Add JPEG, PNG, WebP, or HEIC images. Each image becomes one page.
         </p>
       ) : (
-        <div className="detail-photos cpdf-grid" style={{ marginTop: 10 }}>
+        <div className="detail-photos cpdf-grid cpdf-scroll" style={{ marginTop: 10 }}>
           {items.map((it, i) => (
             <div
               key={it.id}
@@ -239,6 +242,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
           ))}
         </div>
       )}
+      </div>
     </Modal>
   )
 }

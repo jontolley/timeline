@@ -3467,17 +3467,22 @@ a.card { text-decoration: none; }
 /* The shared media split button sits at the right of its toolbar. */
 .photo-toolbar .media-add-split { margin-left: 0; }
 
-/* Combine-to-PDF toolbar (Images · N + "Add images") stays pinned to the top
-   of the modal's scrolling body so it doesn't scroll out of view with the
-   thumbnails. Negative margins bleed the opaque background across the body's
-   horizontal padding so scrolled images don't peek past its edges. */
-.cpdf-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  margin: 0 -28px;
-  padding: 6px 28px 12px;
-  background: var(--bg);
+/* Combine-to-PDF: the toolbar (Images · N + "Add images") and checkbox stay
+   put while only the thumbnail grid scrolls. The wrapper fills the modal body
+   and lays out a static header above a single scrolling region, so scrolled
+   thumbnails can't peek above the toolbar (which the old sticky approach
+   allowed through the body's top padding). */
+.cpdf-wrap {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+.cpdf-static { flex: 0 0 auto; }
+.cpdf-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .detail-photos-empty {
