@@ -4,16 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Apply the saved (or system) theme before first paint to avoid a
-         light-mode flash. Mirrors initialTheme() in src/store/index.js. -->
+    <!-- Apply the saved theme before first paint to avoid a flash. We default
+         to light when nothing is saved (we deliberately do NOT follow the OS
+         prefers-color-scheme — first-time users start in light; dark is only
+         entered by an explicit toggle, which then persists). Mirrors
+         initialTheme() in src/store/index.js. -->
     <script>
       (function () {
         try {
           var t = localStorage.getItem('hindsite-theme');
-          if (t !== 'dark' && t !== 'light') {
-            t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-              ? 'dark' : 'light';
-          }
+          if (t !== 'dark' && t !== 'light') t = 'light';
           document.documentElement.setAttribute('data-theme', t);
         } catch (e) {}
       })();

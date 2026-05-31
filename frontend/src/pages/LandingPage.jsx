@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 
 function Brandmark() {
   return (
@@ -14,6 +14,28 @@ function Brandmark() {
 
 export default function LandingPage({ onEnter }) {
   const [eventCount, setEventCount] = useState(null)
+
+  // The marketing landing page is always presented in its designed (light)
+  // palette — a visitor's dark-mode preference (OS or a choice made earlier
+  // while signed in) shouldn't re-tint it. Force <html data-theme="light">
+  // while mounted and restore the real value on unmount. We poke the
+  // attribute + theme-color meta directly rather than going through the
+  // theme store so the user's *persisted* preference is left untouched.
+  // useLayoutEffect runs before paint, so a dark-default visitor never sees
+  // a dark flash of the landing page.
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const prevTheme = root.getAttribute('data-theme')
+    const meta = document.querySelector('meta[name="theme-color"]')
+    const prevMeta = meta?.getAttribute('content')
+    root.setAttribute('data-theme', 'light')
+    if (meta) meta.setAttribute('content', '#eef1f8')
+    return () => {
+      if (prevTheme) root.setAttribute('data-theme', prevTheme)
+      else root.removeAttribute('data-theme')
+      if (meta && prevMeta != null) meta.setAttribute('content', prevMeta)
+    }
+  }, [])
 
   useEffect(() => {
     let cancelled = false

@@ -355,7 +355,9 @@ function initialTheme() {
     const saved = localStorage.getItem(THEME_KEY)
     if (saved === 'dark' || saved === 'light') return saved
   } catch { /* private mode */ }
-  if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark'
+  // Default to light for first-time users. We intentionally do NOT follow the
+  // OS prefers-color-scheme — dark mode is opt-in via the toggle, and that
+  // choice is persisted to localStorage (see applyTheme) so it's remembered.
   return 'light'
 }
 
