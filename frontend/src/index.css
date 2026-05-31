@@ -3483,6 +3483,10 @@ a.card { text-decoration: none; }
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* Slack at both ends so the first/last thumbnail rows can be scrolled clear
+     of the clip edges — otherwise the bottom-anchored reorder buttons on the
+     edge tiles stay partly cut off and can't be tapped. */
+  padding: 2px 2px 16px;
 }
 
 .detail-photos-empty {
@@ -4422,6 +4426,15 @@ a.card { text-decoration: none; }
   transition: background .15s, color .15s, border-color .15s;
 }
 .hs-modal-close:hover { background: var(--bg-elev); color: var(--ink); border-color: var(--ink); }
+/* On phones the serif modal header is tall enough to crowd out the scrolling
+   body (e.g. the combine-to-PDF thumbnail grid, where the top rows ended up
+   clipped with their reorder buttons out of reach). Trim its footprint so the
+   body gets more height. Placed after the base rules so it wins on order. */
+@media (max-width: 720px) {
+  .hs-modal-head { padding: 18px 22px 12px; }
+  .hs-modal-head h3 { font-size: 26px; margin: 4px 0; }
+  .hs-modal-head .sub { font-size: 13.5px; }
+}
 .hs-modal-body { padding: 6px 28px 8px; }
 .hs-modal-body .field { margin-bottom: 18px; }
 .hs-modal-body .field-label {
