@@ -3463,6 +3463,10 @@ a.card { text-decoration: none; }
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
 }
 .cpdf-move button:disabled { opacity: 0.35; cursor: default; }
+/* The shared gallery delete button is hover-gated, which never reveals on
+   touch — keep the combine-PDF tile's remove button always visible so it's
+   usable on mobile. */
+.cpdf-tile .delete { opacity: 1; }
 
 /* The shared media split button sits at the right of its toolbar. */
 .photo-toolbar .media-add-split { margin-left: 0; }
@@ -3479,13 +3483,15 @@ a.card { text-decoration: none; }
   min-height: 0;
 }
 .cpdf-static { flex: 0 0 auto; }
+/* Plain block scroll container holding the thumbnail grid. Keeping the scroller
+   separate from the grid matters: making the grid itself the flex-item scroll
+   container made the aspect-ratio tiles collapse/overlap on iOS Safari, hiding
+   each tile's reorder buttons under the row below. The slack padding lets the
+   first/last rows scroll clear of the clip edges so their buttons are tappable. */
 .cpdf-scroll {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
-  /* Slack at both ends so the first/last thumbnail rows can be scrolled clear
-     of the clip edges — otherwise the bottom-anchored reorder buttons on the
-     edge tiles stay partly cut off and can't be tapped. */
   padding: 2px 2px 16px;
 }
 

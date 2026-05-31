@@ -175,12 +175,13 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
           {error && <p className="form-error" style={{ marginTop: 10 }}>{error}</p>}
         </div>
 
+        <div className="cpdf-scroll">
       {items.length === 0 ? (
         <p className="field-hint" style={{ marginTop: 10 }}>
           Add JPEG, PNG, WebP, or HEIC images. Each image becomes one page.
         </p>
       ) : (
-        <div className="detail-photos cpdf-grid cpdf-scroll" style={{ marginTop: 10 }}>
+        <div className="detail-photos cpdf-grid" style={{ marginTop: 10 }}>
           {items.map((it, i) => (
             <div
               key={it.id}
@@ -242,6 +243,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
           ))}
         </div>
       )}
+        </div>
       </div>
     </Modal>
   )
