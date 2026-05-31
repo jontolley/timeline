@@ -57,6 +57,7 @@ To stop everything: `docker compose down`. Data persists in `./data/mongo` and `
 - **Paginated timeline with year navigation.** Events group year → month → day with editorial month headers and a per-day date column. A sticky **year spine** on the left shows every year with a density bar (filter-aware) and jumps you directly to the first month of that year; scrolling back up lazily loads the years in between. Loads 20 events at a time in either direction. Scroll position is preserved across event-detail navigation.
 - **Auth.** Sign in with Google OAuth or a magic-link email. The users collection is the live allowlist — adding a user is an admin action in-app.
 - **Per-thread import/export.** Download a single thread (with its events and referenced people) to a JSON file from Settings → Threads, and import it back as a brand-new thread on the same or another account. Additive — never overwrites existing data; people are deduped by name so re-imports stay clean.
+- **Light & dark theme.** Toggle from the account menu. Defaults to light for new visitors (it doesn't auto-follow your OS dark preference); your choice is remembered in the browser. The marketing landing page always renders in its designed light palette.
 - **Mobile-friendly.** Responsive layout tested on phone and desktop.
 
 ## Documentation
