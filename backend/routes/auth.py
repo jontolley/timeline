@@ -1,3 +1,4 @@
+import os
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
@@ -5,6 +6,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
+
+from ratelimit import RateLimiter, client_ip
 
 from auth import (
     APP_BASE_URL,
@@ -34,6 +37,14 @@ from database import auth_codes_collection, users_collection
 
 router = APIRouter(prefix="/api/auth")
 
+# Per-IP cap on the two endpoints that send a Resend email. Defaults to 5
+# requests per hour; tune via env without a code change. See ratelimit.py for
+# the per-process caveat.
+_email_rate_limiter = RateLimiter(
+    max_requests=int(os.getenv("AUTH_EMAIL_RATE_LIMIT", "5")),
+    window_seconds=int(os.getenv("AUTH_EMAIL_RATE_WINDOW", "3600")),
+)
+
 
 def _unauthorized_redirect(email: str) -> RedirectResponse:
     """302 to the frontend's /unauthorized screen with the offending email
@@ -50,9 +61,10 @@ class LoginRequest(BaseModel):
 
 
 @router.post("/request")
-async def request_login(body: LoginRequest):
+async def request_login(body: LoginRequest, request: Request):
     """Send a magic-link email if the address is on the allowlist. Always
     returns 200 to avoid leaking which emails are allowed."""
+    _email_rate_limiter.check(client_ip(request))
     if await is_allowed(body.email):
         token = make_magic_token(body.email)
         link = f"{APP_BASE_URL}/api/auth/verify?token={token}"
@@ -103,8 +115,9 @@ class CodeExchange(BaseModel):
 
 
 @router.post("/request-code")
-async def request_code(body: CodeRequest):
+async def request_code(body: CodeRequest, request: Request):
     """Email a 6-digit login code if the address is allowlisted. Always returns 200 so callers can't probe the allowlist. Silently throttles re-requests within LOGIN_CODE_RESEND_INTERVAL_SECONDS so a stuck client can't email-bomb a user."""
+    _email_rate_limiter.check(client_ip(request))
     email = body.email.lower()
     if not await is_allowed(email):
         return {"ok": True}

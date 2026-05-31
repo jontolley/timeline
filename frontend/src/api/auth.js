@@ -27,7 +27,12 @@ export async function requestLogin(email) {
     credentials: 'include',
     body: JSON.stringify({ email }),
   })
-  if (!res.ok) throw new Error('Login request failed')
+  if (!res.ok) {
+    if (res.status === 429) {
+      throw new Error('Too many sign-in attempts. Please wait a bit and try again.')
+    }
+    throw new Error('Login request failed')
+  }
   return res.json()
 }
 
