@@ -132,7 +132,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
         </button>
       }
     >
-      <div className="photo-toolbar">
+      <div className="photo-toolbar cpdf-toolbar">
         <label className="field-label" style={{ margin: 0 }}>
           Images{items.length ? ` · ${items.length}` : ''}
         </label>
@@ -154,7 +154,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
         />
       </div>
 
-      <label className="checkbox-row" style={{ marginTop: 12 }}>
+      <label className="checkbox-row cpdf-docscan" style={{ marginTop: 12 }}>
         <input
           type="checkbox"
           checked={docScan}
@@ -164,7 +164,7 @@ export default function CombinePdfModal({ open, onClose, onCreate }) {
         These are photos of documents — crop &amp; straighten each page
       </label>
       {docScan && (
-        <p className="field-hint" style={{ marginTop: 6 }}>
+        <p className="field-hint cpdf-docscan" style={{ marginTop: 6 }}>
           Detection is automatic and best-effort; any page it can&apos;t find is kept as-is.
           First use loads a one-time scanner download.
         </p>

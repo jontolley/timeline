@@ -3467,6 +3467,19 @@ a.card { text-decoration: none; }
 /* The shared media split button sits at the right of its toolbar. */
 .photo-toolbar .media-add-split { margin-left: 0; }
 
+/* Combine-to-PDF toolbar (Images · N + "Add images") stays pinned to the top
+   of the modal's scrolling body so it doesn't scroll out of view with the
+   thumbnails. Negative margins bleed the opaque background across the body's
+   horizontal padding so scrolled images don't peek past its edges. */
+.cpdf-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  margin: 0 -28px;
+  padding: 6px 28px 12px;
+  background: var(--bg);
+}
+
 .detail-photos-empty {
   font-size: 12.5px;
   color: var(--ink-mute);
@@ -4505,6 +4518,15 @@ a.card { text-decoration: none; }
   background: var(--feature-bg);
 }
 .hs-modal-foot .actions { display: flex; gap: 10px; }
+/* On phones the full-screen sheet's footer sits just above the Safari bottom
+   toolbar, which env(safe-area-inset-bottom) doesn't account for — give the
+   buttons extra breathing room so they aren't visually blocked. Placed after
+   the base rule so it wins on source order. */
+@media (max-width: 720px) {
+  .hs-modal-foot { padding-bottom: calc(40px + env(safe-area-inset-bottom, 0px)); }
+  /* Document crop/straighten isn't offered on mobile. */
+  .cpdf-docscan { display: none; }
+}
 
 /* In-modal error / notice */
 .hs-modal-error {
