@@ -12,6 +12,7 @@
   --ink:       #131829;
   --ink-soft:  #353e58;
   --ink-mute:  #6c7589;
+  --ink-hover: #000000;        /* primary-button hover: darker than --ink */
   --line:      #c0c8dc;
   --line-soft: #dde6f4;
   --accent:    #2e5bb0;
@@ -102,6 +103,7 @@
   --ink:       #e8ecf6;   /* near-white primary text */
   --ink-soft:  #b8c2d9;
   --ink-mute:  #828ea7;
+  --ink-hover: #ffffff;   /* primary-button hover: brighter than --ink (dark text stays legible) */
   --line:      #2b3650;
   --line-soft: #222c42;
   --accent:    #5e8ae0;   /* brighter denim reads on dark */
@@ -637,7 +639,7 @@ input, select, textarea {
   border-color: var(--ink);
 }
 .btn-primary:hover {
-  background: #000;
+  background: var(--ink-hover);
   color: var(--cream);
 }
 
@@ -1878,7 +1880,7 @@ a.card { text-decoration: none; }
 }
 .hs-btn:hover { transform: translateY(-1px); }
 .hs-btn-dark { background: var(--ink); color: var(--bg); }
-.hs-btn-dark:hover { background: #000; }
+.hs-btn-dark:hover { background: var(--ink-hover); }
 .hs-btn-accent { background: var(--accent); color: var(--cream); }
 .hs-btn-accent:hover { background: var(--accent-d); }
 .hs-btn-ghost {
@@ -4318,7 +4320,7 @@ a.card { text-decoration: none; }
   cursor: pointer;
   white-space: nowrap;
 }
-.hs-invite-row .send:hover:not(:disabled) { background: #000; }
+.hs-invite-row .send:hover:not(:disabled) { background: var(--ink-hover); }
 .hs-invite-row .send:disabled { opacity: 0.55; cursor: not-allowed; }
 .hs-invite-help {
   margin: 0 0 18px;
