@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -10,9 +10,11 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { useRouter } from 'expo-router'
 import { listEvents } from '../../src/api/events'
 import type { TimelineEvent } from '../../src/api/types'
 import { useAuthStore } from '../../src/store/auth'
+import { useTimelineSignal } from '../../src/store/timeline'
 import { colors } from '../../src/theme'
 
 const PAGE_SIZE = 30
@@ -57,8 +59,10 @@ function EventRow({ event }: { event: TimelineEvent }) {
 }
 
 export default function TimelineScreen() {
+  const router = useRouter()
   const user = useAuthStore((s) => s.user)
   const signOut = useAuthStore((s) => s.signOut)
+  const refreshToken = useTimelineSignal((s) => s.refreshToken)
 
   const [events, setEvents] = useState<TimelineEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -81,6 +85,17 @@ export default function TimelineScreen() {
   useEffect(() => {
     loadFirstPage().finally(() => setLoading(false))
   }, [loadFirstPage])
+
+  // Reload (quietly, no full-screen spinner) when the Add-event screen signals
+  // a new event was created. Skip the initial render — mount already loads.
+  const firstSignal = useRef(true)
+  useEffect(() => {
+    if (firstSignal.current) {
+      firstSignal.current = false
+      return
+    }
+    void loadFirstPage()
+  }, [refreshToken, loadFirstPage])
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true)
@@ -116,9 +131,14 @@ export default function TimelineScreen() {
           <Text style={styles.h1}>Timeline</Text>
           {user ? <Text style={styles.sub}>{user.email}</Text> : null}
         </View>
-        <Pressable onPress={() => void signOut()} hitSlop={8}>
-          <Text style={styles.signOut}>Sign out</Text>
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable onPress={() => router.push('/event/new')} hitSlop={8} style={styles.addBtn}>
+            <Text style={styles.addBtnText}>＋ Add</Text>
+          </Pressable>
+          <Pressable onPress={() => void signOut()} hitSlop={8}>
+            <Text style={styles.signOut}>Sign out</Text>
+          </Pressable>
+        </View>
       </View>
 
       {loading ? (
@@ -167,6 +187,14 @@ const styles = StyleSheet.create({
   },
   h1: { fontSize: 28, fontWeight: '700', color: colors.ink },
   sub: { fontSize: 13, color: colors.inkSoft, marginTop: 2 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 16 },
+  addBtn: {
+    backgroundColor: colors.accent,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 999,
+  },
+  addBtnText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   signOut: { color: colors.accent, fontSize: 14, fontWeight: '600' },
   list: { paddingHorizontal: 16, paddingBottom: 24 },
   row: {

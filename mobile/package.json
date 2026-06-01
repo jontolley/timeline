@@ -10,6 +10,7 @@
     "tsc": "tsc --noEmit"
   },
   "dependencies": {
+    "@react-native-community/datetimepicker": "8.2.0",
     "expo": "~52.0.0",
     "expo-constants": "~17.0.0",
     "expo-file-system": "~18.0.0",

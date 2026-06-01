@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { Slot, useRouter, useSegments } from 'expo-router'
+import { Stack, useRouter, useSegments } from 'expo-router'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useAuthStore } from '../src/store/auth'
@@ -21,10 +21,13 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (status === 'loading') return
-    const inTabs = segments[0] === '(tabs)'
-    if (status === 'anon' && inTabs) {
+    // The only public route is the login screen. Anon users get pushed there
+    // from anywhere else; authed users get pushed off it into the tabs. Other
+    // authed routes (e.g. /event/new) are left alone.
+    const onLogin = segments[0] === 'login'
+    if (status === 'anon' && !onLogin) {
       router.replace('/login')
-    } else if (status === 'authed' && !inTabs) {
+    } else if (status === 'authed' && onLogin) {
       router.replace('/(tabs)')
     }
   }, [status, segments, router])
@@ -32,7 +35,9 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
-      <Slot />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="event/new" options={{ presentation: 'modal' }} />
+      </Stack>
     </SafeAreaProvider>
   )
 }
