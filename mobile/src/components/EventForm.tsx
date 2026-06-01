@@ -107,8 +107,15 @@ export default function EventForm({ eventId }: { eventId?: string }) {
 
   useEffect(() => {
     if (!eventId) return
+    // Guard against stale responses: dev double-invokes effects and the
+    // endpoint can intermittently time out, so a late reject from a discarded
+    // attempt must not clobber a good load (or vice-versa).
+    let cancelled = false
+    setLoading(true)
+    setLoadError(null)
     getEvent(eventId)
       .then((ev) => {
+        if (cancelled) return
         setTitle(ev.title)
         setDescription(ev.description || '')
         setLocationName(initialLocationName(ev.location))
@@ -116,12 +123,21 @@ export default function EventForm({ eventId }: { eventId?: string }) {
         setDate(new Date(ev.date))
         setThreadId(ev.thread_id)
         setServerMedia(ev.media || [])
+        setLoadError(null)
         // Shared (non-owned) events are read-only — update/delete are
         // owner-scoped on the backend and would 404.
         if (ev.is_owner === false) setReadOnly(true)
       })
-      .catch((e) => setLoadError(e instanceof Error ? e.message : 'Could not load event.'))
-      .finally(() => setLoading(false))
+      .catch((e) => {
+        if (cancelled) return
+        setLoadError(e instanceof Error ? e.message : 'Could not load event.')
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [eventId])
 
   const uploading = pending.some((m) => m.status === 'uploading')
