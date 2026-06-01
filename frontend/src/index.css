@@ -5192,6 +5192,9 @@ a.card { text-decoration: none; }
   box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
 }
 textarea.ef-inp { resize: vertical; min-height: 104px; line-height: 1.55; }
+/* native date/time inputs report a large intrinsic width on iOS; pin them to the
+   container so they can't force the reveal (a grid item) wider than the viewport */
+input.ef-inp[type="time"] { -webkit-appearance: none; appearance: none; min-width: 0; max-width: 100%; }
 .ef-inp.title { font-size: 18px; padding: 15px 16px; }
 
 /* input with leading icon / trailing button */
@@ -5252,7 +5255,7 @@ textarea.ef-inp { resize: vertical; min-height: 104px; line-height: 1.55; }
   display: grid; grid-template-rows: 0fr; opacity: 0;
   transition: grid-template-rows 0.22s ease, opacity 0.22s ease, margin 0.22s ease;
 }
-.ef-reveal > .inner { overflow: hidden; }
+.ef-reveal > .inner { overflow: hidden; min-width: 0; }
 .ef-reveal.show { grid-template-rows: 1fr; opacity: 1; margin-top: 12px; }
 .ef-two { display: flex; gap: 14px; flex-wrap: wrap; }
 .ef-two > div { flex: 1; min-width: 150px; }
