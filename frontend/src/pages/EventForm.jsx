@@ -40,6 +40,14 @@ function todayLocalIso() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 }
 
+// Current local wall-clock time as "HH:MM" for the <input type="time"> default
+// when the user toggles a time on without one already set.
+function nowTime() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 function buildInitialForm(prefill) {
   const base = { ...EMPTY_FORM, date: todayLocalIso() }
   if (!prefill) return base
@@ -255,7 +263,7 @@ export default function EventForm() {
   // ---- date / time / range toggles ----
   const toggleTime = () => setForm((f) => {
     const on = !f.includeTime
-    return { ...f, includeTime: on, time: on ? f.time : '' }
+    return { ...f, includeTime: on, time: on ? (f.time || nowTime()) : '' }
   })
   const toggleRange = () => setForm((f) => {
     const on = !f.includeEndDate
@@ -269,7 +277,7 @@ export default function EventForm() {
   })
   const toggleEndTime = () => setForm((f) => {
     const on = !f.includeEndTime
-    return { ...f, includeEndTime: on, end_time: on ? f.end_time : '' }
+    return { ...f, includeEndTime: on, end_time: on ? (f.end_time || nowTime()) : '' }
   })
 
   // ---- tags ----
