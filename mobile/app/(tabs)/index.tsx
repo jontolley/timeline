@@ -34,10 +34,10 @@ function formatDate(iso: string): string {
   }
 }
 
-function EventRow({ event }: { event: TimelineEvent }) {
+function EventRow({ event, onPress }: { event: TimelineEvent; onPress: () => void }) {
   const thumb = event.media?.find((m) => m.thumb_url)?.thumb_url ?? null
   return (
-    <View style={styles.row}>
+    <Pressable style={({ pressed }) => [styles.row, pressed && styles.rowPressed]} onPress={onPress}>
       {thumb ? (
         <Image source={{ uri: thumb }} style={styles.thumb} />
       ) : (
@@ -54,7 +54,7 @@ function EventRow({ event }: { event: TimelineEvent }) {
           </Text>
         ) : null}
       </View>
-    </View>
+    </Pressable>
   )
 }
 
@@ -156,7 +156,9 @@ export default function TimelineScreen() {
         <FlatList
           data={events}
           keyExtractor={(item) => item._id}
-          renderItem={({ item }) => <EventRow event={item} />}
+          renderItem={({ item }) => (
+            <EventRow event={item} onPress={() => router.push(`/event/${item._id}`)} />
+          )}
           contentContainerStyle={styles.list}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           onEndReached={loadMore}
@@ -207,6 +209,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 12,
   },
+  rowPressed: { opacity: 0.6 },
   thumb: { width: 64, height: 64, borderRadius: 10, backgroundColor: colors.bg },
   thumbEmpty: { borderWidth: 1, borderColor: colors.rule },
   rowBody: { flex: 1, justifyContent: 'center' },

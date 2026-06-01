@@ -37,6 +37,7 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="event/new" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="event/[id]" options={{ presentation: 'modal' }} />
       </Stack>
     </SafeAreaProvider>
   )

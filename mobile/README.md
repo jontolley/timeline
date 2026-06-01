@@ -75,12 +75,12 @@ Google sign-in is **not** wired up yet — see roadmap.
 - Timeline: paginated list (bidirectional cursor), pull-to-refresh, infinite scroll, thumbnails.
 - Chat: live SSE token streaming via `expo/fetch`.
 - Photo upload: full + thumbnail resize (`expo-image-manipulator`) → presigned R2 PUT. Server-side EXIF + AI caption helpers.
-- **Add event** (`app/event/new.tsx`, modal): title / date (UTC-safe) / description / location name / thread picker, plus multi-photo add → live per-tile upload → attach. On save, signals the Timeline to refresh (`src/store/timeline.ts`).
+- **Add / edit / delete event** — one shared form (`src/components/EventForm.tsx`), rendered by `app/event/new.tsx` (create) and `app/event/[id].tsx` (edit, opened by tapping a timeline row). Both present as modals. Title / date (UTC-safe) / description / location name / thread picker + photos. Create holds photos locally and includes them in `createEvent`; edit attaches/removes photos immediately via the dedicated media endpoints (`EventUpdate` has no media field) and guards date/location so an untouched edit never clobbers an existing time or coords. Delete confirms via `Alert`. Shared (non-owned) events open read-only. All paths signal the Timeline to refresh (`src/store/timeline.ts`).
 
 **Phase 2 (not yet built)**
 
-- **Edit event** + delete — `updateEvent`/`deleteEvent` are already in `events.ts`; reuse the new-event form for edit.
-- **Richer add-event fields** — end-date range, time-of-day, tags, people pills, and a real location picker (the web uses Leaflet; native could use `react-native-maps` or stay name-only). EXIF/caption auto-fill helpers exist in `uploads.ts` but aren't wired into the form yet.
+- **Richer event fields** — end-date range, time-of-day, tags, people pills, and a real location picker (the web uses Leaflet; native could use `react-native-maps` or stay name-only). EXIF/caption auto-fill helpers exist in `uploads.ts` but aren't wired into the form yet.
+- **Event detail screen** — currently a row opens straight into edit; a read view with a photo lightbox would mirror the web `EventDetail`.
 - **Native media thumbnails** for video / audio / PDF. The web app renders these client-side (canvas / Web Audio / pdf.js); native equivalents are `AVAssetImageGenerator`, a waveform render, and `PDFKit`. Until then `uploadMedia` uploads non-photos without a `thumb_key` (backend tolerates it).
 - **Native document scan** — replace the web OpenCV-WASM path with VisionKit `VNDocumentCameraViewController` (far better, free on iOS).
 - **Google Sign-In** — needs a backend endpoint that takes a Google ID token and returns a JSON session token (the current `/google/callback` is a cookie+302 web flow). Then native Google Sign-In or `expo-auth-session`.
