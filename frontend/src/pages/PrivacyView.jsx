@@ -2,6 +2,8 @@
  * page footer and from inside the authenticated app. Last updated lives at the
  * top of the page; bump it whenever the policy text changes. */
 
+import { useEffect } from 'react'
+
 const LAST_UPDATED = '2026-05-28'
 
 /* Hindsite brandmark + wordmark, matching the Topbar version exactly so
@@ -24,6 +26,17 @@ function PrivacyBrand() {
 }
 
 export default function PrivacyView() {
+  /* Override the static index.html canonical (which points at the apex
+   * homepage) so /privacy self-references rather than getting folded into
+   * "/". Restored to the homepage on unmount for SPA navigations. */
+  useEffect(() => {
+    const link = document.querySelector('link[rel="canonical"]')
+    if (!link) return
+    const prev = link.getAttribute('href')
+    link.setAttribute('href', 'https://hindsite.app/privacy')
+    return () => link.setAttribute('href', prev)
+  }, [])
+
   return (
     <main className="privacy-page">
       <PrivacyBrand />

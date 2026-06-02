@@ -25,6 +25,14 @@
     />
     <meta name="theme-color" content="#eef1f8" />
 
+    <!-- Canonical URL. The same SPA shell is served at multiple hostnames
+         (hindsite.app, the hindsite.pages.dev default domain, etc.), which
+         made Google flag "Duplicate without user-selected canonical." This
+         points every crawl at the apex so the duplicates collapse onto it.
+         Defaults to the homepage; PrivacyView overrides it to /privacy on
+         mount (the only other public, indexable route). -->
+    <link rel="canonical" href="https://hindsite.app/" />
+
     <!-- Favicons. SVG for modern browsers, ICO for legacy + Google Safe
          Browsing reputation, plus apple-touch-icon for iOS home screen. -->
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
