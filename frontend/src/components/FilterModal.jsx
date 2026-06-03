@@ -12,6 +12,7 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
   const [draft, setDraft] = useState(() => ({
     person_ids: [...(filters.person_ids ?? [])],
     thread_ids: [...(filters.thread_ids ?? [])],
+    sortBy: filters.sortBy ?? 'date',
   }))
   // Sync draft to current filters whenever the modal opens. Otherwise the
   // useState initializer above only runs once on first mount, so if filters
@@ -22,6 +23,7 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
     setDraft({
       person_ids: [...(filters.person_ids ?? [])],
       thread_ids: [...(filters.thread_ids ?? [])],
+      sortBy: filters.sortBy ?? 'date',
     })
   }, [open, filters])
   const threads = useThreadStore((s) => s.threads)
@@ -41,9 +43,13 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
       : [...d.thread_ids, id],
   }))
 
+  const setSort = (sortBy) => setDraft((d) => ({ ...d, sortBy }))
+
+  // Sort isn't a filter — it doesn't narrow the result set — so it stays out
+  // of the active count and out of "Clear".
   const activeCount = draft.person_ids.length + draft.thread_ids.length
 
-  const reset = () => setDraft({ person_ids: [], thread_ids: [] })
+  const reset = () => setDraft((d) => ({ person_ids: [], thread_ids: [], sortBy: d.sortBy }))
   const apply = () => { onApply(draft); onClose() }
 
   return (
@@ -65,6 +71,28 @@ export default function FilterModal({ open, filters, people, onClose, onApply })
         </button>
       }
     >
+      <div className="field">
+        <div className="field-label"><span>Sort by</span></div>
+        <div className="filter-row">
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={draft.sortBy !== 'created_at'}
+            onClick={() => setSort('date')}
+          >
+            Event date
+          </button>
+          <button
+            type="button"
+            className="chip"
+            aria-pressed={draft.sortBy === 'created_at'}
+            onClick={() => setSort('created_at')}
+          >
+            Date added
+          </button>
+        </div>
+      </div>
+
       {threads.length > 1 && (
         <div className="field">
           <div className="field-label"><span>Threads</span></div>

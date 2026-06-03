@@ -100,7 +100,11 @@ export const useUserStore = create((set, get) => ({
 // preserves the loaded pages and the user's scroll position. Position is
 // anchored on an event _id (not a pixel offset) so it survives image-load
 // height shifts. Cache is invalidated on event create/update/delete.
-const DEFAULT_FILTERS = { person_ids: [], thread_ids: [] }
+// `sortBy` ∈ {date, created_at} rides alongside the filter chips: 'date' sorts
+// the feed by each event's own date (default), 'created_at' by when it was
+// added. Lives here so changing it reuses setFilters' list-reset + the
+// existing `[filters]` effect dependencies.
+const DEFAULT_FILTERS = { person_ids: [], thread_ids: [], sortBy: 'date' }
 
 export const useEventStore = create((set, get) => ({
   events: [],

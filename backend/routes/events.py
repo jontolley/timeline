@@ -182,6 +182,7 @@ async def list_events(
     before_id: Optional[str] = None,
     after_date: Optional[str] = None,
     after_id: Optional[str] = None,
+    sort_by: str = "date",
     user: dict = Depends(require_auth),
 ):
     """List events the current user can see — their own plus events in any
@@ -192,6 +193,12 @@ async def list_events(
     to get *older* events; use (after_date, after_id) to get *newer* events
     (e.g. when paginating upward after jumping to a past year). Both cursors
     can be supplied to bound a window, but typically only one is set.
+
+    `sort_by` ∈ {date, created_at} picks the ordering key for the paginated
+    path: `date` (the event's own date, default) or `created_at` (when the
+    event was added). The cursor values (before_date / after_date) are
+    interpreted against the same field. The no-`limit` path always sorts by
+    date — that's the contract `tools/import_dayone.py` relies on.
     """
     viewer_id = user["_id"]
 
@@ -213,6 +220,10 @@ async def list_events(
 
     capped_limit = max(1, min(int(limit), _MAX_PAGE_SIZE))
 
+    # Ordering key for the paginated path. The cursor comparisons below use the
+    # same field so before_date/after_date are interpreted as values of it.
+    sort_field = "created_at" if sort_by == "created_at" else "date"
+
     # Cursor clauses are appended to the base query as additional $and terms.
     extra_clauses = []
 
@@ -228,12 +239,12 @@ async def list_events(
                 raise HTTPException(status_code=400, detail="Invalid before_id")
             extra_clauses.append({
                 "$or": [
-                    {"date": {"$lt": cursor_dt}},
-                    {"date": cursor_dt, "_id": {"$lt": cursor_oid}},
+                    {sort_field: {"$lt": cursor_dt}},
+                    {sort_field: cursor_dt, "_id": {"$lt": cursor_oid}},
                 ]
             })
         else:
-            extra_clauses.append({"date": {"$lt": cursor_dt}})
+            extra_clauses.append({sort_field: {"$lt": cursor_dt}})
 
     if after_date:
         try:
@@ -247,12 +258,12 @@ async def list_events(
                 raise HTTPException(status_code=400, detail="Invalid after_id")
             extra_clauses.append({
                 "$or": [
-                    {"date": {"$gt": after_dt}},
-                    {"date": after_dt, "_id": {"$gt": after_oid}},
+                    {sort_field: {"$gt": after_dt}},
+                    {sort_field: after_dt, "_id": {"$gt": after_oid}},
                 ]
             })
         else:
-            extra_clauses.append({"date": {"$gt": after_dt}})
+            extra_clauses.append({sort_field: {"$gt": after_dt}})
 
     if extra_clauses:
         query = {"$and": [query, *extra_clauses]}
@@ -262,7 +273,9 @@ async def list_events(
     # newest events overall. Sort ASC, take N, then reverse so the response is
     # always newest-first.
     upward = bool(after_date) and not before_date
-    sort_spec = [("date", 1), ("_id", 1)] if upward else [("date", -1), ("_id", -1)]
+    sort_spec = (
+        [(sort_field, 1), ("_id", 1)] if upward else [(sort_field, -1), ("_id", -1)]
+    )
 
     cursor = (
         events_collection.find(query)
@@ -281,12 +294,17 @@ async def list_event_years(
     tag: Optional[str] = None,
     person_id: Optional[list[str]] = Query(None),
     thread_id: Optional[list[str]] = Query(None),
+    sort_by: str = "date",
     user: dict = Depends(require_auth),
 ):
     """Return a year-bucket index for the timeline sidebar:
     [{ "year": 2025, "count": 14 }, …] in descending order. Respects the same
     filter set as the event list so years with zero matching events disappear
-    from the rail when filters narrow the view."""
+    from the rail when filters narrow the view.
+
+    `sort_by` matches the event list: `date` buckets by the event's own year,
+    `created_at` by the year it was added — so the rail reflects whatever the
+    feed is ordered by."""
     viewer_id = user["_id"]
 
     thread_clause, _ = await _visible_thread_filter(viewer_id, thread_id)
@@ -299,14 +317,18 @@ async def list_event_years(
     if person_id:
         match["people"] = {"$in": person_id}
 
+    sort_field = "created_at" if sort_by == "created_at" else "date"
     pipeline = [
         {"$match": match},
-        {"$group": {"_id": {"$year": "$date"}, "count": {"$sum": 1}}},
+        {"$group": {"_id": {"$year": f"${sort_field}"}, "count": {"$sum": 1}}},
         {"$sort": {"_id": -1}},
     ]
     return [
         {"year": doc["_id"], "count": doc["count"]}
         async for doc in events_collection.aggregate(pipeline)
+        # Legacy docs missing created_at yield a null year bucket; drop it so
+        # the rail never renders a blank pill.
+        if doc["_id"] is not None
     ]
 
 

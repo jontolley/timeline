@@ -36,6 +36,7 @@ function buildSearchParams(query) {
 
 function buildListParams(filters, { before = null, after = null } = {}) {
   const params = { limit: PAGE_SIZE, ...buildFilterParams(filters) }
+  if (filters.sortBy === 'created_at') params.sort_by = 'created_at'
   if (before) {
     params.before_date = before.date
     params.before_id = before.id
@@ -45,6 +46,14 @@ function buildListParams(filters, { before = null, after = null } = {}) {
     params.after_id = after.id
   }
   return params
+}
+
+// The value the feed is ordered by for a given event — the cursor key the
+// backend compares against (before_date / after_date) and the date the feed
+// is grouped/labelled by. Falls back to the event date when sorting by
+// created date but a legacy event has no created_at.
+function sortDateOf(ev, sortBy) {
+  return sortBy === 'created_at' ? (ev.created_at || ev.date) : ev.date
 }
 
 export default function TimelineView() {
@@ -65,6 +74,7 @@ export default function TimelineView() {
     searchQuery,
     setSearchQuery,
   } = useEventStore()
+  const sortBy = filters.sortBy || 'date'
   const [loading, setLoading] = useState(!loaded)
   const [loadingMore, setLoadingMore] = useState(false)
   const [loadingNewer, setLoadingNewer] = useState(false)
@@ -90,6 +100,9 @@ export default function TimelineView() {
   // the round-trip.
   const [searching, setSearching] = useState(false)
   const inSearchMode = searchQuery.trim().length > 0
+  // Keyword-search results always come back date-sorted from the backend, so
+  // group them by event date regardless of the feed's sort toggle.
+  const activeSortBy = inSearchMode ? 'date' : sortBy
   const [topbarHost, setTopbarHost] = useState(null)
   const [addMenuOpen, setAddMenuOpen] = useState(false)
   const addMenuRef = useRef(null)
@@ -164,7 +177,9 @@ export default function TimelineView() {
   // rail only lists years that actually have matching events.
   useEffect(() => {
     let cancelled = false
-    listEventYears(buildFilterParams(filters))
+    const yearParams = buildFilterParams(filters)
+    if (filters.sortBy === 'created_at') yearParams.sort_by = 'created_at'
+    listEventYears(yearParams)
       .then((data) => { if (!cancelled) setYears(data) })
       .catch(() => { if (!cancelled) setYears([]) })
     return () => { cancelled = true }
@@ -332,7 +347,9 @@ export default function TimelineView() {
     const last = events[events.length - 1]
     try {
       const page = await listEvents(
-        buildListParams(filters, { before: { date: last.date, id: last._id } }),
+        buildListParams(filters, {
+          before: { date: sortDateOf(last, filters.sortBy), id: last._id },
+        }),
       )
       appendOlder(page, page.length === PAGE_SIZE)
     } catch (err) {
@@ -359,7 +376,9 @@ export default function TimelineView() {
     }
     try {
       const page = await listEvents(
-        buildListParams(filters, { after: { date: first.date, id: first._id } }),
+        buildListParams(filters, {
+          after: { date: sortDateOf(first, filters.sortBy), id: first._id },
+        }),
       )
       // Backend returns newest-first; prepend in the same order.
       prependNewer(page, page.length === PAGE_SIZE)
@@ -479,7 +498,7 @@ export default function TimelineView() {
       // replaced event list, so the rail would stay on whatever year the user
       // had visible. Set activeYear explicitly so YearRail's auto-scroll lands
       // on the newest year (= top/left of the rail).
-      if (page.length > 0) setActiveYear(yearOf(page[0].date))
+      if (page.length > 0) setActiveYear(yearOf(sortDateOf(page[0], filters.sortBy)))
       window.scrollTo(0, 0)
     } catch (err) {
       console.error(err)
@@ -538,9 +557,12 @@ export default function TimelineView() {
     let curMonth = null
     let curDay = null
     for (const ev of feedEvents) {
-      const y = yearOf(ev.date)
-      const m = monthOf(ev.date)
-      const d = dayOf(ev.date)
+      // Group/label by whichever field the feed is ordered by, so the day,
+      // month and year headers stay monotonic within the sorted list.
+      const sd = sortDateOf(ev, activeSortBy)
+      const y = yearOf(sd)
+      const m = monthOf(sd)
+      const d = dayOf(sd)
       if (!curYear || curYear.year !== y) {
         curYear = { year: y, months: [], firstMonthFlag: true }
         years.push(curYear)
@@ -550,8 +572,8 @@ export default function TimelineView() {
       if (!curMonth || curMonth.month !== m) {
         curMonth = {
           month: m,
-          monthName: monthNameOf(ev.date),
-          sampleDate: ev.date,
+          monthName: monthNameOf(sd),
+          sampleDate: sd,
           days: [],
           count: 0,
           isFirstOfYear: curYear.months.length === 0,
@@ -560,14 +582,14 @@ export default function TimelineView() {
         curDay = null
       }
       if (!curDay || curDay.day !== d) {
-        curDay = { day: d, sampleDate: ev.date, events: [] }
+        curDay = { day: d, sampleDate: sd, events: [] }
         curMonth.days.push(curDay)
       }
       curDay.events.push(ev)
       curMonth.count += 1
     }
     return years
-  }, [feedEvents])
+  }, [feedEvents, activeSortBy])
 
   const earliestYear = useMemo(() => {
     if (years.length === 0) return null
@@ -716,7 +738,7 @@ export default function TimelineView() {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={() => handleFilterChange({ person_ids: [], thread_ids: [] })}
+                  onClick={() => handleFilterChange({ person_ids: [], thread_ids: [], sortBy: filters.sortBy })}
                 >
                   Clear filters
                 </button>
