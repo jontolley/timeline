@@ -37,7 +37,8 @@ export default function RootLayout() {
       <StatusBar style="dark" />
       <Stack screenOptions={{ headerShown: false }}>
         <Stack.Screen name="event/new" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="event/[id]" options={{ presentation: 'modal' }} />
+        {/* Detail is a pushed card (native back swipe); edit opens over it as a modal. */}
+        <Stack.Screen name="event/[id]/edit" options={{ presentation: 'modal' }} />
       </Stack>
     </SafeAreaProvider>
   )
