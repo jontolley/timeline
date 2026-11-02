@@ -105,8 +105,10 @@ a failure — check `/tmp/expo-run.log` for a red-box error.
   from auth import hash_login_code
   from database import auth_codes_collection
   email = os.environ["ALLOWED_EMAIL"].split(",")[0].strip().lower()
-  now = datetime.now(timezone.utc)
-  asyncio.run(auth_codes_collection.replace_one({"email": email}, {"email": email, "code_hash": hash_login_code("424242"), "expires_at": now + timedelta(minutes=10), "attempts": 0, "created_at": now}, upsert=True))
+  async def main():
+      now = datetime.now(timezone.utc)
+      await auth_codes_collection.replace_one({"email": email}, {"email": email, "code_hash": hash_login_code("424242"), "expires_at": now + timedelta(minutes=10), "attempts": 0, "created_at": now}, upsert=True)
+  asyncio.run(main())
   EOF
   ```
 
