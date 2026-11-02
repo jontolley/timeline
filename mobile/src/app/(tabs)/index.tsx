@@ -11,11 +11,11 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
-import { listEvents } from '../../src/api/events'
-import type { TimelineEvent } from '../../src/api/types'
-import { useAuthStore } from '../../src/store/auth'
-import { useTimelineSignal } from '../../src/store/timeline'
-import { colors } from '../../src/theme'
+import { listEvents } from '@/api/events'
+import type { TimelineEvent } from '@/api/types'
+import { useAuthStore } from '@/store/auth'
+import { useTimelineSignal } from '@/store/timeline'
+import { colors } from '@/theme'
 
 const PAGE_SIZE = 30
 
@@ -160,6 +160,9 @@ export default function TimelineScreen() {
             <EventRow event={item} onPress={() => router.push(`/event/${item._id}`)} />
           )}
           contentContainerStyle={styles.list}
+          // Native tabs float over the list; let iOS inset the scroll content
+          // so the last rows can scroll clear of the tab bar.
+          contentInsetAdjustmentBehavior="automatic"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.accent} />}
           onEndReached={loadMore}
           onEndReachedThreshold={0.5}
@@ -169,7 +172,7 @@ export default function TimelineScreen() {
             </View>
           }
           ListFooterComponent={
-            loadingMore ? <ActivityIndicator color={colors.accent} style={{ marginVertical: 16 }} /> : null
+            loadingMore ? <ActivityIndicator color={colors.accent} style={{ marginVertical: 16 }} /> : undefined
           }
         />
       )}

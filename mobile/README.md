@@ -1,6 +1,6 @@
 # Hindsite — iOS / mobile app (Expo)
 
-A native React Native client for Hindsite, built with **Expo Router + TypeScript**, reusing the existing FastAPI backend unchanged. This is the scaffold: a complete API client, the token-based auth flow, and minimal Timeline + Chat screens that prove the stack end-to-end.
+A native React Native client for Hindsite, built with **Expo SDK 58 (React Native 0.88) + Expo Router + TypeScript**, reusing the existing FastAPI backend unchanged. This is the scaffold: a complete API client, the token-based auth flow, and minimal Timeline + Chat screens that prove the stack end-to-end.
 
 > Lives on the `ios-app` branch so `main` stays free for production web/backend work.
 
@@ -8,15 +8,16 @@ A native React Native client for Hindsite, built with **Expo Router + TypeScript
 
 ```
 mobile/
-├── app/                      # Expo Router file-based routes
-│   ├── _layout.tsx           # Root layout = auth gate (init + redirect guard)
-│   ├── index.tsx             # Splash → redirect by auth status
-│   ├── login.tsx             # Email → 6-digit code sign-in
-│   └── (tabs)/
-│       ├── _layout.tsx       # Bottom tabs (Timeline / Chat)
-│       ├── index.tsx         # Timeline list (paginated, pull-to-refresh)
-│       └── chat.tsx          # Streaming chat (SSE)
 ├── src/
+│   ├── app/                  # Expo Router file-based routes
+│   │   ├── _layout.tsx       # Root Stack = auth gate (Stack.Protected guards + splash hold)
+│   │   ├── login.tsx         # Email → 6-digit code sign-in
+│   │   ├── (tabs)/
+│   │   │   ├── _layout.tsx   # Native tabs (system tab bar, SF Symbols)
+│   │   │   ├── index.tsx     # Timeline list (paginated, pull-to-refresh)
+│   │   │   └── chat.tsx      # Streaming chat (SSE) + pending-edit / event cards
+│   │   └── event/            # new.tsx, [id]/index.tsx (detail), [id]/edit.tsx
+│   ├── components/EventForm.tsx  # Shared create/edit form
 │   ├── config.ts             # API base URL resolution
 │   ├── theme.ts              # Hindsite color tokens
 │   ├── store/auth.ts         # Zustand auth store + SecureStore token
@@ -24,27 +25,40 @@ mobile/
 │       ├── client.ts         # fetch wrapper w/ Bearer + 401 handling
 │       ├── auth.ts           # request-code / exchange-code / me
 │       ├── events.ts  threads.ts  people.ts
-│       ├── chat.ts           # SSE via expo/fetch streaming
+│       ├── chat.ts           # SSE via the (streaming) global fetch
 │       ├── uploads.ts        # presign + R2 PUT, EXIF/caption
 │       └── types.ts
 ```
 
+Imports use the `@/` alias for `src/` (see `tsconfig.json`).
+
 ## Setup
+
+The app runs as a **development build** (`expo-dev-client`), not in Expo Go —
+Expo Go only supports the newest SDK and can't carry the app's own native
+config. `ios/` and `android/` are generated on demand (Continuous Native
+Generation) and gitignored; configure native behavior via `app.json` plugins,
+never by editing `ios/`.
+
+Requires Xcode 26.4+ with an iOS Simulator runtime installed
+(`xcodebuild -downloadPlatform iOS` if `xcrun simctl list devices available` is
+empty) and CocoaPods (`brew install cocoapods`).
 
 ```bash
 cd mobile
 npm install
 
-# Reconcile native module versions to the installed Expo SDK (recommended —
-# the versions in package.json target SDK 52 but expo install is authoritative):
-npx expo install --fix
+# First run, or after adding/upgrading a package with native code:
+npx expo run:ios          # compiles + installs the dev build, then starts Metro
 
-# Run it
-npx expo start            # then press 'i' for the iOS simulator, or scan the
-                          # QR code with Expo Go / a dev build on a device
+# Day-to-day (dev build already installed):
+npx expo start --dev-client
+
+npm run typecheck         # tsc --noEmit
+npx expo-doctor           # dependency/config health check
 ```
 
-Requires Xcode (for the iOS simulator) or the **Expo Go** app on a physical device.
+Always add packages with `npx expo install <pkg>` so versions match the SDK.
 
 ## Pointing at a backend
 
@@ -73,15 +87,15 @@ Google sign-in is **not** wired up yet — see roadmap.
 - Email-code sign-in → persisted session → auto-login on relaunch → sign-out.
 - Full REST client for events / threads / people / uploads (parity with the web `api/` layer).
 - Timeline: paginated list (bidirectional cursor), pull-to-refresh, infinite scroll, thumbnails.
-- Chat: live SSE token streaming via `expo/fetch`.
+- Chat: live SSE token streaming, plus the edit-confirm card (Confirm / Choose another / Cancel → `confirm_edit` action) and tappable cards for events chat created or updated (which also refresh the Timeline).
 - Photo upload: full + thumbnail resize (`expo-image-manipulator`) → presigned R2 PUT. Server-side EXIF + AI caption helpers.
-- **Event detail screen** — `app/event/[id]/index.tsx`, a read-only view opened by tapping a timeline row (pushed card with native back swipe). Shows thread label + date range, title, tappable location (opens Maps via `Linking`), description, people + tag chips, and a media grid: photos open a swipeable full-screen lightbox; videos/audio/PDFs open externally via `Linking`. "Edit" pushes the form modal; reloads on focus so edits show on return, and bounces back to the timeline if the event was deleted underneath it. Shared (non-owned) events hide Edit/Delete.
-- **Add / edit / delete event** — one shared form (`src/components/EventForm.tsx`), rendered by `app/event/new.tsx` (create) and `app/event/[id]/edit.tsx` (edit, opened from the detail screen). Both present as modals. Title / date (UTC-safe) / description / location name / thread picker + photos. Create holds photos locally and includes them in `createEvent`; edit attaches/removes photos immediately via the dedicated media endpoints (`EventUpdate` has no media field) and guards date/location so an untouched edit never clobbers an existing time or coords. Delete confirms via `Alert`. Shared (non-owned) events open read-only. All paths signal the Timeline to refresh (`src/store/timeline.ts`).
+- **Event detail screen** — `src/app/event/[id]/index.tsx`, a read-only view opened by tapping a timeline row (pushed card with native back swipe). Shows thread label + date range, title, tappable location (opens Maps via `Linking`), description, people + tag chips, and a media grid: photos open a swipeable full-screen lightbox; videos/audio/PDFs open externally via `Linking`. "Edit" pushes the form modal; reloads on focus so edits show on return, and bounces back to the timeline if the event was deleted underneath it. Shared (non-owned) events hide Edit/Delete.
+- **Add / edit / delete event** — one shared form (`src/components/EventForm.tsx`), rendered by `src/app/event/new.tsx` (create) and `src/app/event/[id]/edit.tsx` (edit, opened from the detail screen). Both present as modals. Title / date (UTC-safe) / description / location name / thread picker + photos. Create holds photos locally and includes them in `createEvent`; edit attaches/removes photos immediately via the dedicated media endpoints (`EventUpdate` has no media field) and guards date/location so an untouched edit never clobbers an existing time or coords. Delete confirms via `Alert`. Shared (non-owned) events open read-only. All paths signal the Timeline to refresh (`src/store/timeline.ts`).
 
 **Phase 2 (not yet built)**
 
 - **Richer event fields** — end-date range, time-of-day, tags, people pills, and a real location picker (the web uses Leaflet; native could use `react-native-maps` or stay name-only). EXIF/caption auto-fill helpers exist in `uploads.ts` but aren't wired into the form yet. The detail screen *renders* tags/people/ranges; the form can't yet *edit* them.
-- **Inline media playback on the detail screen** — video/audio/PDF currently open in the system viewer via `Linking`. Native in-app playback would use `expo-av` (video/audio) + a PDF viewer, plus the client-rendered thumbnails below so non-photo tiles aren't blank.
+- **Inline media playback on the detail screen** — video/audio/PDF currently open in the system viewer via `Linking`. Native in-app playback would use `expo-video` / `expo-audio` (`expo-av` was removed in SDK 55) + a PDF viewer, plus the client-rendered thumbnails below so non-photo tiles aren't blank.
 - **Native media thumbnails** for video / audio / PDF. The web app renders these client-side (canvas / Web Audio / pdf.js); native equivalents are `AVAssetImageGenerator`, a waveform render, and `PDFKit`. Until then `uploadMedia` uploads non-photos without a `thumb_key` (backend tolerates it).
 - **Native document scan** — replace the web OpenCV-WASM path with VisionKit `VNDocumentCameraViewController` (far better, free on iOS).
 - **Google Sign-In** — needs a backend endpoint that takes a Google ID token and returns a JSON session token (the current `/google/callback` is a cookie+302 web flow). Then native Google Sign-In or `expo-auth-session`.
@@ -90,6 +104,11 @@ Google sign-in is **not** wired up yet — see roadmap.
 
 ## Notes & gotchas
 
-- **SSE needs `expo/fetch`**, not the global `fetch` — RN's built-in fetch has no streaming body. See `src/api/chat.ts`.
-- **`TextDecoder`** is relied on for stream decoding; available in Hermes on SDK 52. If you target an older runtime, polyfill it.
+- **SSE relies on a streaming `fetch` body.** Since SDK 56 the global `fetch` is `expo/fetch`, which streams; setting `EXPO_PUBLIC_USE_RN_FETCH=1` would swap in RN's non-streaming fetch and break chat. See `src/api/chat.ts`.
+- **An offline launch keeps you signed in.** `init()` only drops the stored token when `/me` *answers* `authenticated:false`; a network error or 5xx keeps the token and uses the cached profile. A real 401 on any later request still signs out.
+- **Native tabs float over the screen.** On iOS 26 the tab bar overlays tab content, so a tab screen must leave room for it: scroll views use `contentInsetAdjustmentBehavior="automatic"` (Timeline), and fixed bottom UI sits inside a `SafeAreaView` with the `bottom` edge (Chat composer) — inside a tab, the native safe area includes the tab bar.
+- **Dates are UTC calendar days.** The form holds UTC-midnight `Date`s; "today" is built from the *local* calendar day, and the date picker renders with `timeZoneName="UTC"`. A bare `new Date()` or a local-time picker shifts the day by one in US time zones.
+- **Thread colors are palette keys** (`rose`, `cyan`, …), not CSS colors — always resolve them with `paletteColor()` from `theme.ts` (mirror of `frontend/src/utils/colors.js`).
+- **No photo-library permission prompt.** `launchImageLibraryAsync` uses the out-of-process system picker, which needs no permission; don't add `requestMediaLibraryPermissionsAsync` back.
+- **Light mode only for now** (`userInterfaceStyle: "light"`) — the colors in `theme.ts` are the light tokens. Port the web's `[data-theme="dark"]` tokens before switching back to `automatic`.
 - The token is the only persisted auth state; there's no refresh endpoint, so after 30 days the user re-enters a code. Add silent re-auth later if desired.

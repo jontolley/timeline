@@ -1,13 +1,14 @@
-import * as FileSystem from 'expo-file-system'
-import * as ImageManipulator from 'expo-image-manipulator'
+import { File, UploadType } from 'expo-file-system'
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
 import { httpJson, getAuthToken } from './client'
 import { API } from '../config'
 import type { MediaRef } from './types'
 
 // Native port of frontend/src/api/uploads.js. The web pipeline used an HTML
 // canvas to resize photos and render video/audio/pdf thumbnails; on native we
-// use expo-image-manipulator for photo resizing and FileSystem.uploadAsync for
-// the direct-to-R2 PUT (more robust than fetch(blob) for large files).
+// use expo-image-manipulator for photo resizing and expo-file-system's
+// File.upload for the direct-to-R2 PUT (a native upload task — more robust
+// than fetch(blob) for large files).
 //
 // Photo upload has full parity (full + thumb). Video/audio/pdf currently
 // upload the original without a client-rendered thumbnail — generating those
@@ -39,9 +40,9 @@ async function presignUpload(contentType: string): Promise<{ upload_url: string;
 // and (being a native request) is not subject to R2's browser CORS allowlist.
 async function putToR2(uri: string, contentType: string): Promise<string> {
   const { upload_url, key } = await presignUpload(contentType)
-  const res = await FileSystem.uploadAsync(upload_url, uri, {
+  const res = await new File(uri).upload(upload_url, {
     httpMethod: 'PUT',
-    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+    uploadType: UploadType.BINARY_CONTENT,
     headers: { 'Content-Type': contentType },
   })
   if (res.status < 200 || res.status >= 300) {
@@ -50,31 +51,30 @@ async function putToR2(uri: string, contentType: string): Promise<string> {
   return key
 }
 
-// Resize action that caps the longest edge at maxDim, preserving aspect ratio.
-// Falls back to a width cap when dimensions are unknown.
-function resizeAction(
+// Resize the longest edge down to maxDim (preserving aspect ratio; never
+// upscales) and save as JPEG. Falls back to a width cap when the picker didn't
+// report dimensions.
+async function renderJpeg(
+  uri: string,
   width: number,
   height: number,
   maxDim: number,
-): ImageManipulator.Action[] {
+  compress: number,
+) {
+  const ctx = ImageManipulator.manipulate(uri)
   const longest = Math.max(width, height)
-  if (longest > 0 && longest <= maxDim) return []
-  if (width === 0 && height === 0) return [{ resize: { width: maxDim } }]
-  return width >= height ? [{ resize: { width: maxDim } }] : [{ resize: { height: maxDim } }]
+  if (longest === 0) ctx.resize({ width: maxDim })
+  else if (longest > maxDim) ctx.resize(width >= height ? { width: maxDim } : { height: maxDim })
+  const image = await ctx.renderAsync()
+  return image.saveAsync({ format: SaveFormat.JPEG, compress })
 }
 
 export async function uploadPhoto(asset: PickedAsset): Promise<MediaRef> {
   const w = asset.width ?? 0
   const h = asset.height ?? 0
   const [full, thumb] = await Promise.all([
-    ImageManipulator.manipulateAsync(asset.uri, resizeAction(w, h, FULL_MAX_DIM), {
-      compress: FULL_QUALITY,
-      format: ImageManipulator.SaveFormat.JPEG,
-    }),
-    ImageManipulator.manipulateAsync(asset.uri, resizeAction(w, h, THUMB_MAX_DIM), {
-      compress: THUMB_QUALITY,
-      format: ImageManipulator.SaveFormat.JPEG,
-    }),
+    renderJpeg(asset.uri, w, h, FULL_MAX_DIM, FULL_QUALITY),
+    renderJpeg(asset.uri, w, h, THUMB_MAX_DIM, THUMB_QUALITY),
   ])
   const [fullKey, thumbKey] = await Promise.all([
     putToR2(full.uri, 'image/jpeg'),
@@ -137,9 +137,9 @@ export async function uploadMedia(asset: PickedAsset): Promise<MediaRef> {
 // EXIF + caption helpers, which run server-side (no native canvas needed).
 async function postFile<T>(path: string, asset: PickedAsset): Promise<T> {
   const token = getAuthToken()
-  const res = await FileSystem.uploadAsync(`${API}${path}`, asset.uri, {
+  const res = await new File(asset.uri).upload(`${API}${path}`, {
     httpMethod: 'POST',
-    uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+    uploadType: UploadType.MULTIPART,
     fieldName: 'file',
     mimeType: contentTypeFor(asset),
     headers: token ? { Authorization: `Bearer ${token}` } : {},

@@ -10,8 +10,8 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { useAuthStore } from '../src/store/auth'
-import { colors } from '../src/theme'
+import { useAuthStore } from '@/store/auth'
+import { colors } from '@/theme'
 
 type Step = 'email' | 'code'
 
@@ -83,6 +83,8 @@ export default function LoginScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               keyboardType="email-address"
+              textContentType="emailAddress"
+              autoComplete="email"
               autoFocus
               editable={!busy}
               onSubmitEditing={onSendCode}
@@ -114,6 +116,9 @@ export default function LoginScreen() {
               placeholder="123456"
               placeholderTextColor={colors.inkSoft}
               keyboardType="number-pad"
+              // Lets iOS offer the emailed code from Mail above the keyboard.
+              textContentType="oneTimeCode"
+              autoComplete="one-time-code"
               autoFocus
               editable={!busy}
               maxLength={6}

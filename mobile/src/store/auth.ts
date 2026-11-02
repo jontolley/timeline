@@ -1,11 +1,14 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
 import { setAuthToken, setUnauthorizedHandler } from '../api/client'
-import { fetchMe, requestCode, exchangeCode } from '../api/auth'
+import { fetchMe, requestCode, exchangeCode, type Me } from '../api/auth'
 
 // The 30-day session token lives in the iOS Keychain / Android Keystore via
-// expo-secure-store — never AsyncStorage (which is plaintext on disk).
+// expo-secure-store — never AsyncStorage (which is plaintext on disk). The last
+// known user profile is cached next to it so an offline launch can still show
+// who's signed in.
 const TOKEN_KEY = 'hindsite_session_token'
+const USER_KEY = 'hindsite_user'
 
 export type User = { email: string; role: string; user_id: string }
 export type AuthStatus = 'loading' | 'authed' | 'anon'
@@ -23,6 +26,23 @@ type AuthState = {
   signOut: () => Promise<void>
 }
 
+function toUser(me: Me, fallbackEmail = ''): User {
+  return { email: me.email ?? fallbackEmail, role: me.role ?? 'user', user_id: me.user_id ?? '' }
+}
+
+async function readCachedUser(): Promise<User | null> {
+  try {
+    const raw = await SecureStore.getItemAsync(USER_KEY)
+    return raw ? (JSON.parse(raw) as User) : null
+  } catch {
+    return null
+  }
+}
+
+async function cacheUser(user: User) {
+  await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)).catch(() => {})
+}
+
 export const useAuthStore = create<AuthState>((set, get) => ({
   status: 'loading',
   user: null,
@@ -37,16 +57,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       return
     }
     setAuthToken(token)
-    const me = await fetchMe()
+    let me: Me
+    try {
+      me = await fetchMe()
+    } catch {
+      // Offline, or the backend is down / cold-starting. Only the server can
+      // say a token is bad, so keep it and let the user in on what we know;
+      // a real 401 on a later request still bounces through signOut().
+      set({ status: 'authed', user: await readCachedUser() })
+      return
+    }
     if (me.authenticated) {
-      set({
-        status: 'authed',
-        user: { email: me.email!, role: me.role ?? 'user', user_id: me.user_id ?? '' },
-      })
+      const user = toUser(me)
+      await cacheUser(user)
+      set({ status: 'authed', user })
     } else {
-      await SecureStore.deleteItemAsync(TOKEN_KEY)
-      setAuthToken(null)
-      set({ status: 'anon', user: null })
+      await get().signOut()
     }
   },
 
@@ -59,19 +85,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     const { token } = await exchangeCode(normalized, code.trim())
     await SecureStore.setItemAsync(TOKEN_KEY, token)
     setAuthToken(token)
-    const me = await fetchMe()
-    set({
-      status: 'authed',
-      user: {
-        email: me.email ?? normalized,
-        role: me.role ?? 'user',
-        user_id: me.user_id ?? '',
-      },
-    })
+    // The exchange already proved the token; a failed /me here just means we
+    // fill in the profile on the next launch.
+    const me = await fetchMe().catch((): Me => ({ authenticated: true, email: normalized }))
+    const user = toUser(me, normalized)
+    await cacheUser(user)
+    set({ status: 'authed', user })
   },
 
   signOut: async () => {
     await SecureStore.deleteItemAsync(TOKEN_KEY)
+    await SecureStore.deleteItemAsync(USER_KEY)
     setAuthToken(null)
     set({ status: 'anon', user: null })
   },

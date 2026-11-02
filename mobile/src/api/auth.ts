@@ -47,12 +47,10 @@ export type Me = {
 
 export async function fetchMe(): Promise<Me> {
   // /me returns 200 + { authenticated:false } for a missing/invalid token
-  // (never 401), so this won't trip the unauthorized handler.
-  try {
-    const res = await http('/auth/me')
-    if (!res.ok) return { authenticated: false }
-    return res.json()
-  } catch {
-    return { authenticated: false }
-  }
+  // (never 401), so this won't trip the unauthorized handler. Network errors
+  // and 5xx *throw* rather than reporting anon, so callers can tell "the
+  // server rejected this token" apart from "we couldn't reach the server".
+  const res = await http('/auth/me')
+  if (!res.ok) throw new Error(`Request failed: ${res.status}`)
+  return res.json()
 }

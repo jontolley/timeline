@@ -1,19 +1,35 @@
-import { fetch as expoFetch } from 'expo/fetch'
-import { API } from '../config'
-import { getAuthToken } from './client'
+import { http } from './client'
 import type { TimelineEvent } from './types'
 
-// Ported from frontend/src/api/chat.js. The web version reads the SSE stream
-// via `res.body.getReader()`; React Native's global fetch doesn't expose a
-// streaming body, so we use `expo/fetch` (Expo SDK 52+) which does. The
-// line-buffering + `data: ` parsing is otherwise identical.
+// Ported from frontend/src/api/chat.js. Since SDK 56 the global fetch *is*
+// `expo/fetch`, which exposes a streaming body, so this goes through the shared
+// `http()` wrapper (Bearer token + 401 → sign-out) and reads the SSE stream
+// with `res.body.getReader()` exactly like the web. Setting
+// EXPO_PUBLIC_USE_RN_FETCH=1 would swap in RN's non-streaming fetch and break
+// this. The line-buffering + `data: ` parsing is otherwise identical.
+
+// Fields the backend may propose changing in an edit (see routes/chat.py).
+export type EditChanges = Partial<
+  Pick<TimelineEvent, 'title' | 'date' | 'end_date' | 'description' | 'location' | 'tags' | 'people'>
+>
+
+// The edit flow defers the write: it streams "does that look right?" then a
+// pending_edit with the best match + alternatives. The client confirms by
+// re-posting with a `confirm_edit` action.
+export type PendingEdit = {
+  target: TimelineEvent
+  alternatives: TimelineEvent[]
+  changes: EditChanges
+}
+
+export type ChatAction = { type: 'confirm_edit'; event_id: string; changes: EditChanges }
 
 export type ChatCallbacks = {
   onSources?: (events: TimelineEvent[]) => void
   onToken?: (text: string) => void
   onEventCreated?: (event: TimelineEvent) => void
   onEventUpdated?: (event: TimelineEvent) => void
-  onPendingEdit?: (data: unknown) => void
+  onPendingEdit?: (data: PendingEdit) => void
   onDone?: () => void
 }
 
@@ -23,24 +39,20 @@ export async function streamChat(
   messages: ChatMessage[],
   eventFilter: unknown,
   callbacks: ChatCallbacks,
-  action: string | null = null,
+  action: ChatAction | null = null,
 ): Promise<void> {
   const { onSources, onToken, onEventCreated, onEventUpdated, onPendingEdit, onDone } = callbacks
-  const token = getAuthToken()
-  const res = await expoFetch(`${API}/chat`, {
+  const res = await http('/chat', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ messages, event_filter: eventFilter, action }),
   })
 
-  if (res.status === 401) throw new Error('Unauthorized')
+  if (!res.ok) throw new Error(`Chat failed: ${res.status}`)
   if (!res.body) throw new Error('No response stream')
 
   const reader = res.body.getReader()
-  // TextDecoder is available in Hermes on Expo SDK 52; stream:true stitches
+  // TextDecoder is built into Hermes; stream:true stitches
   // multi-byte sequences that straddle chunk boundaries.
   const decoder = new TextDecoder()
   let buffer = ''
@@ -61,7 +73,7 @@ export async function streamChat(
         else if (data.type === 'token') onToken?.(data.content)
         else if (data.type === 'event_created') onEventCreated?.(data.event)
         else if (data.type === 'event_updated') onEventUpdated?.(data.event)
-        else if (data.type === 'pending_edit') onPendingEdit?.(data)
+        else if (data.type === 'pending_edit') onPendingEdit?.(data as PendingEdit)
         else if (data.type === 'done') onDone?.()
       } catch {
         // ignore malformed lines

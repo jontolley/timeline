@@ -12,11 +12,11 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
-import { getEvent } from '../../../src/api/events'
-import { listPeople } from '../../../src/api/people'
-import { listThreads } from '../../../src/api/threads'
-import type { MediaRef, Thread, TimelineEvent } from '../../../src/api/types'
-import { colors } from '../../../src/theme'
+import { getEvent } from '@/api/events'
+import { listPeople } from '@/api/people'
+import { listThreads } from '@/api/threads'
+import type { MediaRef, Thread, TimelineEvent } from '@/api/types'
+import { colors, paletteColor } from '@/theme'
 
 // Read-only event detail. Tapping a timeline row lands here (push/card); the
 // "Edit" action pushes the shared EventForm at /event/:id/edit as a modal. On
@@ -188,7 +188,7 @@ export default function EventDetailScreen() {
         <View style={styles.metaRow}>
           {showThread ? (
             <View style={styles.threadPill}>
-              <View style={[styles.threadDot, { backgroundColor: thread!.color || colors.accent }]} />
+              <View style={[styles.threadDot, { backgroundColor: paletteColor(thread!.color) }]} />
               <Text style={styles.threadName}>{thread!.name}</Text>
             </View>
           ) : null}
@@ -379,7 +379,7 @@ const styles = StyleSheet.create({
   mediaPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   mediaKindText: { fontSize: 12, color: colors.inkSoft, textTransform: 'uppercase' },
   playBadge: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     alignItems: 'center',
     justifyContent: 'center',
   },

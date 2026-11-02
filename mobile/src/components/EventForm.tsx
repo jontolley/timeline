@@ -28,7 +28,7 @@ import { listThreads } from '../api/threads'
 import { uploadMedia, type PickedAsset } from '../api/uploads'
 import type { LocationDetail, MediaRef, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
-import { colors } from '../theme'
+import { colors, paletteColor } from '@/theme'
 
 // Shared create/edit form. `eventId` undefined → create; present → edit (loads
 // the event, supports delete, and manages media through the dedicated attach/
@@ -45,6 +45,12 @@ type PendingMedia = {
 // submitted verbatim so any existing time-of-day is preserved.
 function toCalendarDate(d: Date): string {
   return d.toISOString().slice(0, 10)
+}
+// Today's *local* calendar day as UTC midnight. new Date() alone would be read
+// as a UTC date, which is already tomorrow on a US evening.
+function todayUtcMidnight(): Date {
+  const now = new Date()
+  return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
 }
 function toUtcMidnightIso(d: Date): string {
   return `${toCalendarDate(d)}T00:00:00.000Z`
@@ -79,7 +85,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [locationName, setLocationName] = useState('')
-  const [date, setDate] = useState<Date>(() => new Date())
+  const [date, setDate] = useState<Date>(todayUtcMidnight)
   const [dateTouched, setDateTouched] = useState(false)
   const [locationTouched, setLocationTouched] = useState(false)
   const [originalDateIso, setOriginalDateIso] = useState<string | null>(null)
@@ -144,13 +150,12 @@ export default function EventForm({ eventId }: { eventId?: string }) {
   const canSave = title.trim().length > 0 && !saving && !uploading && !readOnly
 
   async function pickImages() {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!perm.granted) {
-      setError('Photo library permission is needed to add photos.')
-      return
-    }
+    // No permission request: the system picker (PHPicker / Android Photo
+    // Picker) runs out of process and only hands back what the user picks, so
+    // asking for full library access would just be a needless prompt.
+    setError(null)
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 1,
     })
@@ -337,14 +342,17 @@ export default function EventForm({ eventId }: { eventId?: string }) {
             <DateTimePicker
               value={date}
               mode="date"
+              // Render in UTC so the highlighted day matches the stored date
+              // (local rendering shows the previous day west of Greenwich).
+              timeZoneName="UTC"
+              accentColor={colors.accent}
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              onChange={(_event, picked) => {
+              onValueChange={(_event, picked) => {
                 if (Platform.OS !== 'ios') setShowPicker(false)
-                if (picked) {
-                  setDateTouched(true)
-                  setDate(new Date(Date.UTC(picked.getFullYear(), picked.getMonth(), picked.getDate())))
-                }
+                setDateTouched(true)
+                setDate(new Date(Date.UTC(picked.getUTCFullYear(), picked.getUTCMonth(), picked.getUTCDate())))
               }}
+              onDismiss={() => setShowPicker(false)}
             />
           ) : null}
 
@@ -384,8 +392,8 @@ export default function EventForm({ eventId }: { eventId?: string }) {
                       style={[
                         styles.pill,
                         selected && {
-                          backgroundColor: t.color || colors.accent,
-                          borderColor: t.color || colors.accent,
+                          backgroundColor: paletteColor(t.color),
+                          borderColor: paletteColor(t.color),
                         },
                       ]}
                       onPress={() => !readOnly && setThreadId(t._id)}
@@ -524,7 +532,7 @@ const styles = StyleSheet.create({
   mediaPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
   mediaKindText: { fontSize: 11, color: colors.inkSoft, textTransform: 'uppercase' },
   mediaOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0,0,0,0.35)',
     alignItems: 'center',
     justifyContent: 'center',
