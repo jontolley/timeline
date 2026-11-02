@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
+import { Image } from 'expo-image'
 import { useRouter } from 'expo-router'
 import {
   streamChat,
@@ -21,7 +22,8 @@ import {
 } from '@/api/chat'
 import type { TimelineEvent } from '@/api/types'
 import { useTimelineSignal } from '@/store/timeline'
-import { colors } from '@/theme'
+import { GlassButton, Icon, TintButton } from '@/components/ui'
+import { useTheme, type Theme } from '@/theme'
 
 // Mirrors the web ChatView: assistant turns can carry a pending-edit card (the
 // edit flow asks "does that look right?" and waits for a confirm_edit action)
@@ -30,6 +32,7 @@ type Msg = ChatMessage & {
   id: string
   pendingEdit?: PendingEdit & { status: 'open' | 'confirmed' | 'cancelled' }
   eventAction?: { type: 'created' | 'updated'; event: TimelineEvent }
+  sources?: TimelineEvent[]
 }
 
 let idCounter = 0
@@ -80,6 +83,8 @@ function formatChangeValue(field: keyof EditChanges, value: unknown): string {
 export default function ChatScreen() {
   const router = useRouter()
   const requestRefresh = useTimelineSignal((s) => s.requestRefresh)
+  const t = useTheme()
+  const styles = useMemo(() => makeStyles(t), [t])
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
@@ -97,6 +102,7 @@ export default function ChatScreen() {
     setStreaming(true)
     try {
       await streamChat(toApiMessages(history), null, {
+        onSources: (events) => patch(assistantId, (m) => ({ ...m, sources: events.slice(0, 3) })),
         onToken: (chunk) => patch(assistantId, (m) => ({ ...m, content: m.content + chunk })),
         onPendingEdit: (data) => patch(assistantId, (m) => ({ ...m, pendingEdit: { ...data, status: 'open' } })),
         onEventCreated: (event) => {
@@ -141,17 +147,49 @@ export default function ChatScreen() {
     patch(msgId, (m) => (m.pendingEdit ? { ...m, pendingEdit: { ...m.pendingEdit, status: 'cancelled' } } : m))
   }
 
+
+  const thumbOf = (ev: TimelineEvent) => {
+    const m = ev.media?.find((x) => x.thumb_url)
+    return m?.thumb_url ? { uri: m.thumb_url, cacheKey: `${m.key}:thumb` } : null
+  }
+
+  const EventChip = ({ ev, eyebrow }: { ev: TimelineEvent; eyebrow?: string }) => {
+    const thumb = thumbOf(ev)
+    return (
+      <Pressable
+        style={({ pressed }) => [styles.source, pressed && styles.pressed]}
+        onPress={() => router.push(`/event/${ev._id}`)}
+      >
+        {thumb ? <Image source={thumb} style={styles.sourceThumb} contentFit="cover" /> : (
+          <View style={[styles.sourceThumb, styles.sourceThumbEmpty]}>
+            <Icon name="text.alignleft" size={18} color={t.secondary} />
+          </View>
+        )}
+        <View style={styles.sourceBody}>
+          {eyebrow ? <Text style={styles.sourceEyebrow}>{eyebrow}</Text> : null}
+          <Text style={styles.sourceTitle} numberOfLines={1}>
+            {ev.title}
+          </Text>
+          <Text style={styles.sourceMeta}>{fmtDate(ev.date)}</Text>
+        </View>
+      </Pressable>
+    )
+  }
+
   // 'bottom' matters: native tabs float over the screen, and inside a tab the
   // native safe area includes the tab bar, so this keeps the composer above it.
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.header}>
+        <View style={styles.actions}>
+          <GlassButton
+            icon="square.and.pencil"
+            accessibilityLabel="New chat"
+            onPress={() => setMessages([])}
+            disabled={streaming || messages.length === 0}
+          />
+        </View>
         <Text style={styles.h1}>Chat</Text>
-        {messages.length > 0 ? (
-          <Pressable onPress={() => setMessages([])} hitSlop={8} disabled={streaming}>
-            <Text style={[styles.newChat, streaming && { opacity: 0.4 }]}>New chat</Text>
-          </Pressable>
-        ) : null}
       </View>
 
       <KeyboardAvoidingView
@@ -161,7 +199,9 @@ export default function ChatScreen() {
       >
         {messages.length === 0 ? (
           <View style={styles.empty}>
-            <Text style={styles.emptyText}>What do you want to know?</Text>
+            <Icon name="sparkles" size={34} color={t.secondary} weight="regular" />
+            <Text style={styles.emptyTitle}>What do you want to know?</Text>
+            <Text style={styles.emptyText}>Ask about your timeline, or tell me about a moment to add.</Text>
           </View>
         ) : (
           <FlatList
@@ -169,35 +209,45 @@ export default function ChatScreen() {
             data={messages}
             keyExtractor={(m) => m.id}
             contentContainerStyle={styles.thread}
+            keyboardDismissMode="interactive"
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => (
               <View style={styles.turn}>
-                <View style={[styles.bubble, item.role === 'user' ? styles.userBubble : styles.botBubble]}>
-                  {item.content === '' && streaming ? (
-                    <ActivityIndicator color={colors.inkSoft} />
-                  ) : (
-                    <Text style={item.role === 'user' ? styles.userText : styles.botText}>{item.content}</Text>
-                  )}
-                </View>
+                {item.role === 'user' ? (
+                  <View style={styles.userBubble}>
+                    <Text style={styles.userText}>{item.content}</Text>
+                  </View>
+                ) : item.content === '' && streaming ? (
+                  <ActivityIndicator color={t.secondary} style={styles.typing} />
+                ) : item.content ? (
+                  <Text style={styles.botText} selectable>
+                    {item.content}
+                  </Text>
+                ) : null}
+                {item.sources?.length && !item.pendingEdit && !item.eventAction ? (
+                  <FlatList
+                    horizontal
+                    data={item.sources}
+                    keyExtractor={(ev) => ev._id}
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.sources}
+                    renderItem={({ item: ev }) => <EventChip ev={ev} />}
+                  />
+                ) : null}
                 {item.pendingEdit ? (
                   <PendingEditCard
                     pendingEdit={item.pendingEdit}
                     disabled={streaming}
+                    styles={styles}
                     onConfirm={(eventId, label) => confirmEdit(item.id, eventId, item.pendingEdit!.changes, label)}
                     onCancel={() => cancelEdit(item.id)}
                   />
                 ) : null}
                 {item.eventAction ? (
-                  <Pressable
-                    style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
-                    onPress={() => router.push(`/event/${item.eventAction!.event._id}`)}
-                  >
-                    <Text style={styles.cardEyebrow}>
-                      {item.eventAction.type === 'created' ? 'Added to your timeline' : 'Event updated'}
-                    </Text>
-                    <Text style={styles.cardTitle}>{item.eventAction.event.title}</Text>
-                    <Text style={styles.cardMeta}>{fmtDate(item.eventAction.event.date)} · View ›</Text>
-                  </Pressable>
+                  <EventChip
+                    ev={item.eventAction.event}
+                    eyebrow={item.eventAction.type === 'created' ? 'Added to your timeline' : 'Moment updated'}
+                  />
                 ) : null}
               </View>
             )}
@@ -209,19 +259,19 @@ export default function ChatScreen() {
             style={styles.composerInput}
             value={input}
             onChangeText={setInput}
-            placeholder="Ask about your timeline…"
-            placeholderTextColor={colors.inkSoft}
+            placeholder="Ask about your timeline"
+            placeholderTextColor={t.placeholder}
             multiline
             editable={!streaming}
             onSubmitEditing={send}
           />
-          <Pressable
-            style={[styles.sendBtn, (!input.trim() || streaming) && styles.sendBtnDisabled]}
+          <TintButton
+            icon="arrow.up"
+            size={36}
+            accessibilityLabel="Send"
             onPress={send}
             disabled={!input.trim() || streaming}
-          >
-            <Text style={styles.sendText}>↑</Text>
-          </Pressable>
+          />
         </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -231,11 +281,13 @@ export default function ChatScreen() {
 function PendingEditCard({
   pendingEdit,
   disabled,
+  styles,
   onConfirm,
   onCancel,
 }: {
   pendingEdit: NonNullable<Msg['pendingEdit']>
   disabled: boolean
+  styles: Styles
   onConfirm: (eventId: string, label: string) => void
   onCancel: () => void
 }) {
@@ -245,7 +297,7 @@ function PendingEditCard({
   if (status === 'cancelled') {
     return (
       <View style={styles.card}>
-        <Text style={styles.cardMeta}>Edit cancelled. Try again with more detail about which event you mean.</Text>
+        <Text style={styles.cardMeta}>Edit cancelled. Try again with more detail about which moment you mean.</Text>
       </View>
     )
   }
@@ -260,11 +312,11 @@ function PendingEditCard({
   if (picking) {
     return (
       <View style={styles.card}>
-        <Text style={styles.cardEyebrow}>Pick the event you meant</Text>
+        <Text style={styles.cardEyebrow}>Which moment did you mean?</Text>
         {alternatives.map((alt) => (
           <Pressable
             key={alt._id}
-            style={styles.altRow}
+            style={({ pressed }) => [styles.altRow, pressed && styles.pressed]}
             disabled={disabled}
             onPress={() => onConfirm(alt._id, `Use "${alt.title}" instead.`)}
           >
@@ -273,11 +325,11 @@ function PendingEditCard({
           </Pressable>
         ))}
         <View style={styles.cardActions}>
-          <Pressable style={styles.btn} onPress={() => setPicking(false)} disabled={disabled}>
+          <Pressable style={[styles.btn, styles.btnFill]} onPress={() => setPicking(false)} disabled={disabled}>
             <Text style={styles.btnText}>Back</Text>
           </Pressable>
-          <Pressable style={styles.btn} onPress={onCancel} disabled={disabled}>
-            <Text style={styles.btnText}>None of these</Text>
+          <Pressable style={[styles.btn, styles.btnFill]} onPress={onCancel} disabled={disabled}>
+            <Text style={styles.btnText}>None of These</Text>
           </Pressable>
         </View>
       </View>
@@ -287,121 +339,127 @@ function PendingEditCard({
   const rows = (Object.keys(FIELD_LABELS) as (keyof EditChanges)[]).filter((k) => k in changes)
   return (
     <View style={styles.card}>
-      <Text style={styles.cardEyebrow}>Pending update</Text>
-      <Text style={styles.cardTitle}>{target.title}</Text>
-      <Text style={styles.cardMeta}>{fmtDate(target.date)}</Text>
-      {rows.map((field) => (
-        <Text key={field} style={styles.changeRow}>
-          <Text style={styles.cardMeta}>{FIELD_LABELS[field]}: </Text>
-          {formatChangeValue(field, changes[field])}
-        </Text>
-      ))}
+      <View style={{ gap: 2 }}>
+        <Text style={styles.cardEyebrow}>Update this moment?</Text>
+        <Text style={styles.cardTitle}>{target.title}</Text>
+      </View>
+      {rows.map((field) => {
+        const old = field === 'date' || field === 'end_date' ? (target[field] as string | null | undefined) : null
+        return (
+          <View key={field} style={styles.changeRow}>
+            <Text style={styles.changeLabel}>{FIELD_LABELS[field]}</Text>
+            {old ? <Text style={styles.changeOld}>{fmtDate(old)}</Text> : null}
+            {old ? <Text style={styles.changeLabel}>→</Text> : null}
+            <Text style={styles.changeNew}>{formatChangeValue(field, changes[field])}</Text>
+          </View>
+        )
+      })}
       <View style={styles.cardActions}>
         <Pressable
-          style={[styles.btn, styles.btnPrimary, disabled && styles.sendBtnDisabled]}
+          style={[styles.btn, styles.btnPrimary, disabled && styles.disabled]}
           disabled={disabled}
           onPress={() => onConfirm(target._id, `Yes, update "${target.title}".`)}
         >
-          <Text style={[styles.btnText, styles.btnPrimaryText]}>Confirm</Text>
+          <Text style={[styles.btnText, styles.btnPrimaryText]}>Update</Text>
         </Pressable>
-        {alternatives.length > 0 ? (
-          <Pressable style={styles.btn} disabled={disabled} onPress={() => setPicking(true)}>
-            <Text style={styles.btnText}>Choose another</Text>
-          </Pressable>
-        ) : null}
-        <Pressable style={styles.btn} disabled={disabled} onPress={onCancel}>
-          <Text style={styles.btnText}>Cancel</Text>
+        <Pressable
+          style={[styles.btn, styles.btnFill]}
+          disabled={disabled}
+          onPress={() => (alternatives.length > 0 ? setPicking(true) : onCancel())}
+        >
+          <Text style={styles.btnText}>{alternatives.length > 0 ? 'Not This One' : 'Cancel'}</Text>
         </Pressable>
       </View>
     </View>
   )
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  flex: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingTop: 8,
-    paddingBottom: 12,
-  },
-  h1: { fontSize: 28, fontWeight: '700', color: colors.ink },
-  newChat: { color: colors.accent, fontSize: 14, fontWeight: '600' },
-  empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40 },
-  emptyText: { fontSize: 22, color: colors.inkSoft, textAlign: 'center', fontStyle: 'italic' },
-  thread: { paddingHorizontal: 16, paddingVertical: 12, gap: 10 },
-  turn: { gap: 8 },
-  bubble: { maxWidth: '85%', borderRadius: 16, paddingHorizontal: 14, paddingVertical: 10 },
-  userBubble: { alignSelf: 'flex-end', backgroundColor: colors.accent },
-  botBubble: { alignSelf: 'flex-start', backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.rule },
-  userText: { color: '#fff', fontSize: 15, lineHeight: 21 },
-  botText: { color: colors.ink, fontSize: 15, lineHeight: 21 },
-  card: {
-    alignSelf: 'flex-start',
-    maxWidth: '85%',
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    padding: 12,
-    gap: 4,
-  },
-  cardPressed: { opacity: 0.6 },
-  cardEyebrow: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.accent,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  cardTitle: { fontSize: 15, fontWeight: '600', color: colors.ink },
-  cardMeta: { fontSize: 13, color: colors.inkSoft },
-  changeRow: { fontSize: 14, color: colors.ink, marginTop: 2 },
-  altRow: { paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.rule },
-  cardActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
-  btn: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  btnPrimary: { backgroundColor: colors.accent, borderColor: colors.accent },
-  btnText: { fontSize: 13, fontWeight: '600', color: colors.ink },
-  btnPrimaryText: { color: '#fff' },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderTopWidth: 1,
-    borderTopColor: colors.rule,
-    backgroundColor: colors.surface,
-  },
-  composerInput: {
-    flex: 1,
-    backgroundColor: colors.bg,
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    fontSize: 16,
-    color: colors.ink,
-    maxHeight: 120,
-  },
-  sendBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: colors.accent,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sendBtnDisabled: { opacity: 0.4 },
-  sendText: { color: '#fff', fontSize: 20, fontWeight: '700' },
-})
+type Styles = ReturnType<typeof makeStyles>
+
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    safe: { flex: 1, backgroundColor: t.bg },
+    flex: { flex: 1 },
+    header: { paddingHorizontal: 16, paddingBottom: 6 },
+    actions: { flexDirection: 'row', justifyContent: 'flex-end', height: 44, marginTop: 4 },
+    h1: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 4, letterSpacing: 0.2 },
+    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 10 },
+    emptyTitle: { fontSize: 22, fontWeight: '600', color: t.label, textAlign: 'center' },
+    emptyText: { fontSize: 15, lineHeight: 20, color: t.secondary, textAlign: 'center' },
+    thread: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, gap: 14 },
+    turn: { gap: 10 },
+    userBubble: {
+      alignSelf: 'flex-end',
+      maxWidth: '78%',
+      backgroundColor: t.tint,
+      borderTopLeftRadius: 20,
+      borderTopRightRadius: 20,
+      borderBottomLeftRadius: 20,
+      borderBottomRightRadius: 6,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+    },
+    userText: { color: t.onTint, fontSize: 17, lineHeight: 22 },
+    botText: { color: t.label, fontSize: 17, lineHeight: 24, paddingRight: 12 },
+    typing: { alignSelf: 'flex-start', marginVertical: 6 },
+    sources: { gap: 8 },
+    source: {
+      width: 220,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      padding: 8,
+      borderRadius: 16,
+      backgroundColor: t.card,
+      alignSelf: 'flex-start',
+    },
+    sourceThumb: { width: 44, height: 44, borderRadius: 10, backgroundColor: t.photoPlaceholder },
+    sourceThumbEmpty: { alignItems: 'center', justifyContent: 'center', backgroundColor: t.fill },
+    sourceBody: { flex: 1 },
+    sourceEyebrow: { fontSize: 12, fontWeight: '600', color: t.tintText },
+    sourceTitle: { fontSize: 15, fontWeight: '600', color: t.label },
+    sourceMeta: { fontSize: 13, color: t.secondary },
+    pressed: { opacity: 0.6 },
+    disabled: { opacity: 0.4 },
+    card: { backgroundColor: t.card, borderRadius: 22, padding: 16, gap: 12, marginRight: 12 },
+    cardEyebrow: { fontSize: 13, fontWeight: '600', color: t.secondary },
+    cardTitle: { fontSize: 17, fontWeight: '600', color: t.label },
+    cardMeta: { fontSize: 15, color: t.secondary },
+    changeRow: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 8 },
+    changeLabel: { fontSize: 15, color: t.secondary, minWidth: 40 },
+    changeOld: { fontSize: 15, color: t.secondary, textDecorationLine: 'line-through' },
+    changeNew: { fontSize: 15, fontWeight: '600', color: t.label, flexShrink: 1 },
+    altRow: { paddingVertical: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.separator },
+    cardActions: { flexDirection: 'row', gap: 8 },
+    btn: { flex: 1, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 12 },
+    btnFill: { backgroundColor: t.fill },
+    btnPrimary: { backgroundColor: t.tint },
+    btnText: { fontSize: 17, fontWeight: '500', color: t.label },
+    btnPrimaryText: { color: t.onTint, fontWeight: '600' },
+    composer: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      gap: 8,
+      marginHorizontal: 12,
+      marginBottom: 8,
+      paddingLeft: 18,
+      paddingRight: 6,
+      paddingVertical: 6,
+      minHeight: 50,
+      borderRadius: 25,
+      backgroundColor: t.card,
+      shadowColor: '#000',
+      shadowOpacity: t.dark ? 0.4 : 0.1,
+      shadowRadius: 12,
+      shadowOffset: { width: 0, height: 4 },
+    },
+    composerInput: {
+      flex: 1,
+      fontSize: 17,
+      color: t.label,
+      maxHeight: 120,
+      paddingTop: 8,
+      paddingBottom: 8,
+    },
+  })
+}

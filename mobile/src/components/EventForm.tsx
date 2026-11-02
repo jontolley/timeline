@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
+  ActionSheetIOS,
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -12,9 +12,9 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
 import { useRouter } from 'expo-router'
 import DateTimePicker from '@react-native-community/datetimepicker'
+import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
 import {
   attachMedia,
@@ -28,7 +28,8 @@ import { listThreads } from '../api/threads'
 import { uploadMedia, type PickedAsset } from '../api/uploads'
 import type { LocationDetail, MediaRef, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
-import { colors, paletteColor } from '@/theme'
+import { FillButton, Icon, IconTile, TintButton } from '@/components/ui'
+import { paletteColor, useTheme, type Theme } from '@/theme'
 
 // Shared create/edit form. `eventId` undefined → create; present → edit (loads
 // the event, supports delete, and manages media through the dedicated attach/
@@ -59,7 +60,7 @@ function displayDate(d: Date): string {
   return d.toLocaleDateString(undefined, {
     timeZone: 'UTC',
     year: 'numeric',
-    month: 'long',
+    month: 'short',
     day: 'numeric',
   })
 }
@@ -76,6 +77,8 @@ export default function EventForm({ eventId }: { eventId?: string }) {
   const isEdit = !!eventId
   const router = useRouter()
   const requestRefresh = useTimelineSignal((s) => s.requestRefresh)
+  const t = useTheme()
+  const styles = useMemo(() => makeStyles(t), [t])
 
   // In edit mode we block render until the event loads.
   const [loading, setLoading] = useState(isEdit)
@@ -254,7 +257,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
 
   function confirmDelete() {
     if (!eventId) return
-    Alert.alert('Delete event?', 'This permanently removes the event and its photos.', [
+    Alert.alert('Delete this moment?', 'This permanently removes it and its photos.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -274,69 +277,54 @@ export default function EventForm({ eventId }: { eventId?: string }) {
     ])
   }
 
+  function pickThread() {
+    if (readOnly || threads.length < 2) return
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: 'Thread', options: [...threads.map((th) => th.name), 'Cancel'], cancelButtonIndex: threads.length },
+        (i) => {
+          if (i < threads.length) setThreadId(threads[i]._id)
+        },
+      )
+    } else {
+      Alert.alert('Thread', undefined, threads.map((th) => ({ text: th.name, onPress: () => setThreadId(th._id) })))
+    }
+  }
+
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safe, styles.center]}>
-        <ActivityIndicator color={colors.accent} />
-      </SafeAreaView>
+      <View style={[styles.sheet, styles.center]}>
+        <ActivityIndicator color={t.secondary} />
+      </View>
     )
   }
 
   if (loadError) {
     return (
-      <SafeAreaView style={[styles.safe, styles.center]}>
+      <View style={[styles.sheet, styles.center]}>
         <Text style={styles.error}>{loadError}</Text>
         <Pressable onPress={() => router.back()}>
-          <Text style={styles.cancel}>Go back</Text>
+          <Text style={styles.link}>Go Back</Text>
         </Pressable>
-      </SafeAreaView>
+      </View>
     )
   }
 
-  return (
-    <SafeAreaView style={styles.safe}>
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} hitSlop={8} disabled={saving}>
-          <Text style={styles.cancel}>Cancel</Text>
-        </Pressable>
-        <Text style={styles.headerTitle}>
-          {readOnly ? 'Event' : isEdit ? 'Edit event' : 'New event'}
-        </Text>
-        {readOnly ? (
-          <View style={{ width: 48 }} />
-        ) : (
-          <Pressable onPress={save} hitSlop={8} disabled={!canSave}>
-            <Text style={[styles.save, !canSave && styles.saveDisabled]}>
-              {saving ? 'Saving…' : 'Save'}
-            </Text>
-          </Pressable>
-        )}
-      </View>
+  const thread = threads.find((th) => th._id === threadId)
+  const heading = readOnly ? 'Moment' : isEdit ? 'Edit Moment' : 'New Moment'
 
-      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          {readOnly ? (
-            <Text style={styles.readOnlyNote}>This event is shared with you — read only.</Text>
-          ) : null}
-
-          <Text style={styles.label}>Title</Text>
-          <TextInput
-            style={styles.input}
-            value={title}
-            onChangeText={setTitle}
-            placeholder="What happened?"
-            placeholderTextColor={colors.inkSoft}
-            autoFocus={!isEdit}
-            editable={!readOnly}
-          />
-
-          <Text style={styles.label}>Date</Text>
-          <Pressable
-            style={styles.input}
-            onPress={() => !readOnly && setShowPicker((v) => !v)}
-            disabled={readOnly}
-          >
-            <Text style={styles.dateText}>{displayDate(date)}</Text>
+  // Grouped detail rows, iOS Settings style: coloured icon tile, label, value.
+  const rows: { key: string; node: ReactNode }[] = [
+    {
+      key: 'date',
+      node: (
+        <View>
+          <Pressable style={styles.row} onPress={() => !readOnly && setShowPicker((v) => !v)} disabled={readOnly}>
+            <IconTile icon="calendar" color="#E5484D" />
+            <Text style={styles.rowLabel}>Date</Text>
+            <View style={styles.datePill}>
+              <Text style={styles.datePillText}>{displayDate(date)}</Text>
+            </View>
           </Pressable>
           {showPicker && !readOnly ? (
             <DateTimePicker
@@ -345,8 +333,10 @@ export default function EventForm({ eventId }: { eventId?: string }) {
               // Render in UTC so the highlighted day matches the stored date
               // (local rendering shows the previous day west of Greenwich).
               timeZoneName="UTC"
-              accentColor={colors.accent}
+              accentColor={t.tint}
+              themeVariant={t.dark ? 'dark' : 'light'}
               display={Platform.OS === 'ios' ? 'inline' : 'default'}
+              style={styles.picker}
               onValueChange={(_event, picked) => {
                 if (Platform.OS !== 'ios') setShowPicker(false)
                 setDateTouched(true)
@@ -355,223 +345,262 @@ export default function EventForm({ eventId }: { eventId?: string }) {
               onDismiss={() => setShowPicker(false)}
             />
           ) : null}
-
-          <Text style={styles.label}>Description</Text>
+        </View>
+      ),
+    },
+    {
+      key: 'location',
+      node: (
+        <View style={styles.row}>
+          <IconTile icon="mappin" color={t.tint} />
+          <Text style={styles.rowLabel}>Location</Text>
           <TextInput
-            style={[styles.input, styles.multiline]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Add some detail…"
-            placeholderTextColor={colors.inkSoft}
-            multiline
-            editable={!readOnly}
-          />
-
-          <Text style={styles.label}>Location</Text>
-          <TextInput
-            style={styles.input}
+            style={styles.rowInput}
             value={locationName}
-            onChangeText={(t) => {
+            onChangeText={(v) => {
               setLocationTouched(true)
-              setLocationName(t)
+              setLocationName(v)
             }}
-            placeholder="Place name (optional)"
-            placeholderTextColor={colors.inkSoft}
+            placeholder="Add place"
+            placeholderTextColor={t.placeholder}
             editable={!readOnly}
+            returnKeyType="done"
           />
+        </View>
+      ),
+    },
+  ]
+  if (threads.length > 1) {
+    rows.push({
+      key: 'thread',
+      node: (
+        <Pressable style={styles.row} onPress={pickThread} disabled={readOnly}>
+          <IconTile icon="line.3.horizontal" color="#8E8E93" />
+          <Text style={styles.rowLabel}>Thread</Text>
+          <View style={styles.rowValue}>
+            {thread ? <View style={[styles.dot, { backgroundColor: paletteColor(thread.color, t.dark) }]} /> : null}
+            <Text style={styles.rowValueText} numberOfLines={1}>
+              {thread?.name ?? 'Choose'}
+            </Text>
+            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
+          </View>
+        </Pressable>
+      ),
+    })
+  }
 
-          {threads.length > 1 ? (
-            <>
-              <Text style={styles.label}>Thread</Text>
-              <View style={styles.pills}>
-                {threads.map((t) => {
-                  const selected = t._id === threadId
-                  return (
-                    <Pressable
-                      key={t._id}
-                      style={[
-                        styles.pill,
-                        selected && {
-                          backgroundColor: paletteColor(t.color),
-                          borderColor: paletteColor(t.color),
-                        },
-                      ]}
-                      onPress={() => !readOnly && setThreadId(t._id)}
-                      disabled={readOnly}
-                    >
-                      <Text style={[styles.pillText, selected && styles.pillTextSelected]}>{t.name}</Text>
-                    </Pressable>
-                  )
-                })}
-              </View>
-            </>
-          ) : null}
+  return (
+    <View style={styles.sheet}>
+      <View style={styles.header}>
+        <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={() => router.back()} disabled={saving} />
+        <Text style={styles.headerTitle}>{heading}</Text>
+        {readOnly ? (
+          <View style={{ width: 44 }} />
+        ) : (
+          <TintButton icon="checkmark" accessibilityLabel="Save" onPress={save} disabled={!canSave}>
+            {saving ? <ActivityIndicator color={t.onTint} /> : undefined}
+          </TintButton>
+        )}
+      </View>
 
-          <Text style={styles.label}>Photos</Text>
-          {isEdit && !readOnly ? (
-            <Text style={styles.mediaHint}>Photo changes save immediately.</Text>
-          ) : null}
-          <View style={styles.mediaGrid}>
-            {serverMedia.map((m) => {
-              const uri = thumbUriFor(m)
-              return (
-                <Pressable
-                  key={m.key}
-                  style={styles.mediaTile}
-                  onPress={() => !readOnly && detachServerMedia(m.key)}
-                  disabled={readOnly}
-                >
-                  {uri ? (
-                    <Image source={{ uri }} style={styles.mediaImg} />
-                  ) : (
-                    <View style={[styles.mediaImg, styles.mediaPlaceholder]}>
-                      <Text style={styles.mediaKindText}>{m.kind}</Text>
+      <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+          {readOnly ? <Text style={styles.footnote}>This moment is shared with you — read only.</Text> : null}
+
+          <View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
+              {!readOnly ? (
+                <Pressable style={({ pressed }) => [styles.addTile, pressed && styles.pressed]} onPress={pickImages}>
+                  <Icon name="photo.badge.plus" size={28} color={t.tintText} weight="regular" />
+                  <Text style={styles.addTileText}>Add Photos</Text>
+                </Pressable>
+              ) : null}
+              {serverMedia.map((m) => {
+                const uri = thumbUriFor(m)
+                return (
+                  <View key={m.key} style={styles.tile}>
+                    {uri ? (
+                      <Image source={{ uri, cacheKey: `${m.key}:thumb` }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                    ) : (
+                      <View style={styles.tileCenter}>
+                        <Text style={styles.tileKind}>{m.kind}</Text>
+                      </View>
+                    )}
+                    {!readOnly ? (
+                      <Pressable
+                        style={styles.remove}
+                        onPress={() => detachServerMedia(m.key)}
+                        hitSlop={8}
+                        accessibilityLabel="Remove photo"
+                      >
+                        <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
+                      </Pressable>
+                    ) : null}
+                  </View>
+                )
+              })}
+              {pending.map((m) => (
+                <View key={m.localUri} style={styles.tile}>
+                  <Image source={{ uri: m.localUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  {m.status === 'uploading' ? (
+                    <View style={[styles.tileCenter, styles.tileDim]}>
+                      <ActivityIndicator color="#FFFFFF" />
                     </View>
-                  )}
-                  {!readOnly ? (
-                    <View style={styles.removeBadge}>
-                      <Text style={styles.removeBadgeText}>×</Text>
+                  ) : m.status === 'error' ? (
+                    <View style={[styles.tileCenter, styles.tileError]}>
+                      <Text style={styles.tileErrorText}>Failed</Text>
                     </View>
                   ) : null}
-                </Pressable>
-              )
-            })}
-            {pending.map((m) => (
-              <Pressable key={m.localUri} style={styles.mediaTile} onPress={() => dropPending(m.localUri)}>
-                <Image source={{ uri: m.localUri }} style={styles.mediaImg} />
-                {m.status === 'uploading' ? (
-                  <View style={styles.mediaOverlay}>
-                    <ActivityIndicator color="#fff" />
-                  </View>
-                ) : m.status === 'error' ? (
-                  <View style={[styles.mediaOverlay, styles.mediaError]}>
-                    <Text style={styles.mediaErrText}>failed</Text>
-                  </View>
-                ) : (
-                  <View style={styles.removeBadge}>
-                    <Text style={styles.removeBadgeText}>×</Text>
-                  </View>
-                )}
-              </Pressable>
+                  {m.status !== 'uploading' ? (
+                    <Pressable
+                      style={styles.remove}
+                      onPress={() => dropPending(m.localUri)}
+                      hitSlop={8}
+                      accessibilityLabel="Remove photo"
+                    >
+                      <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
+                    </Pressable>
+                  ) : null}
+                </View>
+              ))}
+            </ScrollView>
+            {isEdit && !readOnly ? <Text style={[styles.footnote, { marginTop: 8 }]}>Photo changes save immediately.</Text> : null}
+          </View>
+
+          <View style={styles.group}>
+            <TextInput
+              style={styles.titleInput}
+              value={title}
+              onChangeText={setTitle}
+              placeholder="Title"
+              placeholderTextColor={t.placeholder}
+              autoFocus={!isEdit}
+              editable={!readOnly}
+              returnKeyType="next"
+            />
+            <View style={[styles.separator, { marginLeft: 16 }]} />
+            <TextInput
+              style={styles.descInput}
+              value={description}
+              onChangeText={setDescription}
+              placeholder="What do you want to remember?"
+              placeholderTextColor={t.placeholder}
+              multiline
+              editable={!readOnly}
+            />
+          </View>
+
+          <View style={styles.group}>
+            {rows.map((r, i) => (
+              <Fragment key={r.key}>
+                {i > 0 ? <View style={styles.separator} /> : null}
+                {r.node}
+              </Fragment>
             ))}
-            {!readOnly ? (
-              <Pressable style={styles.addTile} onPress={pickImages}>
-                <Text style={styles.addTilePlus}>＋</Text>
-                <Text style={styles.addTileText}>Add</Text>
-              </Pressable>
-            ) : null}
           </View>
 
           {isEdit && !readOnly ? (
-            <Pressable style={styles.deleteBtn} onPress={confirmDelete} disabled={saving}>
-              <Text style={styles.deleteText}>Delete event</Text>
+            <Pressable
+              style={({ pressed }) => [styles.group, styles.deleteBtn, pressed && styles.pressed]}
+              onPress={confirmDelete}
+              disabled={saving}
+            >
+              <Text style={styles.deleteText}>Delete Moment</Text>
             </Pressable>
           ) : null}
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   )
 }
 
-const styles = StyleSheet.create({
-  safe: { flex: 1, backgroundColor: colors.bg },
-  flex: { flex: 1 },
-  center: { alignItems: 'center', justifyContent: 'center', gap: 12 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.rule,
-  },
-  headerTitle: { fontSize: 16, fontWeight: '600', color: colors.ink },
-  cancel: { fontSize: 16, color: colors.inkSoft },
-  save: { fontSize: 16, fontWeight: '700', color: colors.accent },
-  saveDisabled: { color: colors.inkSoft, opacity: 0.5 },
-  body: { padding: 20, gap: 8, paddingBottom: 48 },
-  readOnlyNote: { fontSize: 14, color: colors.inkSoft, fontStyle: 'italic', marginBottom: 4 },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: colors.inkSoft,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginTop: 10,
-  },
-  input: {
-    backgroundColor: colors.surface,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.ink,
-  },
-  multiline: { minHeight: 90, textAlignVertical: 'top' },
-  dateText: { fontSize: 16, color: colors.ink },
-  pills: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  pill: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    backgroundColor: colors.surface,
-  },
-  pillText: { fontSize: 14, color: colors.ink },
-  pillTextSelected: { color: '#fff', fontWeight: '600' },
-  mediaHint: { fontSize: 12, color: colors.inkSoft, fontStyle: 'italic' },
-  mediaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  mediaTile: { width: 84, height: 84, borderRadius: 10, overflow: 'hidden', backgroundColor: colors.rule },
-  mediaImg: { width: '100%', height: '100%' },
-  mediaPlaceholder: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.surface },
-  mediaKindText: { fontSize: 11, color: colors.inkSoft, textTransform: 'uppercase' },
-  mediaOverlay: {
-    ...StyleSheet.absoluteFill,
-    backgroundColor: 'rgba(0,0,0,0.35)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mediaError: { backgroundColor: 'rgba(176,67,46,0.55)' },
-  mediaErrText: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  removeBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  removeBadgeText: { color: '#fff', fontSize: 14, fontWeight: '700', lineHeight: 16 },
-  addTile: {
-    width: 84,
-    height: 84,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.rule,
-    borderStyle: 'dashed',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.surface,
-  },
-  addTilePlus: { fontSize: 22, color: colors.accent },
-  addTileText: { fontSize: 12, color: colors.inkSoft, marginTop: 2 },
-  deleteBtn: {
-    marginTop: 24,
-    paddingVertical: 14,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.danger,
-    alignItems: 'center',
-  },
-  deleteText: { color: colors.danger, fontSize: 16, fontWeight: '600' },
-  error: { color: colors.danger, fontSize: 14, marginTop: 12 },
-})
+function makeStyles(t: Theme) {
+  return StyleSheet.create({
+    sheet: { flex: 1, backgroundColor: t.modalBg },
+    flex: { flex: 1 },
+    center: { alignItems: 'center', justifyContent: 'center', gap: 12 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 4,
+    },
+    headerTitle: { fontSize: 17, fontWeight: '600', color: t.label },
+    body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48, gap: 22 },
+    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, paddingHorizontal: 4 },
+    photos: { gap: 10 },
+    addTile: {
+      width: 104,
+      height: 104,
+      borderRadius: 18,
+      backgroundColor: t.modalCard,
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 6,
+    },
+    addTileText: { fontSize: 13, fontWeight: '600', color: t.tintText },
+    pressed: { opacity: 0.6 },
+    tile: { width: 104, height: 104, borderRadius: 18, overflow: 'hidden', backgroundColor: t.photoPlaceholder },
+    tileCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+    tileKind: { fontSize: 12, color: t.secondary, textTransform: 'uppercase' },
+    tileDim: { backgroundColor: 'rgba(0,0,0,0.35)' },
+    tileError: { backgroundColor: 'rgba(229,72,77,0.6)' },
+    tileErrorText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+    remove: {
+      position: 'absolute',
+      top: 6,
+      right: 6,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: t.overlay,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    group: { backgroundColor: t.modalCard, borderRadius: 22, overflow: 'hidden' },
+    titleInput: {
+      fontSize: 22,
+      lineHeight: 28,
+      fontWeight: '600',
+      color: t.label,
+      paddingHorizontal: 16,
+      paddingTop: 14,
+      paddingBottom: 12,
+    },
+    descInput: {
+      fontSize: 17,
+      lineHeight: 23,
+      color: t.label,
+      paddingHorizontal: 16,
+      paddingTop: 12,
+      paddingBottom: 14,
+      minHeight: 92,
+      textAlignVertical: 'top',
+    },
+    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.modalSeparator, marginLeft: 56 },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
+    rowLabel: { fontSize: 17, color: t.label },
+    rowInput: { flex: 1, fontSize: 17, color: t.label, textAlign: 'right', paddingVertical: 14 },
+    rowValue: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+    rowValueText: { fontSize: 17, color: t.secondary, flexShrink: 1 },
+    dot: { width: 9, height: 9, borderRadius: 5 },
+    datePill: {
+      marginLeft: 'auto',
+      height: 34,
+      paddingHorizontal: 12,
+      borderRadius: 8,
+      backgroundColor: t.fill,
+      justifyContent: 'center',
+    },
+    datePillText: { fontSize: 17, color: t.tintText },
+    picker: { marginHorizontal: 8 },
+    deleteBtn: { height: 52, alignItems: 'center', justifyContent: 'center' },
+    deleteText: { fontSize: 17, fontWeight: '500', color: t.danger },
+    error: { color: t.danger, fontSize: 15, textAlign: 'center' },
+    link: { color: t.tintText, fontSize: 17, fontWeight: '600' },
+  })
+}
