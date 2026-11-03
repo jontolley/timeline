@@ -86,7 +86,7 @@ export default function LoginScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
         <View style={styles.hero}>
           <View style={styles.appIcon}>
-            <Icon name="clock" size={58} color="#FFFFFF" weight="regular" />
+            <Icon name="clock" size={52} color="#FFFFFF" weight="regular" />
           </View>
           <Text style={styles.brand}>Hindsite</Text>
           <Text style={styles.tagline}>Look back, on purpose.</Text>
@@ -206,11 +206,15 @@ function makeStyles(t: Theme) {
   return StyleSheet.create({
     safe: { flex: 1, backgroundColor: t.bg },
     flex: { flex: 1 },
-    hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 14, paddingHorizontal: 32 },
+    // paddingBottom keeps the tagline clear of the email field when the
+    // keyboard is up and squeezes the hero.
+    hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 32, paddingBottom: 30 },
+    // Sized to fit above the form with the keyboard up (the email field
+    // autofocuses, so that's the layout people actually see).
     appIcon: {
-      width: 104,
-      height: 104,
-      borderRadius: 24,
+      width: 92,
+      height: 92,
+      borderRadius: 21,
       backgroundColor: t.tint,
       alignItems: 'center',
       justifyContent: 'center',
@@ -219,7 +223,7 @@ function makeStyles(t: Theme) {
       shadowRadius: 15,
       shadowOffset: { width: 0, height: 10 },
     },
-    brand: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 6 },
+    brand: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 4 },
     tagline: { fontSize: 17, lineHeight: 22, color: t.secondary, textAlign: 'center' },
     form: { paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
     field: {
