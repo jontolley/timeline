@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import PeopleView from './PeopleView'
+import DevicesSettings from '../components/DevicesSettings'
 import ThreadsSettings from '../components/ThreadsSettings'
 import UsersSettings from '../components/UsersSettings'
 import {
@@ -13,6 +14,7 @@ import {
 const BASE_TABS = [
   { value: 'people',     label: 'People' },
   { value: 'threads',    label: 'Threads' },
+  { value: 'devices',    label: 'Devices' },
 ]
 const ADMIN_TABS = [
   { value: 'users',      label: 'Users' },
@@ -101,6 +103,7 @@ export default function SettingsView() {
         <main className="hs-well">
           {active === 'people'     && <PeopleView embedded />}
           {active === 'threads'    && <ThreadsSettings />}
+          {active === 'devices'    && <DevicesSettings />}
           {active === 'users'      && role === 'admin' && <UsersSettings />}
         </main>
       </section>

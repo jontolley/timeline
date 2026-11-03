@@ -47,3 +47,21 @@ export const MapIcon = (p) => (
     <path d="M9 4v14M15 6v14" />
   </Svg>
 )
+export const PhoneIcon = (p) => (
+  <Svg {...p}>
+    <rect x="6" y="2" width="12" height="20" rx="2.5" />
+    <path d="M11 18h2" />
+  </Svg>
+)
+export const TabletIcon = (p) => (
+  <Svg {...p}>
+    <rect x="4" y="2" width="16" height="20" rx="2.5" />
+    <path d="M11 18h2" />
+  </Svg>
+)
+export const LaptopIcon = (p) => (
+  <Svg {...p}>
+    <rect x="4" y="4" width="16" height="11" rx="1.5" />
+    <path d="M2 19h20" />
+  </Svg>
+)

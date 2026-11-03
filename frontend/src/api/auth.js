@@ -1,3 +1,5 @@
+import { http } from './http'
+
 const BASE = '/api/auth'
 
 export async function fetchMe() {
@@ -41,4 +43,18 @@ export async function logout() {
     method: 'POST',
     credentials: 'include',
   })
+}
+
+// Signed-in devices: one row per server-side session, most recent first.
+// Each carries `current: true` for the session this browser is using.
+export async function listSessions() {
+  const res = await http(`${BASE}/sessions`)
+  if (!res.ok) throw new Error('Failed to load signed-in devices')
+  return res.json()
+}
+
+export async function revokeSession(id) {
+  const res = await http(`${BASE}/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  // 404 means it's already gone (expired, or signed out elsewhere) — same outcome.
+  if (!res.ok && res.status !== 404) throw new Error('Failed to sign out that device')
 }

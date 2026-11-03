@@ -4241,6 +4241,27 @@ a.card { text-decoration: none; }
 .hs-badge.role-admin .hs-badge-dot { background: var(--accent); }
 .hs-badge.self { background: var(--line-soft); }
 
+/* Devices (Settings → Devices): icon + name/sub-line stacked in one column */
+.hs-device-icon {
+  width: 36px; height: 36px;
+  display: inline-grid; place-items: center;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+  border-radius: 999px;
+  color: var(--ink-soft);
+}
+.hs-device-id { min-width: 0; }
+.hs-device-id .hs-row-id { flex-wrap: wrap; row-gap: 2px; }
+.hs-device-id .hs-row-name {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.hs-device-id .hs-row-slug { white-space: nowrap; }
+.hs-device-sub {
+  margin: 4px 0 0;
+  font-size: 13.5px;
+  color: var(--ink-mute);
+}
+
 .hs-row-actions { display: flex; align-items: center; gap: 6px; }
 .hs-iconbtn {
   width: 34px; height: 34px;
