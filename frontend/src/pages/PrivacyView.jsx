@@ -4,7 +4,7 @@
 
 import { useEffect } from 'react'
 
-const LAST_UPDATED = '2026-05-28'
+const LAST_UPDATED = '2026-11-03'
 
 /* Hindsite brandmark + wordmark, matching the Topbar version exactly so
  * the privacy page reads as a real Hindsite page rather than a stranded
@@ -64,7 +64,8 @@ export default function PrivacyView() {
           <li>Your email address, used to sign you in.</li>
           <li>Your name and profile picture, only if you choose "Continue with Google" to sign in (these come from your Google account claims).</li>
           <li>Everything you choose to log: events you create, descriptions, dates, locations, tags, photos, videos, audio clips, and the names of people you tag.</li>
-          <li>A single signed session cookie (<code>HttpOnly</code>, <code>Secure</code>, <code>SameSite=Lax</code>) so you stay signed in between visits.</li>
+          <li>A signed session token so you stay signed in between visits: a cookie on the website, or an entry in the iOS Keychain in the iPhone app.</li>
+          <li>For each place you're signed in: the browser or app identifier your device sends (for example "Chrome on macOS" or "Hindsite app on iPhone"), when you signed in there, and roughly when it was last used. This is what lets you see and sign out your devices under Settings → Devices, and it's deleted when that device signs out or goes unused for 90 days.</li>
         </ul>
       </section>
 
@@ -97,7 +98,7 @@ export default function PrivacyView() {
           <li><strong>OpenAI</strong> receives the text of every event you create or edit so it can generate the vector embeddings that power semantic search inside chat.</li>
           <li><strong>Google</strong> sees your email address and basic profile info (name, picture URL) if you choose "Continue with Google" to sign in.</li>
           <li><strong>Resend</strong> delivers transactional sign-in and invitation emails — it sees recipient addresses and the message body.</li>
-          <li><strong>OpenStreetMap / Nominatim</strong> receives location names you type so it can convert them to map coordinates.</li>
+          <li><strong>OpenStreetMap / Nominatim</strong> receives location names you type so it can convert them to map coordinates, and map coordinates so it can turn them into a place name. Coordinates come from a photo's location data when you add one, or from your device's location when you start a new event and allow it.</li>
         </ul>
         <p>
           These are reputable providers with their own privacy policies.
@@ -132,14 +133,28 @@ export default function PrivacyView() {
         <ul>
           <li>You can delete any event at any time. Deleting an event also removes its photos/videos/audio from R2 and its vector embedding from Qdrant.</li>
           <li>You can export any thread you own (with its events and the people referenced) to a JSON file from <em>Settings → Threads → Export</em>.</li>
+          <li>You can see everywhere you're signed in and sign any device out from <em>Settings → Devices</em>. Signing out ends that session on the server, not just on the device.</li>
           <li>If you want your entire account deleted, email the address at the bottom of this page and I'll remove the account along with all events, media, people, threads, and embeddings tied to it.</li>
+        </ul>
+      </section>
+
+      <section className="privacy-block">
+        <h2>The iPhone app</h2>
+        <p>
+          The Hindsite iPhone app talks to the same instance and is covered by
+          everything above. A few specifics:
+        </p>
+        <ul>
+          <li>Your sign-in token is stored in the iOS Keychain on your phone, and removed when you sign out.</li>
+          <li>The app only reads the photos you pick, either in its photo picker or by choosing "Hindsite" in another app's share sheet. Shared photos are copied into the app just long enough to upload, then deleted from the phone's app storage.</li>
+          <li>The app contains no analytics, advertising, or tracking SDKs.</li>
         </ul>
       </section>
 
       <section className="privacy-block">
         <h2>Cookies</h2>
         <p>
-          Hindsite sets exactly one cookie: a signed session token, marked{' '}
+          The website sets exactly one cookie: a signed session token, marked{' '}
           <code>HttpOnly</code>, <code>Secure</code>, and{' '}
           <code>SameSite=Lax</code>, used to keep you signed in. There are no
           tracking, analytics, or advertising cookies.
