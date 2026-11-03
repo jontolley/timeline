@@ -66,6 +66,8 @@ Resolution order (see `src/config.ts`): `EXPO_PUBLIC_API_BASE_URL` env → `app.
 
 - **Against production:** nothing to do — defaults to `https://hindsite.app`.
 - **Against a local backend** (`docker compose up` on your Mac): copy `.env.example` to `.env` and set `EXPO_PUBLIC_API_BASE_URL` to your Mac's **LAN IP** (`ipconfig getifaddr en0`), e.g. `http://192.168.1.20:8000`. Don't use `localhost` — on a device/simulator that resolves to the phone, not your Mac.
+- **Release builds for your iPhone bake in whatever `.env` says.** `EXPO_PUBLIC_*` vars are inlined at bundle time, so a `.env` pointed at `localhost` ships a phone app that can't reach any server ("Could not connect to the server" at sign-in). Override it on the command line, which wins over `.env`:
+  `EXPO_PUBLIC_API_BASE_URL=https://hindsite.app npx expo run:ios --device <udid> --configuration Release --no-bundler`
   - Native requests aren't browser-CORS-enforced, so you do **not** need to touch `CORS_ORIGINS` for the API. (R2 PUT uploads also bypass CORS on native.)
   - For quick UI testing without real email, set `AUTH_DISABLED=true` on the backend — `/me` then returns an authed dev admin and any token works.
 
