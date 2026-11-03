@@ -1,0 +1,66 @@
+{
+  "expo": {
+    "name": "Hindsite",
+    "slug": "hindsite",
+    "scheme": "hindsite",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "ios": {
+      "icon": {
+        "light": "./assets/icon.png",
+        "dark": "./assets/icon-dark.png",
+        "tinted": "./assets/icon-tinted.png"
+      },
+      "supportsTablet": true,
+      "bundleIdentifier": "app.hindsite.mobile"
+    },
+    "android": {
+      "package": "app.hindsite.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#F2F2F7",
+          "dark": {
+            "backgroundColor": "#14161A"
+          }
+        }
+      ],
+      "expo-secure-store",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hindsite needs access to your photos so you can attach them to events.",
+          "cameraPermission": false,
+          "microphonePermission": false
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-image",
+      "expo-font",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsImageWithMaxCount": 10
+            }
+          }
+        }
+      ],
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": true
+    },
+    "extra": {
+      "apiBaseUrl": "https://hindsite.app"
+    }
+  }
+}
