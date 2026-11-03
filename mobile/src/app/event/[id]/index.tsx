@@ -2,7 +2,6 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type Compo
 import {
   ActivityIndicator,
   Linking,
-  Modal,
   Pressable,
   ScrollView,
   Share,
@@ -20,6 +19,7 @@ import { getEvent } from '@/api/events'
 import { listPeople } from '@/api/people'
 import { listThreads } from '@/api/threads'
 import type { MediaRef, Thread, TimelineEvent } from '@/api/types'
+import PhotoViewer from '@/components/PhotoViewer'
 import { GlassButton, Icon, IconTile } from '@/components/ui'
 import { avatarColor, initials, paletteColor, useTheme, type Theme } from '@/theme'
 
@@ -390,70 +390,19 @@ export default function EventDetailScreen() {
       {hasHero ? topBar : null}
 
       {lightbox !== null && visual[lightbox] ? (
-        <Lightbox items={visual} index={lightbox} onClose={() => setLightbox(null)} onChange={setLightbox} />
+        <PhotoViewer
+          items={visual}
+          initialIndex={lightbox}
+          onClose={(last) => {
+            setLightbox(null)
+            // Land the hero on whichever photo the user swiped to.
+            showPage(last)
+          }}
+        />
       ) : null}
     </View>
   )
 }
-
-function Lightbox({
-  items,
-  index,
-  onClose,
-  onChange,
-}: {
-  items: MediaRef[]
-  index: number
-  onClose: () => void
-  onChange: (i: number) => void
-}) {
-  const count = items.length
-  const item = items[index]
-  const s = item ? src(item, true) : null
-  return (
-    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
-      <Pressable style={lb.backdrop} onPress={onClose}>
-        {s ? <Image source={s} style={lb.image} contentFit="contain" /> : null}
-        <Pressable style={lb.close} onPress={onClose} hitSlop={12} accessibilityLabel="Close">
-          <Icon name="xmark" size={22} color="#FFFFFF" weight="bold" />
-        </Pressable>
-        {count > 1 ? (
-          <>
-            <Pressable
-              style={[lb.arrow, lb.left]}
-              onPress={() => onChange((index - 1 + count) % count)}
-              hitSlop={12}
-              accessibilityLabel="Previous photo"
-            >
-              <Icon name="chevron.left" size={30} color="#FFFFFF" />
-            </Pressable>
-            <Pressable
-              style={[lb.arrow, lb.right]}
-              onPress={() => onChange((index + 1) % count)}
-              hitSlop={12}
-              accessibilityLabel="Next photo"
-            >
-              <Icon name="chevron.right" size={30} color="#FFFFFF" />
-            </Pressable>
-            <Text style={lb.count}>
-              {index + 1} of {count}
-            </Text>
-          </>
-        ) : null}
-      </Pressable>
-    </Modal>
-  )
-}
-
-const lb = StyleSheet.create({
-  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.94)', alignItems: 'center', justifyContent: 'center' },
-  image: { width: '100%', height: '100%' },
-  close: { position: 'absolute', top: 60, right: 24 },
-  arrow: { position: 'absolute', top: '50%', marginTop: -20, padding: 8 },
-  left: { left: 8 },
-  right: { right: 8 },
-  count: { position: 'absolute', bottom: 48, color: '#FFFFFF', fontSize: 15, fontWeight: '500' },
-})
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
