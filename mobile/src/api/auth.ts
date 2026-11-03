@@ -1,4 +1,5 @@
 import { http } from './client'
+import { API } from '../config'
 
 // Native auth uses the email-code flow the backend exposes specifically for
 // API clients:
@@ -65,4 +66,25 @@ export async function logout(token: string): Promise<void> {
     headers: { Authorization: `Bearer ${token}` },
     auth: false,
   })
+}
+
+// Google sign-in reuses the web OAuth flow inside an ASWebAuthenticationSession:
+// the backend's callback redirects to `hindsite://auth?code=…` (or `?error=…`),
+// and the app swaps that one-time code plus its PKCE verifier for a token.
+export const GOOGLE_REDIRECT = 'hindsite://auth'
+
+export function googleStartUrl(challenge: string): string {
+  return `${API}/auth/google/start?client=app&challenge=${encodeURIComponent(challenge)}`
+}
+
+export async function googleAppExchange(code: string, verifier: string): Promise<ExchangeResult> {
+  const res = await http('/auth/google/app-exchange', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ code, verifier }),
+    auth: false,
+  })
+  if (res.status === 400) throw new Error('Sign-in expired. Please try again.')
+  if (!res.ok) throw new Error('Sign-in failed. Please try again.')
+  return res.json()
 }

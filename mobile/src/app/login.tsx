@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -20,6 +21,7 @@ type Step = 'email' | 'code'
 export default function LoginScreen() {
   const sendCode = useAuthStore((s) => s.sendCode)
   const verifyCode = useAuthStore((s) => s.verifyCode)
+  const signInWithGoogle = useAuthStore((s) => s.signInWithGoogle)
   const t = useTheme()
   const styles = useMemo(() => makeStyles(t), [t])
 
@@ -27,6 +29,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('')
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
+  const [googleBusy, setGoogleBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   async function onSendCode() {
@@ -61,6 +64,20 @@ export default function LoginScreen() {
       setError(e instanceof Error ? e.message : 'Something went wrong.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  async function onGoogle() {
+    setError(null)
+    setGoogleBusy(true)
+    try {
+      // Success flips the auth store to 'authed' and the _layout guard takes
+      // over; backing out of the browser sheet just leaves us here.
+      await signInWithGoogle()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Something went wrong.')
+    } finally {
+      setGoogleBusy(false)
     }
   }
 
@@ -101,13 +118,33 @@ export default function LoginScreen() {
               <Pressable
                 style={({ pressed }) => [styles.button, (busy || pressed) && styles.buttonDim]}
                 onPress={onSendCode}
-                disabled={busy}
+                disabled={busy || googleBusy}
               >
                 {busy ? <ActivityIndicator color={t.onTint} /> : <Text style={styles.buttonText}>Continue</Text>}
               </Pressable>
+              <Text style={styles.footnote}>We’ll email you a 6-digit code. No password needed.</Text>
+              <View style={styles.orRow}>
+                <View style={styles.orLine} />
+                <Text style={styles.orText}>or</Text>
+                <View style={styles.orLine} />
+              </View>
+              <Pressable
+                style={({ pressed }) => [styles.googleButton, (googleBusy || pressed) && styles.buttonDim]}
+                onPress={onGoogle}
+                disabled={busy || googleBusy}
+                accessibilityRole="button"
+              >
+                {googleBusy ? (
+                  <ActivityIndicator color={t.label} />
+                ) : (
+                  <>
+                    <Image source={require('../../assets/google-g.png')} style={styles.googleLogo} />
+                    <Text style={styles.googleText}>Continue with Google</Text>
+                  </>
+                )}
+              </Pressable>
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Text style={styles.footnote}>
-                We’ll email you a 6-digit code. No password needed.{'\n'}
                 <Text style={styles.footLink} onPress={() => void Linking.openURL('https://hindsite.app/privacy')}>
                   Privacy Policy
                 </Text>
@@ -199,7 +236,21 @@ function makeStyles(t: Theme) {
     button: { height: 54, borderRadius: 27, backgroundColor: t.tint, alignItems: 'center', justifyContent: 'center' },
     buttonDim: { opacity: 0.7 },
     buttonText: { color: t.onTint, fontSize: 17, fontWeight: '600' },
-    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, textAlign: 'center', marginTop: 4 },
+    orRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 2 },
+    orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
+    orText: { fontSize: 13, color: t.secondary },
+    googleButton: {
+      height: 54,
+      borderRadius: 27,
+      backgroundColor: t.card,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 10,
+    },
+    googleLogo: { width: 20, height: 20 },
+    googleText: { color: t.label, fontSize: 17, fontWeight: '600' },
+    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, textAlign: 'center' },
     footLink: { color: t.tintText, fontWeight: '500' },
     link: { color: t.tintText, textAlign: 'center', fontSize: 15, fontWeight: '500', marginTop: 4 },
     hint: { fontSize: 15, lineHeight: 21, color: t.secondary, textAlign: 'center', marginBottom: 4 },

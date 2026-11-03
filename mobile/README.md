@@ -11,7 +11,7 @@ mobile/
 ├── src/
 │   ├── app/                  # Expo Router file-based routes
 │   │   ├── _layout.tsx       # Root Stack = auth gate (Stack.Protected guards + splash hold)
-│   │   ├── login.tsx         # Email → 6-digit code sign-in
+│   │   ├── login.tsx         # Email → 6-digit code sign-in, or Continue with Google
 │   │   ├── (tabs)/
 │   │   │   ├── _layout.tsx   # Native tabs (system tab bar, SF Symbols)
 │   │   │   ├── index.tsx     # Timeline list (paginated, pull-to-refresh)
@@ -76,17 +76,19 @@ Resolution order (see `src/config.ts`): `EXPO_PUBLIC_API_BASE_URL` env → `app.
 Native uses the email-code endpoints the backend already exposes for API clients (no cookies):
 
 1. `POST /api/auth/request-code { email }` → emails a 6-digit code (always returns 200; the address must be allowlisted in the `users` collection to actually receive one).
-2. `POST /api/auth/exchange-code { email, code }` → `{ token, email }`. The token is a 30-day `itsdangerous` session token.
+2. `POST /api/auth/exchange-code { email, code }` → `{ token, email }`. The token is a signed id for a server-side session that lasts while it's used (90 days idle); signing out calls `POST /api/auth/logout` so it dies on the server too.
 3. Token is stored in the **Keychain via `expo-secure-store`** and sent as `Authorization: Bearer <token>` on every request (`src/api/client.ts`).
 4. On launch, `useAuthStore.init()` reads the token and validates it against `GET /api/auth/me`. A 401 anywhere mid-session triggers `signOut()` and bounces to `/login`.
 
-Google sign-in is **not** wired up yet — see roadmap.
+**Continue with Google** reuses the website's OAuth flow instead of the native Google SDK (so there's no iOS client to set up in Google Cloud Console): `signInWithGoogle()` makes a PKCE verifier/challenge (`expo-crypto`), opens `/api/auth/google/start?client=app&challenge=…` in an `ASWebAuthenticationSession` (`expo-web-browser`'s `openAuthSessionAsync`), and waits for the backend to redirect to `hindsite://auth?code=…` (or `?error=cancelled|failed|unauthorized`). It then swaps the one-time code plus the verifier at `POST /api/auth/google/app-exchange` for the same `{ token, email }` as the email flow. Locally, Google sends the browser back to `http://localhost:3000/api/auth/google/callback`, so the Docker `frontend` (nginx on :3000) has to be running for it to finish.
+
+App Store note: guideline 4.8 expects Sign in with Apple alongside a third-party login like Google before review (it needs the paid developer account).
 
 ## What works vs. what's next
 
 **Working now**
 
-- Email-code sign-in → persisted session → auto-login on relaunch → sign-out.
+- Email-code or Google sign-in → persisted session → auto-login on relaunch → sign-out.
 - Full REST client for events / threads / people / uploads (parity with the web `api/` layer).
 - Timeline: paginated list (bidirectional cursor), pull-to-refresh, infinite scroll, thumbnails.
 - Chat: live SSE token streaming, plus the edit-confirm card (Confirm / Choose another / Cancel → `confirm_edit` action) and tappable cards for events chat created or updated (which also refresh the Timeline).
@@ -101,7 +103,7 @@ Google sign-in is **not** wired up yet — see roadmap.
 - **Inline media playback on the detail screen** — video/audio/PDF currently open in the system viewer via `Linking`. Native in-app playback would use `expo-video` / `expo-audio` (`expo-av` was removed in SDK 55) + a PDF viewer, plus the client-rendered thumbnails below so non-photo tiles aren't blank.
 - **Native media thumbnails** for video / audio / PDF. The web app renders these client-side (canvas / Web Audio / pdf.js); native equivalents are `AVAssetImageGenerator`, a waveform render, and `PDFKit`. Until then `uploadMedia` uploads non-photos without a `thumb_key` (backend tolerates it).
 - **Native document scan** — replace the web OpenCV-WASM path with VisionKit `VNDocumentCameraViewController` (far better, free on iOS).
-- **Google Sign-In** — needs a backend endpoint that takes a Google ID token and returns a JSON session token (the current `/google/callback` is a cookie+302 web flow). Then native Google Sign-In or `expo-auth-session`.
+- **Sign in with Apple** — required next to Google for App Store review (guideline 4.8); needs the paid developer account for the capability.
 - **Push notifications** ("on this day") — `expo-notifications` + a backend device-token registry.
 - Threads/people management, search, filters, event detail with lightbox.
 

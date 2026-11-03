@@ -1,7 +1,19 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
+import * as Crypto from 'expo-crypto'
+import * as Linking from 'expo-linking'
+import * as WebBrowser from 'expo-web-browser'
 import { getAuthToken, setAuthToken, setUnauthorizedHandler } from '../api/client'
-import { fetchMe, requestCode, exchangeCode, logout, type Me } from '../api/auth'
+import {
+  GOOGLE_REDIRECT,
+  exchangeCode,
+  fetchMe,
+  googleAppExchange,
+  googleStartUrl,
+  logout,
+  requestCode,
+  type Me,
+} from '../api/auth'
 
 // The session token lives in the iOS Keychain / Android Keystore via
 // expo-secure-store — never AsyncStorage (which is plaintext on disk). The last
@@ -23,6 +35,9 @@ type AuthState = {
   sendCode: (email: string) => Promise<void>
   // Step 2: exchange the code for a token, persist it, and load the user.
   verifyCode: (email: string, code: string) => Promise<void>
+  // Google, via the web OAuth flow in a browser sheet. Resolves false if the
+  // user backed out, throws with a user-facing message on failure.
+  signInWithGoogle: () => Promise<boolean>
   signOut: () => Promise<void>
 }
 
@@ -41,6 +56,29 @@ async function readCachedUser(): Promise<User | null> {
 
 async function cacheUser(user: User) {
   await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user)).catch(() => {})
+}
+
+// PKCE (RFC 7636): only this app holds the verifier, so a one-time code that
+// leaked out of the redirect is useless on its own.
+async function pkcePair(): Promise<{ verifier: string; challenge: string }> {
+  const verifier = `${Crypto.randomUUID()}${Crypto.randomUUID()}`
+  const digest = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, verifier, {
+    encoding: Crypto.CryptoEncoding.BASE64,
+  })
+  const challenge = digest.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return { verifier, challenge }
+}
+
+// Persist a freshly issued token and load the profile. The exchange already
+// proved the token; a failed /me here just means we fill in the profile on
+// the next launch.
+async function completeSignIn(token: string, email: string) {
+  await SecureStore.setItemAsync(TOKEN_KEY, token)
+  setAuthToken(token)
+  const me = await fetchMe().catch((): Me => ({ authenticated: true, email }))
+  const user = toUser(me, email)
+  await cacheUser(user)
+  useAuthStore.setState({ status: 'authed', user })
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -83,14 +121,27 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   verifyCode: async (email: string, code: string) => {
     const normalized = email.trim().toLowerCase()
     const { token } = await exchangeCode(normalized, code.trim())
-    await SecureStore.setItemAsync(TOKEN_KEY, token)
-    setAuthToken(token)
-    // The exchange already proved the token; a failed /me here just means we
-    // fill in the profile on the next launch.
-    const me = await fetchMe().catch((): Me => ({ authenticated: true, email: normalized }))
-    const user = toUser(me, normalized)
-    await cacheUser(user)
-    set({ status: 'authed', user })
+    await completeSignIn(token, normalized)
+  },
+
+  signInWithGoogle: async () => {
+    const { verifier, challenge } = await pkcePair()
+    const result = await WebBrowser.openAuthSessionAsync(googleStartUrl(challenge), GOOGLE_REDIRECT)
+    if (result.type !== 'success') return false
+    const params = Linking.parse(result.url).queryParams ?? {}
+    const code = typeof params.code === 'string' ? params.code : null
+    if (!code) {
+      if (params.error === 'cancelled') return false
+      if (params.error === 'unauthorized') {
+        throw new Error(
+          `${params.email || 'That Google account'} isn't on the list for Hindsite yet. Ask the person who runs it to add you.`,
+        )
+      }
+      throw new Error('Google sign-in didn’t work. Please try again.')
+    }
+    const { token, email } = await googleAppExchange(code, verifier)
+    await completeSignIn(token, email)
+    return true
   },
 
   signOut: async () => {
