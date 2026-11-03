@@ -12,6 +12,10 @@ import { useTheme } from '@/theme'
 // validated it, so the user never sees the login screen flash on launch.
 void SplashScreen.preventAutoHideAsync()
 
+// Expo Router's stock boundary: a render error shows an error screen with
+// Retry instead of crashing — in Release builds an uncaught JS error aborts.
+export { ErrorBoundary } from 'expo-router'
+
 // Root layout = the auth gate. `init()` runs once on launch; after that the
 // Stack.Protected guards keep the route tree in sync with auth status: anon
 // users can only reach /login, and authed users can't sit on it. When a guard

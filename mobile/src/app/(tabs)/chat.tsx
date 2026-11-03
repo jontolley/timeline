@@ -22,6 +22,7 @@ import {
 } from '@/api/chat'
 import type { TimelineEvent } from '@/api/types'
 import { useTimelineSignal } from '@/store/timeline'
+import Markdown from '@/components/Markdown'
 import { GlassButton, Icon, TintButton } from '@/components/ui'
 import { useTheme, type Theme } from '@/theme'
 
@@ -32,7 +33,7 @@ type Msg = ChatMessage & {
   id: string
   pendingEdit?: PendingEdit & { status: 'open' | 'confirmed' | 'cancelled' }
   eventAction?: { type: 'created' | 'updated'; event: TimelineEvent }
-  sources?: TimelineEvent[]
+  sources?: string[]
 }
 
 let idCounter = 0
@@ -44,7 +45,8 @@ function toApiMessages(msgs: Msg[]): ChatMessage[] {
 }
 
 // Dates store UTC — format in UTC so the day never shifts.
-function fmtDate(iso: string): string {
+function fmtDate(iso: string | null | undefined): string {
+  if (!iso) return ''
   const full = iso.includes('T') ? iso : `${iso}T00:00:00Z`
   return new Date(full).toLocaleDateString(undefined, {
     timeZone: 'UTC',
@@ -102,7 +104,7 @@ export default function ChatScreen() {
     setStreaming(true)
     try {
       await streamChat(toApiMessages(history), null, {
-        onSources: (events) => patch(assistantId, (m) => ({ ...m, sources: events.slice(0, 3) })),
+        onSources: (titles) => patch(assistantId, (m) => ({ ...m, sources: titles.filter(Boolean).slice(0, 3) })),
         onToken: (chunk) => patch(assistantId, (m) => ({ ...m, content: m.content + chunk })),
         onPendingEdit: (data) => patch(assistantId, (m) => ({ ...m, pendingEdit: { ...data, status: 'open' } })),
         onEventCreated: (event) => {
@@ -220,19 +222,19 @@ export default function ChatScreen() {
                 ) : item.content === '' && streaming ? (
                   <ActivityIndicator color={t.secondary} style={styles.typing} />
                 ) : item.content ? (
-                  <Text style={styles.botText} selectable>
-                    {item.content}
-                  </Text>
+                  <Markdown text={item.content} style={styles.botText} containerStyle={styles.bot} />
                 ) : null}
-                {item.sources?.length && !item.pendingEdit && !item.eventAction ? (
-                  <FlatList
-                    horizontal
-                    data={item.sources}
-                    keyExtractor={(ev) => ev._id}
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.sources}
-                    renderItem={({ item: ev }) => <EventChip ev={ev} />}
-                  />
+                {item.sources && item.sources.length > 0 && !item.pendingEdit && !item.eventAction ? (
+                  <View style={styles.sources}>
+                    {item.sources.map((title, i) => (
+                      <View key={i} style={styles.sourcePill}>
+                        <Icon name="doc.text" size={12} color={t.secondary} />
+                        <Text style={styles.sourcePillText} numberOfLines={1}>
+                          {title}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
                 ) : null}
                 {item.pendingEdit ? (
                   <PendingEditCard
@@ -400,9 +402,21 @@ function makeStyles(t: Theme) {
       paddingVertical: 10,
     },
     userText: { color: t.onTint, fontSize: 17, lineHeight: 22 },
-    botText: { color: t.label, fontSize: 17, lineHeight: 24, paddingRight: 12 },
+    bot: { paddingRight: 12 },
+    botText: { color: t.label, fontSize: 17, lineHeight: 24 },
     typing: { alignSelf: 'flex-start', marginVertical: 6 },
-    sources: { gap: 8 },
+    sources: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    sourcePill: {
+      maxWidth: '100%',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 12,
+      backgroundColor: t.fill,
+    },
+    sourcePillText: { flexShrink: 1, fontSize: 13, color: t.secondary },
     source: {
       width: 220,
       flexDirection: 'row',

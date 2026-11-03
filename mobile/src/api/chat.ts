@@ -25,7 +25,9 @@ export type PendingEdit = {
 export type ChatAction = { type: 'confirm_edit'; event_id: string; changes: EditChanges }
 
 export type ChatCallbacks = {
-  onSources?: (events: TimelineEvent[]) => void
+  // Titles of the events the answer drew on — the backend sends strings, not
+  // event objects (no ids), so these can only be shown, not linked.
+  onSources?: (titles: string[]) => void
   onToken?: (text: string) => void
   onEventCreated?: (event: TimelineEvent) => void
   onEventUpdated?: (event: TimelineEvent) => void
