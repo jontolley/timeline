@@ -5,6 +5,7 @@ import { locationDisplay } from '../utils/location'
 import { personColor } from '../utils/colors'
 import { usePeopleStore, useChatStore, useThreadStore } from '../store'
 import PeopleChips from '../components/PeopleChips'
+import Markdown from '../components/Markdown'
 
 const FIELD_LABELS = {
   title: 'Title',
@@ -213,8 +214,10 @@ function MessageRow({ msg, messageIndex, streaming, peopleById, onConfirm, onCan
       <div className="msg-bubble">
         {msg.thinking ? (
           <p className="msg-thinking">Thinking…</p>
-        ) : (
+        ) : isUser ? (
           <p className="whitespace-pre">{msg.content}</p>
+        ) : (
+          <Markdown text={msg.content} />
         )}
 
         {msg.pendingEdit && !msg.thinking && (

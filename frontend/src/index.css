@@ -395,7 +395,7 @@ input, select, textarea {
   width: 32px;
   height: 32px;
   border-radius: 50%;
-  background: var(--hi);
+  background: var(--line-soft);
   border: 2px solid var(--accent);
   display: grid;
   place-items: center;
@@ -414,7 +414,7 @@ input, select, textarea {
 }
 .hs-account-avatar-img {
   object-fit: cover;
-  background: var(--hi);
+  background: var(--line-soft);
 }
 .user-menu-dropdown {
   position: absolute;
@@ -936,7 +936,7 @@ input, select, textarea {
   height: 20px;
   padding: 0;
   border: 0;
-  background: var(--hi);
+  background: var(--line-soft);
   color: var(--ink);
   border-radius: 50%;
   font-size: 14px;
@@ -1207,7 +1207,7 @@ input, select, textarea {
   letter-spacing: 0.1em;
   padding: 2px 8px;
   border-radius: 999px;
-  background: var(--hi);
+  background: var(--line-soft);
   color: var(--accent-d);
   border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--rule));
 }
@@ -2809,6 +2809,18 @@ a.card { text-decoration: none; }
 .msg-bubble p + p { margin-top: 10px; }
 .msg-bubble strong { font-weight: 600; }
 .msg-bubble .whitespace-pre { white-space: pre-wrap; }
+.msg-bubble .md > * + * { margin-top: 10px; }
+.msg-bubble .md ul,
+.msg-bubble .md ol { margin-bottom: 0; padding-left: 22px; }
+.msg-bubble .md li + li { margin-top: 4px; }
+.msg-bubble .md h4 { margin: 0; font-size: 15.5px; font-weight: 600; }
+.msg-bubble .md code {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--line-soft);
+}
 
 .msg-thinking { color: var(--ink-mute); font-style: italic; }
 
@@ -4025,7 +4037,7 @@ a.card { text-decoration: none; }
 .hs-rail-avatar {
   width: 34px; height: 34px;
   border-radius: 50%;
-  background: var(--hi);
+  background: var(--line-soft);
   border: 1px solid var(--rule);
   display: grid; place-items: center;
   font-family: var(--font-serif);
@@ -4218,12 +4230,12 @@ a.card { text-decoration: none; }
 .hs-badge.private { color: var(--ink-soft); }
 .hs-badge.private .hs-badge-dot { background: var(--ink-soft); }
 .hs-badge.shared {
-  background: var(--hi); color: var(--accent-d);
+  background: var(--line-soft); color: var(--accent-d);
   border-color: color-mix(in oklab, var(--accent) 30%, var(--rule));
 }
 .hs-badge.shared .hs-badge-dot { background: var(--accent); }
 .hs-badge.role-admin {
-  background: var(--hi); color: var(--accent-d);
+  background: var(--line-soft); color: var(--accent-d);
   border-color: color-mix(in oklab, var(--accent) 30%, var(--rule));
 }
 .hs-badge.role-admin .hs-badge-dot { background: var(--accent); }
@@ -4346,7 +4358,7 @@ a.card { text-decoration: none; }
 .hs-shared-user:hover { border-color: color-mix(in oklab, var(--ink) 20%, var(--rule)); }
 .hs-shared-avatar {
   width: 30px; height: 30px; border-radius: 50%;
-  background: var(--hi);
+  background: var(--line-soft);
   border: 1px solid var(--rule);
   display: grid; place-items: center;
   font-family: var(--font-serif);
