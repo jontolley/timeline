@@ -305,6 +305,10 @@ async def _ensure_auth_indexes():
         )
     if "sessions_user" not in existing:
         await sessions_collection.create_index("user_id", name="sessions_user")
+    if "sessions_app_handoff" not in existing:
+        await sessions_collection.create_index(
+            "app_handoff", name="sessions_app_handoff", sparse=True
+        )
 
 
 async def _ensure_text_index():

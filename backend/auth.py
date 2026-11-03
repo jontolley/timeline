@@ -46,6 +46,12 @@ SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 400
 # They keep working until their original 30 days run out, then the user signs
 # in once more and gets a session-backed token.
 LEGACY_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
+# Google sign-in from the iOS app runs the web OAuth flow in a browser sheet,
+# then redirects here with a one-time code the app swaps for its token (so the
+# token itself never rides in a URL). Until that swap, the session exists
+# only as a short-lived pending record the TTL index reaps if it's abandoned.
+APP_AUTH_REDIRECT = os.getenv("APP_AUTH_REDIRECT", "hindsite://auth")
+APP_HANDOFF_TTL_SECONDS = 120
 LOGIN_CODE_TTL_SECONDS = 60 * 15
 LOGIN_CODE_RESEND_INTERVAL_SECONDS = 60
 LOGIN_CODE_MAX_ATTEMPTS = 5
@@ -81,9 +87,20 @@ def _aware(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-async def create_session(email: str, user_agent: Optional[str] = None) -> str:
+def session_token(sid: str) -> str:
+    return _signer.dumps({"sid": sid, "purpose": "session"})
+
+
+async def create_session(
+    email: str,
+    user_agent: Optional[str] = None,
+    pending: Optional[dict] = None,
+) -> str:
     """Record a new session for an (already allowlisted) user and return its
-    signed token — set as the web cookie, or returned to API clients as JSON."""
+    signed token — set as the web cookie, or returned to API clients as JSON.
+
+    `pending` (the iOS Google handoff fields) parks the session as a pending
+    record that expires in APP_HANDOFF_TTL_SECONDS unless the app claims it."""
     from database import sessions_collection, users_collection
 
     user = await users_collection.find_one({"email": email.lower()})
@@ -96,11 +113,14 @@ async def create_session(email: str, user_agent: Optional[str] = None) -> str:
         "user_id": user["_id"],
         "created_at": now,
         "last_used_at": now,
-        "expires_at": now + timedelta(seconds=SESSION_IDLE_SECONDS),
+        "expires_at": now + timedelta(
+            seconds=APP_HANDOFF_TTL_SECONDS if pending else SESSION_IDLE_SECONDS
+        ),
         # Only so a signed-in-devices list can tell sessions apart.
         "user_agent": (user_agent or "")[:300],
+        **(pending or {}),
     })
-    return _signer.dumps({"sid": sid, "purpose": "session"})
+    return session_token(sid)
 
 
 def session_id_of(token: str) -> Optional[str]:
@@ -167,18 +187,23 @@ def token_from_request(request: Request) -> Optional[str]:
     return request.cookies.get(SESSION_COOKIE_NAME)
 
 
-def make_oauth_state(provider: str) -> str:
-    return _signer.dumps({"provider": provider, "purpose": "oauth_state"})
+def make_oauth_state(provider: str, app_challenge: Optional[str] = None) -> str:
+    payload = {"provider": provider, "purpose": "oauth_state"}
+    if app_challenge:
+        # Set when the iOS app started the flow (see APP_AUTH_REDIRECT).
+        payload["app_challenge"] = app_challenge
+    return _signer.dumps(payload)
 
 
-def verify_oauth_state(token: str) -> Optional[str]:
+def verify_oauth_state(token: str) -> Optional[dict]:
+    """The state payload ({provider, app_challenge?}) if it's valid and fresh."""
     try:
         payload = _signer.loads(token, max_age=OAUTH_STATE_TTL_SECONDS)
     except (BadSignature, SignatureExpired):
         return None
-    if payload.get("purpose") != "oauth_state":
+    if not isinstance(payload, dict) or payload.get("purpose") != "oauth_state":
         return None
-    return payload.get("provider")
+    return payload
 
 
 def generate_login_code() -> str:

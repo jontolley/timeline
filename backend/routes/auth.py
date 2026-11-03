@@ -1,15 +1,22 @@
+import base64
+import hashlib
+import hmac
 import os
+import re
+import secrets
 from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
+from pymongo import ReturnDocument
 from pydantic import BaseModel, EmailStr
 
 from ratelimit import RateLimiter, client_ip
 
 from auth import (
+    APP_AUTH_REDIRECT,
     APP_BASE_URL,
     AUTH_DISABLED,
     COOKIE_SECURE,
@@ -20,6 +27,7 @@ from auth import (
     LOGIN_CODE_TTL_SECONDS,
     SESSION_COOKIE_MAX_AGE,
     SESSION_COOKIE_NAME,
+    SESSION_IDLE_SECONDS,
     create_session,
     generate_login_code,
     hash_login_code,
@@ -31,6 +39,7 @@ from auth import (
     revoke_session,
     send_login_code,
     send_magic_link,
+    session_token,
     verify_login_code,
     verify_magic_token,
     verify_oauth_state,
@@ -133,7 +142,9 @@ async def list_sessions(request: Request, user=Depends(require_auth)):
     """The caller's signed-in devices, most recently used first."""
     current = getattr(request.state, "session_id", None)
     out = []
-    async for s in sessions_collection.find({"user_id": user["_id"]}).sort("last_used_at", -1):
+    # Skip pending iOS Google handoffs nobody has claimed (yet).
+    query = {"user_id": user["_id"], "app_handoff": {"$exists": False}}
+    async for s in sessions_collection.find(query).sort("last_used_at", -1):
         out.append({
             "id": s["_id"],
             "user_agent": s.get("user_agent") or "",
@@ -268,14 +279,37 @@ def _google_redirect_uri() -> str:
     return f"{APP_BASE_URL}/api/auth/google/callback"
 
 
+# A PKCE S256 challenge: base64url(sha256(verifier)) without padding.
+_PKCE_CHALLENGE_RE = re.compile(r"^[A-Za-z0-9_-]{43}$")
+
+
+def _app_redirect(**params: str) -> RedirectResponse:
+    """302 back into the iOS app, which is waiting on APP_AUTH_REDIRECT in an
+    ASWebAuthenticationSession."""
+    return RedirectResponse(url=f"{APP_AUTH_REDIRECT}?{urlencode(params)}", status_code=302)
+
+
+def _sha256_hex(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
 @router.get("/google/start")
-async def google_start():
+async def google_start(client: str = "", challenge: str = ""):
     """Kick off the Google OAuth redirect. Returns 302 to Google's consent
     screen; on approval Google redirects back to /api/auth/google/callback
-    with a `code` we exchange for an id_token."""
+    with a `code` we exchange for an id_token.
+
+    The iOS app passes `client=app` plus a PKCE `challenge`; the callback then
+    hands it a one-time code (claimed via POST /google/app-exchange with the
+    matching verifier) instead of setting a cookie."""
     if not GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=503, detail="Google sign-in not configured")
-    state = make_oauth_state("google")
+    app_challenge = None
+    if client == "app":
+        if not _PKCE_CHALLENGE_RE.match(challenge):
+            raise HTTPException(status_code=400, detail="Missing or malformed challenge")
+        app_challenge = challenge
+    state = make_oauth_state("google", app_challenge=app_challenge)
     params = {
         "client_id": GOOGLE_CLIENT_ID,
         "redirect_uri": _google_redirect_uri(),
@@ -295,11 +329,109 @@ async def google_start():
 async def google_callback(request: Request, code: str = "", state: str = ""):
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="Google sign-in not configured")
-    if not code or not state:
-        raise HTTPException(status_code=400, detail="Missing code or state")
-    if verify_oauth_state(state) != "google":
+    st = verify_oauth_state(state) if state else None
+    if not st or st.get("provider") != "google":
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+    app_challenge = st.get("app_challenge")
+    if not code:
+        # Google sends `error=access_denied` (no code) when the user backs out.
+        if app_challenge:
+            return _app_redirect(error="cancelled")
+        raise HTTPException(status_code=400, detail="Missing code or state")
+    try:
+        claims = await _google_claims(code)
+    except HTTPException:
+        if app_challenge:
+            return _app_redirect(error="failed")
+        raise
 
+    email = (claims.get("email") or "").strip().lower()
+    if not await is_allowed(email):
+        # The user authenticated with Google but isn't on the allowlist.
+        # Send them to the frontend's /unauthorized screen so they see a
+        # real page (with the offending email + a way back to sign-in)
+        # instead of a raw JSON 403 from FastAPI. The app shows its own.
+        if app_challenge:
+            return _app_redirect(error="unauthorized", email=email)
+        return _unauthorized_redirect(email)
+
+    # Persist (and refresh on each sign-in) the user's display name + avatar
+    # URL from Google's claims. Magic-link sign-ins don't touch these fields,
+    # so a user who switches between methods keeps whichever Google last set.
+    profile_updates: dict = {}
+    google_name = (claims.get("name") or "").strip()
+    google_picture = (claims.get("picture") or "").strip()
+    if google_name:
+        profile_updates["name"] = google_name
+    if google_picture:
+        profile_updates["picture_url"] = google_picture
+    if profile_updates:
+        profile_updates["updated_at"] = datetime.now(timezone.utc)
+        await users_collection.update_one(
+            {"email": email}, {"$set": profile_updates}
+        )
+
+    if app_challenge:
+        handoff = secrets.token_urlsafe(32)
+        await create_session(email, pending={
+            "app_handoff": _sha256_hex(handoff),
+            "app_challenge": app_challenge,
+        })
+        return _app_redirect(code=handoff)
+
+    token = await create_session(email, request.headers.get("user-agent"))
+    response = RedirectResponse(url=APP_BASE_URL, status_code=302)
+    _set_session_cookie(response, token)
+    return response
+
+
+class AppExchangeRequest(BaseModel):
+    code: str
+    verifier: str
+
+
+@router.post("/google/app-exchange")
+async def google_app_exchange(body: AppExchangeRequest, request: Request):
+    """Second half of the iOS app's Google sign-in: trade the one-time code
+    from the callback redirect, plus the PKCE verifier only the app holds, for
+    a session token. The code works once, for APP_HANDOFF_TTL_SECONDS."""
+    invalid = HTTPException(status_code=400, detail="Sign-in expired. Please try again.")
+    handoff = _sha256_hex(body.code)
+    pending = await sessions_collection.find_one({"app_handoff": handoff})
+    if not pending:
+        raise invalid
+    expires_at = pending["expires_at"]
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
+    challenge = base64.urlsafe_b64encode(
+        hashlib.sha256(body.verifier.encode("utf-8")).digest()
+    ).rstrip(b"=").decode("ascii")
+    if expires_at <= now or not hmac.compare_digest(challenge, pending.get("app_challenge", "")):
+        raise invalid
+
+    # Claim it atomically so a replayed code can't mint a second token. The
+    # browser sheet's user agent isn't the app's, so record this request's.
+    claimed = await sessions_collection.find_one_and_update(
+        {"_id": pending["_id"], "app_handoff": handoff},
+        {
+            "$unset": {"app_handoff": "", "app_challenge": ""},
+            "$set": {
+                "last_used_at": now,
+                "expires_at": now + timedelta(seconds=SESSION_IDLE_SECONDS),
+                "user_agent": (request.headers.get("user-agent") or "")[:300],
+            },
+        },
+        return_document=ReturnDocument.AFTER,
+    )
+    if not claimed:
+        raise invalid
+    user = await users_collection.find_one({"_id": claimed["user_id"]})
+    return {"token": session_token(claimed["_id"]), "email": user["email"] if user else ""}
+
+
+async def _google_claims(code: str) -> dict:
+    """Swap Google's authorization code for verified id_token claims."""
     # Exchange the authorization code for tokens, then verify the id_token
     # via Google's tokeninfo endpoint (simpler than JWKS verification, and
     # the recommended approach for backend verification).
@@ -333,34 +465,6 @@ async def google_callback(request: Request, code: str = "", state: str = ""):
         raise HTTPException(status_code=400, detail="Token audience mismatch")
     if claims.get("email_verified") not in ("true", True):
         raise HTTPException(status_code=400, detail="Google says this email is not verified")
-
-    email = (claims.get("email") or "").strip().lower()
-    if not email:
+    if not (claims.get("email") or "").strip():
         raise HTTPException(status_code=400, detail="No email in Google response")
-    if not await is_allowed(email):
-        # The user authenticated with Google but isn't on the allowlist.
-        # Send them to the frontend's /unauthorized screen so they see a
-        # real page (with the offending email + a way back to sign-in)
-        # instead of a raw JSON 403 from FastAPI.
-        return _unauthorized_redirect(email)
-
-    # Persist (and refresh on each sign-in) the user's display name + avatar
-    # URL from Google's claims. Magic-link sign-ins don't touch these fields,
-    # so a user who switches between methods keeps whichever Google last set.
-    profile_updates: dict = {}
-    google_name = (claims.get("name") or "").strip()
-    google_picture = (claims.get("picture") or "").strip()
-    if google_name:
-        profile_updates["name"] = google_name
-    if google_picture:
-        profile_updates["picture_url"] = google_picture
-    if profile_updates:
-        profile_updates["updated_at"] = datetime.now(timezone.utc)
-        await users_collection.update_one(
-            {"email": email}, {"$set": profile_updates}
-        )
-
-    session_token = await create_session(email, request.headers.get("user-agent"))
-    response = RedirectResponse(url=APP_BASE_URL, status_code=302)
-    _set_session_cookie(response, session_token)
-    return response
+    return claims
