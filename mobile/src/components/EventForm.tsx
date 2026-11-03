@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -25,7 +25,8 @@ import {
   updateEvent,
 } from '../api/events'
 import { listThreads } from '../api/threads'
-import { uploadMedia, type PickedAsset } from '../api/uploads'
+import { extractExif, uploadMedia, type PickedAsset } from '../api/uploads'
+import { reverseGeocode } from '../api/geocode'
 import type { LocationDetail, MediaRef, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
 import { FillButton, Icon, IconTile, TintButton } from '@/components/ui'
@@ -34,6 +35,11 @@ import { paletteColor, useTheme, type Theme } from '@/theme'
 // Shared create/edit form. `eventId` undefined → create; present → edit (loads
 // the event, supports delete, and manages media through the dedicated attach/
 // remove endpoints since EventUpdate has no media field).
+//
+// `sharedAssets` (create mode) are photos handed over from the iOS share sheet:
+// they're attached like picked photos, and — like the web's "Event from photo"
+// — the first one's EXIF prefills the date and, via reverse geocoding, the
+// location. The title keeps focus so the user just types it.
 
 type PendingMedia = {
   localUri: string
@@ -73,7 +79,7 @@ function thumbUriFor(m: MediaRef): string | null {
   return m.thumb_url || m.url || null
 }
 
-export default function EventForm({ eventId }: { eventId?: string }) {
+export default function EventForm({ eventId, sharedAssets }: { eventId?: string; sharedAssets?: PickedAsset[] }) {
   const isEdit = !!eventId
   const router = useRouter()
   const requestRefresh = useTimelineSignal((s) => s.requestRefresh)
@@ -91,6 +97,15 @@ export default function EventForm({ eventId }: { eventId?: string }) {
   const [date, setDate] = useState<Date>(todayUtcMidnight)
   const [dateTouched, setDateTouched] = useState(false)
   const [locationTouched, setLocationTouched] = useState(false)
+  // Coords + full address from photo EXIF; dropped as soon as the user edits
+  // the place text, since they'd no longer describe what's typed.
+  const [locationDetail, setLocationDetail] = useState<LocationDetail | null>(null)
+  const [findingPlace, setFindingPlace] = useState(false)
+  // Set by the date/location handlers and read inside the async EXIF prefill,
+  // which must not overwrite a user edit.
+  const touched = useRef({ date: false, location: false })
+  // Dev effects run twice; the shared photos must only be queued once.
+  const sharedTaken = useRef(false)
   const [originalDateIso, setOriginalDateIso] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
 
@@ -149,8 +164,39 @@ export default function EventForm({ eventId }: { eventId?: string }) {
     }
   }, [eventId])
 
+  // A share from Photos can cold-start the app straight into this modal, with
+  // nothing underneath to go back to — land on the Timeline instead.
+  function close() {
+    if (router.canGoBack()) router.back()
+    else router.replace('/')
+  }
+
   const uploading = pending.some((m) => m.status === 'uploading')
   const canSave = title.trim().length > 0 && !saving && !uploading && !readOnly
+
+  useEffect(() => {
+    if (isEdit || !sharedAssets?.length || sharedTaken.current) return
+    sharedTaken.current = true
+    addAssets(sharedAssets)
+    void prefillFromPhoto(sharedAssets[0])
+  }, [sharedAssets, isEdit])
+
+  async function prefillFromPhoto(asset: PickedAsset) {
+    try {
+      const exif = await extractExif(asset)
+      if (exif.date && !touched.current.date) setDate(new Date(`${exif.date}T00:00:00.000Z`))
+      if (exif.lat == null || exif.lng == null || touched.current.location) return
+      setFindingPlace(true)
+      const place = await reverseGeocode(exif.lat, exif.lng).catch(() => null)
+      if (touched.current.location) return
+      setLocationDetail(place ?? { lat: exif.lat, lng: exif.lng })
+      if (place?.name) setLocationName(place.name)
+    } catch {
+      // No EXIF (or a screenshot) — the form just keeps today's date.
+    } finally {
+      setFindingPlace(false)
+    }
+  }
 
   async function pickImages() {
     // No permission request: the system picker (PHPicker / Android Photo
@@ -163,16 +209,22 @@ export default function EventForm({ eventId }: { eventId?: string }) {
       quality: 1,
     })
     if (result.canceled) return
-
-    for (const asset of result.assets) {
-      const localUri = asset.uri
-      const picked: PickedAsset = {
+    addAssets(
+      result.assets.map((asset) => ({
         uri: asset.uri,
         width: asset.width,
         height: asset.height,
         mimeType: asset.mimeType,
         fileName: asset.fileName,
-      }
+      })),
+    )
+  }
+
+  // Queue each photo and upload it; create mode holds the refs until save,
+  // edit mode attaches each one to the event as soon as it lands.
+  function addAssets(assets: PickedAsset[]) {
+    for (const picked of assets) {
+      const localUri = picked.uri
       setPending((prev) => [...prev, { localUri, status: 'uploading' }])
       uploadMedia(picked)
         .then(async (ref) => {
@@ -242,13 +294,15 @@ export default function EventForm({ eventId }: { eventId?: string }) {
           title: title.trim(),
           description: description.trim() || undefined,
           date: toUtcMidnightIso(date),
-          location: locationName.trim() ? { name: locationName.trim() } : undefined,
+          location: locationName.trim()
+            ? { ...locationDetail, name: locationName.trim() }
+            : locationDetail ?? undefined,
           thread_id: threadId ?? undefined,
           media: attached,
         })
       }
       requestRefresh()
-      router.back()
+      close()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to save event.')
       setSaving(false)
@@ -267,7 +321,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
           try {
             await deleteEvent(eventId)
             requestRefresh()
-            router.back()
+            close()
           } catch (e) {
             setError(e instanceof Error ? e.message : 'Failed to delete event.')
             setSaving(false)
@@ -303,7 +357,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
     return (
       <View style={[styles.sheet, styles.center]}>
         <Text style={styles.error}>{loadError}</Text>
-        <Pressable onPress={() => router.back()}>
+        <Pressable onPress={() => close()}>
           <Text style={styles.link}>Go Back</Text>
         </Pressable>
       </View>
@@ -339,6 +393,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
               style={styles.picker}
               onValueChange={(_event, picked) => {
                 if (Platform.OS !== 'ios') setShowPicker(false)
+                touched.current.date = true
                 setDateTouched(true)
                 setDate(new Date(Date.UTC(picked.getUTCFullYear(), picked.getUTCMonth(), picked.getUTCDate())))
               }}
@@ -358,10 +413,12 @@ export default function EventForm({ eventId }: { eventId?: string }) {
             style={styles.rowInput}
             value={locationName}
             onChangeText={(v) => {
+              touched.current.location = true
               setLocationTouched(true)
+              setLocationDetail(null)
               setLocationName(v)
             }}
-            placeholder="Add place"
+            placeholder={findingPlace ? 'Finding place…' : 'Add place'}
             placeholderTextColor={t.placeholder}
             editable={!readOnly}
             returnKeyType="done"
@@ -392,7 +449,7 @@ export default function EventForm({ eventId }: { eventId?: string }) {
   return (
     <View style={styles.sheet}>
       <View style={styles.header}>
-        <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={() => router.back()} disabled={saving} />
+        <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={() => close()} disabled={saving} />
         <Text style={styles.headerTitle}>{heading}</Text>
         {readOnly ? (
           <View style={{ width: 44 }} />

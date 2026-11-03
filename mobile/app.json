@@ -41,7 +41,18 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-image",
-      "expo-font"
+      "expo-font",
+      [
+        "expo-sharing",
+        {
+          "ios": {
+            "enabled": true,
+            "activationRule": {
+              "supportsImageWithMaxCount": 10
+            }
+          }
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,
