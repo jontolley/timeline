@@ -1,9 +1,9 @@
 import { create } from 'zustand'
 import * as SecureStore from 'expo-secure-store'
-import { setAuthToken, setUnauthorizedHandler } from '../api/client'
-import { fetchMe, requestCode, exchangeCode, type Me } from '../api/auth'
+import { getAuthToken, setAuthToken, setUnauthorizedHandler } from '../api/client'
+import { fetchMe, requestCode, exchangeCode, logout, type Me } from '../api/auth'
 
-// The 30-day session token lives in the iOS Keychain / Android Keystore via
+// The session token lives in the iOS Keychain / Android Keystore via
 // expo-secure-store — never AsyncStorage (which is plaintext on disk). The last
 // known user profile is cached next to it so an offline launch can still show
 // who's signed in.
@@ -94,6 +94,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   signOut: async () => {
+    // Revoke the session on the server, best-effort and not awaited: signing
+    // out offline should still be instant, and the local copy is gone either way.
+    const token = getAuthToken()
+    if (token) logout(token).catch(() => {})
     await SecureStore.deleteItemAsync(TOKEN_KEY)
     await SecureStore.deleteItemAsync(USER_KEY)
     setAuthToken(null)

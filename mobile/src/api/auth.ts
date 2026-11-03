@@ -4,8 +4,9 @@ import { http } from './client'
 // API clients:
 //   POST /auth/request-code  { email }        -> { ok: true }   (always 200)
 //   POST /auth/exchange-code { email, code }   -> { token, email }
-// The token is a 30-day itsdangerous session token; it goes into SecureStore
-// and is presented as `Authorization: Bearer`. No cookie is involved.
+// The token is a signed id for a server-side session that stays alive while
+// it's used (90 days idle); it goes into SecureStore and is presented as
+// `Authorization: Bearer`. No cookie is involved.
 
 export async function requestCode(email: string): Promise<void> {
   // Always returns 200 — the backend won't reveal whether an address is
@@ -53,4 +54,15 @@ export async function fetchMe(): Promise<Me> {
   const res = await http('/auth/me')
   if (!res.ok) throw new Error(`Request failed: ${res.status}`)
   return res.json()
+}
+
+export async function logout(token: string): Promise<void> {
+  // Ends the session server-side so the token is dead even if a copy of it
+  // survives somewhere. /logout never returns 401, so this can't loop back
+  // through the unauthorized handler.
+  await http('/auth/logout', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}` },
+    auth: false,
+  })
 }
