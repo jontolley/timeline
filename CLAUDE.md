@@ -158,6 +158,15 @@ Persistent data lives in `./data/mongo` and `./data/qdrant`.
 - **`pages/NotFoundView.jsx`** — `<Route path="*">` 404 catchall inside the authenticated `<Routes>` (must stay last). Unauthenticated shell does NOT 404 unknown URLs — falls through to LandingPage so a signed-out deep link still hits the sign-in CTA.
 - **`components/ErrorBoundary.jsx`** — Class component wrapping both authenticated `<BrowserRouter>` and `<UnauthedShell>`. Renders a branded fallback with Reload / Back-to-home + collapsed `<details>` stack. **Does NOT catch async errors** (promise rejections, event handlers) — outside React's contract. `componentDidCatch` is where Sentry etc. plugs in later.
 
+### Mobile app (`mobile/`)
+
+An Expo SDK 58 (React Native, Expo Router, TypeScript) iPhone app against the same API. **`mobile/README.md` is the source of truth** for its architecture, auth flow, roadmap and gotchas; run it in the simulator with the `run-mobile` skill (`.claude/skills/run-mobile/SKILL.md`). Things that touch the rest of the repo:
+
+- **Nothing deploys it.** Cloudflare Pages builds only `frontend/` and Fly only `backend/`, so changes under `mobile/` never affect the website or API. The phone gets a new build via `npx expo run:ios --device … --configuration Release` with `EXPO_PUBLIC_API_BASE_URL=https://hindsite.app` (otherwise `mobile/.env`'s local URL is baked in).
+- **`mobile/ios/` is generated** (`npx expo prebuild -p ios`) and gitignored; native config lives in `mobile/app.json`.
+- **Auth is token-based, not cookies.** The app uses the email-code endpoints (`/request-code`, `/exchange-code`) or the app variant of Google sign-in (`/google/start?client=app` → `/google/app-exchange`), keeps the session token in the iOS Keychain and sends it as `Authorization: Bearer`. Backend auth changes must keep both the cookie and Bearer paths working.
+- **Its user agent is `Hindsite/<build> CFNetwork/…`**, which `DevicesSettings` labels "Hindsite app · iPhone".
+
 ### Tools (`tools/`)
 
 - **`import_dayone.py`** — One-off importer that reads a Day One JSON export zip and creates one event per entry via the live API. Maps title from `richText` header blocks with a Claude Haiku fallback for the older untitled entries, maps tags to event types via a small heuristic, mirrors locations, and uploads photos (Pillow-resized to 2000px + 400px thumb), videos (ffmpeg-extracted poster), and audio (no thumb). Idempotent via a `dayone:<uuid>` tag, so re-runs after a crash resume cleanly. See the file's docstring for the full usage; requires `pip install -r tools/requirements.txt` and `ffmpeg` on PATH.
