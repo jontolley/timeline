@@ -11,3 +11,4 @@ people_collection = db.people
 threads_collection = db.threads
 thread_subscriptions_collection = db.thread_subscriptions
 auth_codes_collection = db.auth_codes
+sessions_collection = db.sessions

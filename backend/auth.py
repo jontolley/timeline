@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import os
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -31,7 +32,20 @@ AUTH_DISABLED = os.getenv("AUTH_DISABLED", "").lower() in {"1", "true", "yes"}
 
 SESSION_COOKIE_NAME = "timeline_session"
 MAGIC_LINK_TTL_SECONDS = 60 * 15
-SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
+# Sessions are server-side records (the `sessions` collection); a token only
+# carries a signed session id. Deleting the record is a real sign-out, and the
+# expiry slides forward with use instead of being fixed at sign-in.
+SESSION_IDLE_SECONDS = int(os.getenv("SESSION_IDLE_DAYS", "90")) * 60 * 60 * 24
+# Push last_used_at / expires_at forward at most this often, so an active
+# client doesn't cost a write on every request.
+SESSION_TOUCH_INTERVAL_SECONDS = 60 * 60 * 24
+# The browser cookie outlives any session (400 days is Chrome's cap); the
+# server-side expiry is what actually ends a web session.
+SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 400
+# Tokens minted before sessions existed carry the email and no session id.
+# They keep working until their original 30 days run out, then the user signs
+# in once more and gets a session-backed token.
+LEGACY_SESSION_TTL_SECONDS = 60 * 60 * 24 * 30
 LOGIN_CODE_TTL_SECONDS = 60 * 15
 LOGIN_CODE_RESEND_INTERVAL_SECONDS = 60
 LOGIN_CODE_MAX_ATTEMPTS = 5
@@ -62,8 +76,95 @@ def verify_magic_token(token: str) -> Optional[str]:
     return payload.get("email")
 
 
-def make_session_token(email: str) -> str:
-    return _signer.dumps({"email": email.lower(), "purpose": "session"})
+def _aware(dt: datetime) -> datetime:
+    # Mongo hands datetimes back naive (they're stored as UTC).
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+async def create_session(email: str, user_agent: Optional[str] = None) -> str:
+    """Record a new session for an (already allowlisted) user and return its
+    signed token — set as the web cookie, or returned to API clients as JSON."""
+    from database import sessions_collection, users_collection
+
+    user = await users_collection.find_one({"email": email.lower()})
+    if not user:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    now = datetime.now(timezone.utc)
+    sid = secrets.token_urlsafe(24)
+    await sessions_collection.insert_one({
+        "_id": sid,
+        "user_id": user["_id"],
+        "created_at": now,
+        "last_used_at": now,
+        "expires_at": now + timedelta(seconds=SESSION_IDLE_SECONDS),
+        # Only so a signed-in-devices list can tell sessions apart.
+        "user_agent": (user_agent or "")[:300],
+    })
+    return _signer.dumps({"sid": sid, "purpose": "session"})
+
+
+def session_id_of(token: str) -> Optional[str]:
+    """The session id inside a validly signed token, without touching the DB."""
+    try:
+        payload = _signer.loads(token)
+    except BadSignature:
+        return None
+    if not isinstance(payload, dict) or payload.get("purpose") != "session":
+        return None
+    return payload.get("sid")
+
+
+async def resolve_session(token: str) -> tuple[Optional[dict], Optional[str]]:
+    """(user doc, session id) for a live token, else (None, None). Slides a
+    session's expiry forward when it's used; legacy tokens resolve with a None
+    session id."""
+    from database import sessions_collection, users_collection
+
+    try:
+        payload, issued = _signer.loads(token, return_timestamp=True)
+    except BadSignature:
+        return None, None
+    if not isinstance(payload, dict) or payload.get("purpose") != "session":
+        return None, None
+    now = datetime.now(timezone.utc)
+
+    sid = payload.get("sid")
+    if sid:
+        session = await sessions_collection.find_one({"_id": sid})
+        if not session or _aware(session["expires_at"]) <= now:
+            return None, None
+        user = await users_collection.find_one({"_id": session["user_id"]})
+        if not user:
+            return None, None
+        if (now - _aware(session["last_used_at"])).total_seconds() >= SESSION_TOUCH_INTERVAL_SECONDS:
+            await sessions_collection.update_one(
+                {"_id": sid},
+                {"$set": {
+                    "last_used_at": now,
+                    "expires_at": now + timedelta(seconds=SESSION_IDLE_SECONDS),
+                }},
+            )
+        return user, sid
+
+    email = payload.get("email")
+    if email and now.timestamp() - issued.timestamp() < LEGACY_SESSION_TTL_SECONDS:
+        return await users_collection.find_one({"email": email}), None
+    return None, None
+
+
+async def revoke_session(sid: str) -> None:
+    from database import sessions_collection
+    await sessions_collection.delete_one({"_id": sid})
+
+
+def token_from_request(request: Request) -> Optional[str]:
+    """`Authorization: Bearer <token>` (API clients) or the session cookie (web)."""
+    auth_header = request.headers.get("authorization")
+    if auth_header and auth_header.lower().startswith("bearer "):
+        token = auth_header[7:].strip()
+        if token:
+            return token
+    return request.cookies.get(SESSION_COOKIE_NAME)
 
 
 def make_oauth_state(provider: str) -> str:
@@ -78,16 +179,6 @@ def verify_oauth_state(token: str) -> Optional[str]:
     if payload.get("purpose") != "oauth_state":
         return None
     return payload.get("provider")
-
-
-def verify_session_token(token: str) -> Optional[str]:
-    try:
-        payload = _signer.loads(token, max_age=SESSION_TTL_SECONDS)
-    except (BadSignature, SignatureExpired):
-        return None
-    if payload.get("purpose") != "session":
-        return None
-    return payload.get("email")
 
 
 def generate_login_code() -> str:
@@ -259,9 +350,10 @@ async def send_magic_link(email: str, link: str) -> None:
 
 async def require_auth(request: Request) -> dict:
     """FastAPI dependency. Accepts `Authorization: Bearer <token>` (API clients)
-    or the session cookie (web). Looks the email up in the users collection
-    and returns the user doc (keys: _id, email, role). Raises 401 on missing /
-    invalid token or if the user has been removed since the session was minted.
+    or the session cookie (web), resolves it to a live session, and returns the
+    user doc (keys: _id, email, role). Raises 401 on a missing / invalid /
+    expired / revoked token or if the user has been removed. The session id is
+    left on `request.state.session_id` (None for a legacy token).
     """
     from database import users_collection
 
@@ -273,21 +365,13 @@ async def require_auth(request: Request) -> dict:
         # No admin yet — synthesize one so dev endpoints still respond.
         return {"_id": None, "email": "dev@local", "role": "admin"}
 
-    token: Optional[str] = None
-    auth_header = request.headers.get("authorization")
-    if auth_header and auth_header.lower().startswith("bearer "):
-        token = auth_header[7:].strip() or None
-    if not token:
-        token = request.cookies.get(SESSION_COOKIE_NAME)
+    token = token_from_request(request)
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    email = verify_session_token(token)
-    if not email:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-    doc = await users_collection.find_one({"email": email})
+    doc, sid = await resolve_session(token)
     if not doc:
-        # Session token is valid but the user was removed since.
-        raise HTTPException(status_code=401, detail="User no longer exists")
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    request.state.session_id = sid
     return doc
 
 

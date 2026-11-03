@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import quote, urlencode
 
 import httpx
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, EmailStr
 
@@ -18,22 +18,26 @@ from auth import (
     LOGIN_CODE_MAX_ATTEMPTS,
     LOGIN_CODE_RESEND_INTERVAL_SECONDS,
     LOGIN_CODE_TTL_SECONDS,
+    SESSION_COOKIE_MAX_AGE,
     SESSION_COOKIE_NAME,
-    SESSION_TTL_SECONDS,
+    create_session,
     generate_login_code,
     hash_login_code,
     is_allowed,
     make_magic_token,
     make_oauth_state,
-    make_session_token,
+    require_auth,
+    resolve_session,
+    revoke_session,
     send_login_code,
     send_magic_link,
     verify_login_code,
     verify_magic_token,
     verify_oauth_state,
-    verify_session_token,
+    session_id_of,
+    token_from_request,
 )
-from database import auth_codes_collection, users_collection
+from database import auth_codes_collection, sessions_collection, users_collection
 
 router = APIRouter(prefix="/api/auth")
 
@@ -76,7 +80,7 @@ async def request_login(body: LoginRequest, request: Request):
 
 
 @router.get("/verify")
-async def verify_login(token: str):
+async def verify_login(token: str, request: Request):
     email = verify_magic_token(token)
     if not email:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
@@ -85,23 +89,68 @@ async def verify_login(token: str):
         # between link-send and click — route them to the friendly screen
         # instead of a 400.
         return _unauthorized_redirect(email)
-    session_token = make_session_token(email)
+    session_token = await create_session(email, request.headers.get("user-agent"))
     response = RedirectResponse(url="/", status_code=302)
+    _set_session_cookie(response, session_token)
+    return response
+
+
+def _set_session_cookie(response: Response, session_token: str) -> None:
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=session_token,
         httponly=True,
         secure=COOKIE_SECURE,
         samesite="lax",
-        max_age=SESSION_TTL_SECONDS,
+        max_age=SESSION_COOKIE_MAX_AGE,
         path="/",
     )
-    return response
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(request: Request, response: Response):
+    """End this session server-side, so the token stops working even where a
+    copy of it survives — not just drop the cookie. Web (cookie) and API
+    clients (Bearer) both call this."""
+    token = token_from_request(request)
+    sid = session_id_of(token) if token else None
+    if sid:
+        await revoke_session(sid)
     response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
+@router.post("/logout-all")
+async def logout_all(response: Response, user=Depends(require_auth)):
+    """Sign this user out on every device, this one included."""
+    result = await sessions_collection.delete_many({"user_id": user["_id"]})
+    response.delete_cookie(SESSION_COOKIE_NAME, path="/")
+    return {"ok": True, "revoked": result.deleted_count}
+
+
+@router.get("/sessions")
+async def list_sessions(request: Request, user=Depends(require_auth)):
+    """The caller's signed-in devices, most recently used first."""
+    current = getattr(request.state, "session_id", None)
+    out = []
+    async for s in sessions_collection.find({"user_id": user["_id"]}).sort("last_used_at", -1):
+        out.append({
+            "id": s["_id"],
+            "user_agent": s.get("user_agent") or "",
+            "created_at": s["created_at"],
+            "last_used_at": s["last_used_at"],
+            "expires_at": s["expires_at"],
+            "current": s["_id"] == current,
+        })
+    return out
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, user=Depends(require_auth)):
+    """Sign out one of the caller's own sessions (e.g. a lost phone)."""
+    result = await sessions_collection.delete_one({"_id": session_id, "user_id": user["_id"]})
+    if not result.deleted_count:
+        raise HTTPException(status_code=404, detail="Session not found")
     return {"ok": True}
 
 
@@ -152,7 +201,7 @@ async def request_code(body: CodeRequest, request: Request):
 
 
 @router.post("/exchange-code")
-async def exchange_code(body: CodeExchange):
+async def exchange_code(body: CodeExchange, request: Request):
     """Verify a one-time code and return a session token as JSON. Used by API clients (e.g., iOS) — token goes into Keychain and is presented via `Authorization: Bearer`. No cookie is set."""
     email = body.email.lower()
     code = (body.code or "").strip()
@@ -182,25 +231,18 @@ async def exchange_code(body: CodeExchange):
         raise invalid
 
     await auth_codes_collection.delete_one({"email": email})
-    return {"token": make_session_token(email), "email": email}
+    token = await create_session(email, request.headers.get("user-agent"))
+    return {"token": token, "email": email}
 
 
 @router.get("/me")
 async def me(request: Request):
     if AUTH_DISABLED:
         return {"authenticated": True, "email": "dev@local", "role": "admin"}
-    token = request.cookies.get(SESSION_COOKIE_NAME)
-    if not token:
-        # Also accept the Bearer header so /me works for API clients.
-        auth_header = request.headers.get("authorization")
-        if auth_header and auth_header.lower().startswith("bearer "):
-            token = auth_header[7:].strip() or None
+    token = token_from_request(request)
     if not token:
         return {"authenticated": False}
-    email = verify_session_token(token)
-    if not email:
-        return {"authenticated": False}
-    doc = await users_collection.find_one({"email": email})
+    doc, _ = await resolve_session(token)
     if not doc:
         return {"authenticated": False}
     return {
@@ -250,7 +292,7 @@ async def google_start():
 
 
 @router.get("/google/callback")
-async def google_callback(code: str = "", state: str = ""):
+async def google_callback(request: Request, code: str = "", state: str = ""):
     if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
         raise HTTPException(status_code=503, detail="Google sign-in not configured")
     if not code or not state:
@@ -318,15 +360,7 @@ async def google_callback(code: str = "", state: str = ""):
             {"email": email}, {"$set": profile_updates}
         )
 
-    session_token = make_session_token(email)
+    session_token = await create_session(email, request.headers.get("user-agent"))
     response = RedirectResponse(url=APP_BASE_URL, status_code=302)
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=session_token,
-        httponly=True,
-        secure=COOKIE_SECURE,
-        samesite="lax",
-        max_age=SESSION_TTL_SECONDS,
-        path="/",
-    )
+    _set_session_cookie(response, session_token)
     return response

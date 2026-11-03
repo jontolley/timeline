@@ -12,6 +12,7 @@ from database import (
     db,
     events_collection,
     people_collection,
+    sessions_collection,
     threads_collection,
     users_collection,
 )
@@ -283,7 +284,7 @@ async def _migrate_photos_to_media():
 
 
 async def _ensure_auth_indexes():
-    """TTL index so expired login codes self-delete; unique index on email so concurrent request-code calls can't create duplicates."""
+    """TTL index so expired login codes self-delete; unique index on email so concurrent request-code calls can't create duplicates. Plus the sessions indexes."""
     existing = await auth_codes_collection.index_information()
     if "auth_codes_ttl" not in existing:
         await auth_codes_collection.create_index(
@@ -295,6 +296,15 @@ async def _ensure_auth_indexes():
         await auth_codes_collection.create_index(
             "email", unique=True, name="auth_codes_email_unique"
         )
+    # Sessions: TTL so idle-expired ones self-delete; user_id for sign-out-
+    # everywhere, the signed-in devices list and the user-delete cascade.
+    existing = await sessions_collection.index_information()
+    if "sessions_ttl" not in existing:
+        await sessions_collection.create_index(
+            "expires_at", expireAfterSeconds=0, name="sessions_ttl"
+        )
+    if "sessions_user" not in existing:
+        await sessions_collection.create_index("user_id", name="sessions_user")
 
 
 async def _ensure_text_index():

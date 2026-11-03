@@ -7,6 +7,7 @@ from auth import require_admin, send_invitation
 from database import (
     events_collection,
     people_collection,
+    sessions_collection,
     thread_subscriptions_collection,
     threads_collection,
     users_collection,
@@ -188,7 +189,8 @@ async def delete_user(user_id: str, admin=Depends(require_admin)):
         ],
     })
 
-    # 4) Finally, delete the user record itself.
+    # 4) Sign them out everywhere, then delete the user record itself.
+    await sessions_collection.delete_many({"user_id": owner_id})
     await users_collection.delete_one({"_id": owner_id})
 
     return {
