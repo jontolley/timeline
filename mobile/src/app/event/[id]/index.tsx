@@ -321,7 +321,7 @@ export default function EventDetailScreen() {
                   <Pressable
                     key={m.key}
                     style={{ width, height: HERO_H, backgroundColor: t.photoPlaceholder }}
-                    onPress={() => (m.kind === 'video' ? openExternal(m.url) : setLightbox(i))}
+                    onPress={() => setLightbox(i)}
                   >
                     {s ? <Image source={s} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} /> : null}
                     {m.kind === 'video' ? (

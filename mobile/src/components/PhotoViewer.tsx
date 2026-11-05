@@ -1,7 +1,6 @@
-import { useCallback, useRef, useState, type ComponentRef } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react'
 import {
   FlatList,
-  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -16,11 +15,14 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { Image } from 'expo-image'
+import { useVideoPlayer, VideoView } from 'expo-video'
 import type { MediaRef } from '@/api/types'
 import { Icon } from '@/components/ui'
 
 // Full-screen photo viewer, Photos-app style: swipe left/right between items,
 // pinch to zoom, double-tap to zoom in/out, single tap to show/hide the chrome.
+// Videos play in place (expo-video, native controls) while their page is the
+// one on screen, and pause when swiped away.
 //
 // Each page is a native zoomable ScrollView (UIScrollView maximumZoomScale)
 // nested inside a horizontal paging FlatList — Apple's PhotoScroller pattern,
@@ -64,7 +66,6 @@ function ZoomPage({
   const lastGesture = useRef(0)
   const singleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const src = fullSource(item)
-  const isVideo = item.kind === 'video'
 
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const z = e.nativeEvent.zoomScale ?? 1
@@ -78,10 +79,6 @@ function ZoomPage({
   // Single vs double tap: hold the single tap briefly so a double tap can
   // cancel it. Double tap zooms toward the tapped point, or back out to fit.
   const onPress = (e: GestureResponderEvent) => {
-    if (isVideo) {
-      if (item.url) void Linking.openURL(item.url)
-      return
-    }
     const now = Date.now()
     if (now - lastGesture.current < GESTURE_GRACE_MS) return
     if (now - lastTap.current < DOUBLE_TAP_MS) {
@@ -111,7 +108,7 @@ function ZoomPage({
       }}
       style={{ width, height }}
       contentContainerStyle={{ width, height }}
-      maximumZoomScale={isVideo ? 1 : MAX_ZOOM}
+      maximumZoomScale={MAX_ZOOM}
       minimumZoomScale={1}
       bouncesZoom
       centerContent
@@ -122,15 +119,36 @@ function ZoomPage({
       onScrollBeginDrag={markGesture}
       onScrollEndDrag={markGesture}
     >
-      <Pressable onPress={onPress} style={{ width, height }} accessibilityLabel={isVideo ? 'Play video' : 'Photo'}>
+      <Pressable onPress={onPress} style={{ width, height }} accessibilityLabel="Photo">
         {src ? <Image source={src} style={{ width, height }} contentFit="contain" /> : null}
-        {isVideo ? (
-          <View style={styles.center}>
-            <Icon name="play.circle.fill" size={64} color="rgba(255,255,255,0.92)" />
-          </View>
-        ) : null}
       </Pressable>
     </ScrollView>
+  )
+}
+
+function VideoPage({ item, width, height, active }: { item: MediaRef; width: number; height: number; active: boolean }) {
+  const insets = useSafeAreaInsets()
+  const player = useVideoPlayer(item.url ?? null, (p) => {
+    p.muted = false
+  })
+
+  useEffect(() => {
+    if (active) player.play()
+    else player.pause()
+  }, [active, player])
+
+  // Inset below the Close button and above the home indicator, so the
+  // player's own top controls (mute, fullscreen) don't sit under either.
+  return (
+    <View style={{ width, height, paddingTop: insets.top + 52, paddingBottom: insets.bottom }}>
+      <VideoView
+        player={player}
+        style={{ flex: 1 }}
+        contentFit="contain"
+        nativeControls
+        allowsPictureInPicture={false}
+      />
+    </View>
   )
 }
 
@@ -161,6 +179,8 @@ export default function PhotoViewer({
   )
 
   const close = () => onClose(index)
+  // A video page's taps go to its player controls, so Close stays up there.
+  const onVideo = items[index]?.kind === 'video'
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={close} supportedOrientations={['portrait']}>
@@ -177,20 +197,24 @@ export default function PhotoViewer({
           onMomentumScrollEnd={onPageEnd}
           windowSize={3}
           initialNumToRender={1}
-          renderItem={({ item, index: i }) => (
-            <ZoomPage
-              item={item}
-              width={width}
-              height={height}
-              register={(r) => {
-                if (r) pages.current.set(i, r)
-                else pages.current.delete(i)
-              }}
-              onSingleTap={() => setChrome((v) => !v)}
-            />
-          )}
+          renderItem={({ item, index: i }) =>
+            item.kind === 'video' ? (
+              <VideoPage item={item} width={width} height={height} active={i === index} />
+            ) : (
+              <ZoomPage
+                item={item}
+                width={width}
+                height={height}
+                register={(r) => {
+                  if (r) pages.current.set(i, r)
+                  else pages.current.delete(i)
+                }}
+                onSingleTap={() => setChrome((v) => !v)}
+              />
+            )
+          }
         />
-        {chrome ? (
+        {chrome || onVideo ? (
           <>
             <Pressable
               style={[styles.close, { top: insets.top + 8 }]}
@@ -201,7 +225,7 @@ export default function PhotoViewer({
             >
               <Icon name="xmark" size={18} color="#FFFFFF" weight="bold" />
             </Pressable>
-            {items.length > 1 ? (
+            {items.length > 1 && !onVideo ? (
               <View style={[styles.count, { bottom: insets.bottom + 20 }]} pointerEvents="none">
                 <Text style={styles.countText}>
                   {index + 1} of {items.length}
@@ -217,7 +241,6 @@ export default function PhotoViewer({
 
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: '#000000' },
-  center: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   close: {
     position: 'absolute',
     right: 16,
