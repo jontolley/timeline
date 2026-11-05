@@ -59,13 +59,16 @@ function formatDateRange(start: string, end?: string | null): string {
   return `${s} – ${e}`
 }
 
-type Loc = { name?: string | null; address?: string | null; lat?: number | null; lng?: number | null }
+type Loc = { name?: string | null; address?: string | null; lat?: number | null; lng?: number | null; url?: string | null }
 function asLoc(loc: TimelineEvent['location']): Loc | null {
   if (!loc) return null
   if (typeof loc === 'string') return { name: loc }
   return loc
 }
+// A place shared from Google / Apple Maps opens its original link (the real
+// place, in that app); otherwise a Google Maps pin or search.
 function locationMapUrl(loc: Loc): string | null {
+  if (loc.url) return loc.url
   if (loc.lat != null && loc.lng != null) return `https://www.google.com/maps?q=${loc.lat},${loc.lng}`
   const q = loc.address || loc.name
   return q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : null

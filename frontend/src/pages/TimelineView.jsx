@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { listEvents, listEventYears, searchEvents } from '../api/events'
 import { describePhoto, extractExif } from '../api/uploads'
+import { extractVideoMetadata } from '../lib/videoMetadata'
 import BackToTop from '../components/BackToTop'
 import EventCard from '../components/EventCard'
 import FilterModal from '../components/FilterModal'
@@ -514,16 +515,19 @@ export default function TimelineView() {
     if (!file) return
     setPhotoBusy(true)
     try {
-      const exif = await extractExif(file)
+      // Videos are read client-side (only the metadata box, not the whole
+      // file); photos go through the backend EXIF endpoint.
+      const isVideo = (file.type || '').startsWith('video/') || /\.(mov|mp4|m4v)$/i.test(file.name)
+      const exif = isVideo ? await extractVideoMetadata(file) : await extractExif(file)
       setPendingPhoto(file)
-      navigate('/events/new', { state: { prefill: exif } })
+      navigate('/events/new', { state: { prefill: { ...exif, kind: isVideo ? 'video' : 'photo' } } })
       // Success path: component unmounts on navigation, busy state is moot.
     } catch (err) {
       // Drop the overlay *before* showing the alert — the busy scrim sits at
       // a higher z-index than the alert modal, so leaving it up traps the OK
       // button underneath an unclickable wash.
       setPhotoBusy(false)
-      await alert({ title: 'Could not read photo', body: err.message || '' })
+      await alert({ title: 'Could not read file', body: err.message || '' })
     }
   }
 
@@ -635,7 +639,7 @@ export default function TimelineView() {
         <div className="hs-modal-scrim photo-busy-scrim" role="status" aria-live="polite">
           <div className="photo-busy-card">
             <span className="photo-busy-spinner" aria-hidden="true" />
-            <span className="photo-busy-label">Reading photo…</span>
+            <span className="photo-busy-label">{aiPhotoBusy ? 'Reading photo…' : 'Reading file…'}</span>
           </div>
         </div>
       )}
@@ -709,7 +713,7 @@ export default function TimelineView() {
           <input
             ref={photoInputRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/quicktime"
             hidden
             onChange={handlePhotoPicked}
           />
@@ -847,8 +851,8 @@ export default function TimelineView() {
                   onClick={() => { setAddMenuOpen(false); photoInputRef.current?.click() }}
                   disabled={photoBusy}
                 >
-                  <span className="tl-add-menu-t">Event from photo</span>
-                  <span className="tl-add-menu-s">Date + GPS from EXIF, you write the rest</span>
+                  <span className="tl-add-menu-t">Event from photo or video</span>
+                  <span className="tl-add-menu-s">Date + place from the file, you write the rest</span>
                 </button>
                 <button
                   type="button"

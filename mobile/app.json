@@ -48,7 +48,10 @@
           "ios": {
             "enabled": true,
             "activationRule": {
-              "supportsImageWithMaxCount": 10
+              "supportsImageWithMaxCount": 10,
+              "supportsMovieWithMaxCount": 10,
+              "supportsWebUrlWithMaxCount": 1,
+              "supportsText": true
             }
           }
         }

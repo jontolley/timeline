@@ -123,8 +123,8 @@ export default function TimelineToolbar({
               onClick={pickPhoto}
               disabled={photoBusy}
             >
-              <span className="tl-add-menu-t">Event from photo</span>
-              <span className="tl-add-menu-s">Date + GPS from EXIF, you write the rest</span>
+              <span className="tl-add-menu-t">Event from photo or video</span>
+              <span className="tl-add-menu-s">Date + place from the file, you write the rest</span>
             </button>
             <button
               type="button"

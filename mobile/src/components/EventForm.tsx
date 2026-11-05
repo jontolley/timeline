@@ -25,8 +25,10 @@ import {
   updateEvent,
 } from '../api/events'
 import { listThreads } from '../api/threads'
-import { extractExif, uploadMedia, type PickedAsset } from '../api/uploads'
+import { extractExif, isVideoAsset, uploadMedia, videoPoster, type PickedAsset } from '../api/uploads'
 import { reverseGeocode } from '../api/geocode'
+import { resolvePlaceLink } from '../api/places'
+import { extractVideoMetadata } from '../lib/videoMetadata'
 import type { LocationDetail, MediaRef, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
 import { FillButton, Icon, IconTile, TintButton } from '@/components/ui'
@@ -36,15 +38,21 @@ import { paletteColor, useTheme, type Theme } from '@/theme'
 // the event, supports delete, and manages media through the dedicated attach/
 // remove endpoints since EventUpdate has no media field).
 //
-// `sharedAssets` (create mode) are photos handed over from the iOS share sheet:
-// they're attached like picked photos, and — like the web's "Event from photo"
-// — the first one's EXIF prefills the date and, via reverse geocoding, the
-// location. The title keeps focus so the user just types it.
+// `sharedAssets` (create mode) are photos / videos handed over from the iOS
+// share sheet: they're attached like picked photos, and — like the web's
+// "Event from photo or video" — the first one's metadata (photo EXIF, or the
+// video's own QuickTime metadata) prefills the date and, via reverse
+// geocoding, the location. `sharedLink` is a Google / Apple Maps share link
+// that becomes the location; `sharedText` (any other shared text or link)
+// seeds the description. The title keeps focus so the user just types it.
 
 type PendingMedia = {
   localUri: string
   status: 'uploading' | 'done' | 'error'
   ref?: MediaRef
+  isVideo?: boolean
+  // Tile image: the photo itself, or a video's first-frame poster.
+  previewUri?: string
 }
 
 // Dates store UTC; format/parse in UTC and submit at UTC midnight so the day
@@ -79,7 +87,17 @@ function thumbUriFor(m: MediaRef): string | null {
   return m.thumb_url || m.url || null
 }
 
-export default function EventForm({ eventId, sharedAssets }: { eventId?: string; sharedAssets?: PickedAsset[] }) {
+export default function EventForm({
+  eventId,
+  sharedAssets,
+  sharedLink,
+  sharedText,
+}: {
+  eventId?: string
+  sharedAssets?: PickedAsset[]
+  sharedLink?: string
+  sharedText?: string
+}) {
   const isEdit = !!eventId
   const router = useRouter()
   const requestRefresh = useTimelineSignal((s) => s.requestRefresh)
@@ -106,6 +124,7 @@ export default function EventForm({ eventId, sharedAssets }: { eventId?: string;
   const touched = useRef({ date: false, location: false })
   // Dev effects run twice; the shared photos must only be queued once.
   const sharedTaken = useRef(false)
+  const linkTaken = useRef(false)
   const [originalDateIso, setOriginalDateIso] = useState<string | null>(null)
   const [showPicker, setShowPicker] = useState(false)
 
@@ -178,21 +197,43 @@ export default function EventForm({ eventId, sharedAssets }: { eventId?: string;
     if (isEdit || !sharedAssets?.length || sharedTaken.current) return
     sharedTaken.current = true
     addAssets(sharedAssets)
-    void prefillFromPhoto(sharedAssets[0])
+    // A shared map link names the place better than a reverse-geocoded pin.
+    void prefillFromMedia(sharedAssets[0], !sharedLink)
   }, [sharedAssets, isEdit])
 
-  async function prefillFromPhoto(asset: PickedAsset) {
+  useEffect(() => {
+    if (isEdit || linkTaken.current || (!sharedLink && !sharedText)) return
+    linkTaken.current = true
+    if (sharedText) setDescription((cur) => cur || sharedText)
+    if (sharedLink) void prefillFromLink(sharedLink)
+  }, [sharedLink, sharedText, isEdit])
+
+  async function prefillFromLink(link: string) {
+    setFindingPlace(true)
     try {
-      const exif = await extractExif(asset)
+      const place = await resolvePlaceLink(link)
+      if (touched.current.location) return
+      setLocationDetail(place)
+      setLocationName(place.name || place.address || '')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't read that map link.")
+    } finally {
+      setFindingPlace(false)
+    }
+  }
+
+  async function prefillFromMedia(asset: PickedAsset, useLocation: boolean) {
+    try {
+      const exif = isVideoAsset(asset) ? await extractVideoMetadata(asset.uri) : await extractExif(asset)
       if (exif.date && !touched.current.date) setDate(new Date(`${exif.date}T00:00:00.000Z`))
-      if (exif.lat == null || exif.lng == null || touched.current.location) return
+      if (!useLocation || exif.lat == null || exif.lng == null || touched.current.location) return
       setFindingPlace(true)
       const place = await reverseGeocode(exif.lat, exif.lng).catch(() => null)
       if (touched.current.location) return
       setLocationDetail(place ?? { lat: exif.lat, lng: exif.lng })
       if (place?.name) setLocationName(place.name)
     } catch {
-      // No EXIF (or a screenshot) — the form just keeps today's date.
+      // No metadata (or a screenshot) — the form just keeps today's date.
     } finally {
       setFindingPlace(false)
     }
@@ -225,7 +266,15 @@ export default function EventForm({ eventId, sharedAssets }: { eventId?: string;
   function addAssets(assets: PickedAsset[]) {
     for (const picked of assets) {
       const localUri = picked.uri
-      setPending((prev) => [...prev, { localUri, status: 'uploading' }])
+      const isVideo = isVideoAsset(picked)
+      setPending((prev) => [...prev, { localUri, status: 'uploading', isVideo, previewUri: isVideo ? undefined : localUri }])
+      if (isVideo) {
+        videoPoster(localUri)
+          .then((frame) =>
+            setPending((prev) => prev.map((m) => (m.localUri === localUri ? { ...m, previewUri: frame.uri } : m))),
+          )
+          .catch(() => {})
+      }
       uploadMedia(picked)
         .then(async (ref) => {
           if (isEdit && eventId) {
@@ -498,7 +547,14 @@ export default function EventForm({ eventId, sharedAssets }: { eventId?: string;
               })}
               {pending.map((m) => (
                 <View key={m.localUri} style={styles.tile}>
-                  <Image source={{ uri: m.localUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  {m.previewUri ? (
+                    <Image source={{ uri: m.previewUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+                  ) : null}
+                  {m.isVideo && m.status === 'done' ? (
+                    <View style={styles.tileCenter} pointerEvents="none">
+                      <Icon name="play.fill" size={26} color="#FFFFFF" weight="regular" />
+                    </View>
+                  ) : null}
                   {m.status === 'uploading' ? (
                     <View style={[styles.tileCenter, styles.tileDim]}>
                       <ActivityIndicator color="#FFFFFF" />

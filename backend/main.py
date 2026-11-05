@@ -24,6 +24,7 @@ from routes.threads import router as threads_router, subs_router as subscription
 from routes.users import router as users_router
 from routes.threads_io import router as threads_io_router
 from routes.uploads import router as uploads_router
+from routes.places import router as places_router
 from routes.auth import router as auth_router
 
 embedding_service = EmbeddingService()
@@ -437,6 +438,7 @@ app.include_router(subscriptions_router)
 app.include_router(users_router)
 app.include_router(threads_io_router)
 app.include_router(uploads_router)
+app.include_router(places_router)
 
 
 @app.get("/api/health")

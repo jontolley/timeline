@@ -1,5 +1,6 @@
 import { File, UploadType } from 'expo-file-system'
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator'
+import { getThumbnailAsync } from 'expo-video-thumbnails'
 import { httpJson, getAuthToken } from './client'
 import { API } from '../config'
 import type { MediaRef } from './types'
@@ -10,10 +11,11 @@ import type { MediaRef } from './types'
 // File.upload for the direct-to-R2 PUT (a native upload task — more robust
 // than fetch(blob) for large files).
 //
-// Photo upload has full parity (full + thumb). Video/audio/pdf currently
-// upload the original without a client-rendered thumbnail — generating those
-// natively (AVAssetImageGenerator / PDFKit / waveform) is a phase-2 task; see
-// mobile/README.md. The backend stores them fine without a thumb_key.
+// Photo upload has full parity (full + thumb). Videos upload the original
+// plus a first-frame poster (expo-video-thumbnails) as the thumb. Audio/pdf
+// still upload without a client-rendered thumbnail — generating those natively
+// (PDFKit / waveform) is a phase-2 task; see mobile/README.md. The backend
+// stores them fine without a thumb_key.
 
 export const FULL_MAX_DIM = 2000
 const THUMB_MAX_DIM = 400
@@ -108,11 +110,41 @@ function contentTypeFor(asset: PickedAsset): string {
   return EXT_TO_MIME[ext] || 'application/octet-stream'
 }
 
+export function isVideoAsset(asset: PickedAsset): boolean {
+  return contentTypeFor(asset).startsWith('video/')
+}
+
 function kindFor(contentType: string): MediaRef['kind'] {
   if (contentType.startsWith('image/')) return 'photo'
   if (contentType.startsWith('video/')) return 'video'
   if (contentType.startsWith('audio/')) return 'audio'
   return 'pdf'
+}
+
+// First frame of a local video as a JPEG (full video resolution). Used for the
+// form's pending tile and, resized, as the uploaded poster.
+export function videoPoster(uri: string) {
+  return getThumbnailAsync(uri, { time: 0, quality: 0.9 })
+}
+
+async function uploadVideo(asset: PickedAsset): Promise<MediaRef> {
+  const contentType = contentTypeFor(asset)
+  // Poster is best-effort; the video still attaches without one.
+  const posterPromise = videoPoster(asset.uri)
+    .then(async (frame) => {
+      const thumb = await renderJpeg(frame.uri, frame.width, frame.height, THUMB_MAX_DIM, THUMB_QUALITY)
+      return { key: await putToR2(thumb.uri, 'image/jpeg'), width: frame.width, height: frame.height }
+    })
+    .catch(() => null)
+  const [key, poster] = await Promise.all([putToR2(asset.uri, contentType), posterPromise])
+  return {
+    kind: 'video',
+    key,
+    thumb_key: poster?.key ?? null,
+    content_type: contentType,
+    width: poster?.width,
+    height: poster?.height,
+  }
 }
 
 // Upload a non-photo file as-is (no client thumbnail). See module note.
@@ -130,6 +162,7 @@ async function uploadFile(asset: PickedAsset): Promise<MediaRef> {
 export async function uploadMedia(asset: PickedAsset): Promise<MediaRef> {
   const contentType = contentTypeFor(asset)
   if (contentType.startsWith('image/')) return uploadPhoto(asset)
+  if (contentType.startsWith('video/')) return uploadVideo(asset)
   return uploadFile(asset)
 }
 

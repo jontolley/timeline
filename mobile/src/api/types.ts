@@ -21,6 +21,9 @@ export type LocationDetail = {
   address?: string | null
   lat?: number | null
   lng?: number | null
+  // Set when the place came from a Google / Apple Maps share link.
+  source?: 'google' | 'apple' | null
+  url?: string | null
 }
 
 export type TimelineEvent = {

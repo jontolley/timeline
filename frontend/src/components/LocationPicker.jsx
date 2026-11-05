@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet'
 import { MapIcon, MapPinIcon } from './Icons'
+import { looksLikeMapLink, resolvePlaceLink } from '../api/places'
 
 const DEFAULT_CENTER = [37.7749, -122.4194]
 
@@ -13,7 +14,9 @@ function LocationPickerInner({ value, onChange }) {
   const [query, setQuery] = useState(value?.address || value?.name || '')
   const [results, setResults] = useState([])
   const [searching, setSearching] = useState(false)
+  const [linkError, setLinkError] = useState(null)
   const debounceRef = useRef(null)
+  const linkRef = useRef(null)
   const autoGeocodedRef = useRef(false)
 
   useEffect(() => {
@@ -86,9 +89,36 @@ function LocationPickerInner({ value, onChange }) {
     }, 400)
   }, [])
 
+  // A pasted Google / Apple Maps link resolves server-side to the exact place
+  // instead of running a Nominatim text search on the URL. Debounced like the
+  // search (a typed link would otherwise fire per keystroke); linkRef drops a
+  // stale response once the input has moved on.
+  const resolveLink = (text) => {
+    clearTimeout(debounceRef.current)
+    setResults([])
+    debounceRef.current = setTimeout(async () => {
+      linkRef.current = text
+      setSearching(true)
+      try {
+        const loc = await resolvePlaceLink(text)
+        if (linkRef.current !== text) return
+        onChange(loc)
+        setQuery(loc.address || loc.name || '')
+        setShowMap(true)
+      } catch (err) {
+        if (linkRef.current === text) setLinkError(err.message)
+      } finally {
+        if (linkRef.current === text) setSearching(false)
+      }
+    }, 400)
+  }
+
   const handleQueryChange = (e) => {
     setQuery(e.target.value)
+    setLinkError(null)
+    linkRef.current = null
     if (!e.target.value) onChange(null)
+    else if (looksLikeMapLink(e.target.value)) resolveLink(e.target.value)
     else search(e.target.value)
   }
 
@@ -141,7 +171,7 @@ function LocationPickerInner({ value, onChange }) {
             className="ef-inp"
             value={query}
             onChange={handleQueryChange}
-            placeholder="Search for a place or address…"
+            placeholder="Search for a place or paste a map link…"
           />
           <span className="ef-trail">
             <button
@@ -156,6 +186,7 @@ function LocationPickerInner({ value, onChange }) {
           </span>
         </div>
         {searching && <span className="location-searching">Searching…</span>}
+        {linkError && <div className="location-link-error" role="alert">{linkError}</div>}
         {results.length > 0 && (
           <ul className="location-results" style={{ listStyle: 'none', margin: 0, padding: 0 }}>
             {results.map((r) => (

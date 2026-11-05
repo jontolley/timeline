@@ -9,6 +9,10 @@ class LocationDetail(BaseModel):
     address: Optional[str] = None
     lat: Optional[float] = None
     lng: Optional[float] = None
+    # Set when the place came from a Google / Apple Maps share link: which
+    # service, and the link itself, so the event can open the real place.
+    source: Optional[str] = None
+    url: Optional[str] = None
 
 
 class MediaKind(str, Enum):

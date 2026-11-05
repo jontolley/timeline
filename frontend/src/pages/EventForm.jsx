@@ -79,8 +79,9 @@ export default function EventForm() {
   const [pendingPosters, setPendingPosters] = useState(() => pendingMedia.map(() => null))
   const [photoNotice] = useState(() => {
     if (id || !prefill) return null
-    if (prefill.has_exif) return 'Pre-filled from photo. Edit anything you like.'
-    return "Couldn't read metadata from this photo — please fill manually."
+    const kind = prefill.kind === 'video' ? 'video' : 'photo'
+    if (prefill.has_exif) return `Pre-filled from ${kind}. Edit anything you like.`
+    return `Couldn't read metadata from this ${kind} — please fill manually.`
   })
   const [captionPromise] = useState(() => (id ? null : consumePendingCaption()))
   const [captionStatus, setCaptionStatus] = useState(() => (captionPromise ? 'pending' : 'idle'))
@@ -149,6 +150,23 @@ export default function EventForm() {
       return arr.filter((_, i) => i !== idx)
     })
   }
+
+  // The photo-or-video handoff seeds pendingMedia directly, so a handed-off
+  // video needs its poster rendered here (appendMediaFiles does it for picks).
+  useEffect(() => {
+    pendingMedia.forEach((file, i) => {
+      if (!(file.type || '').startsWith('video/')) return
+      extractVideoPosterUrl(file)
+        .then((url) => {
+          setPendingPosters((posters) => {
+            const next = [...posters]
+            next[i] = url
+            return next
+          })
+        })
+        .catch(() => {})
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Revoke any lingering poster URLs when the page unmounts.
   useEffect(() => () => {
