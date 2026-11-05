@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -200,11 +201,13 @@ export default function ChatScreen() {
         keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
       >
         {messages.length === 0 ? (
-          <View style={styles.empty}>
+          // A scroll view (not a plain View) so a tap or a swipe down here puts
+          // the keyboard away — it covers the tab bar while it's up.
+          <ScrollView contentContainerStyle={styles.empty} keyboardDismissMode="interactive" alwaysBounceVertical>
             <Icon name="sparkles" size={34} color={t.secondary} weight="regular" />
             <Text style={styles.emptyTitle}>What do you want to know?</Text>
             <Text style={styles.emptyText}>Ask about your timeline, or tell me about a moment to add.</Text>
-          </View>
+          </ScrollView>
         ) : (
           <FlatList
             ref={listRef}
@@ -212,6 +215,7 @@ export default function ChatScreen() {
             keyExtractor={(m) => m.id}
             contentContainerStyle={styles.thread}
             keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
             onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: true })}
             renderItem={({ item }) => (
               <View style={styles.turn}>
@@ -385,7 +389,7 @@ function makeStyles(t: Theme) {
     header: { paddingHorizontal: 16, paddingBottom: 6 },
     actions: { flexDirection: 'row', justifyContent: 'flex-end', height: 44, marginTop: 4 },
     h1: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 4, letterSpacing: 0.2 },
-    empty: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 10 },
+    empty: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 40, gap: 10 },
     emptyTitle: { fontSize: 22, fontWeight: '600', color: t.label, textAlign: 'center' },
     emptyText: { fontSize: 15, lineHeight: 20, color: t.secondary, textAlign: 'center' },
     thread: { paddingHorizontal: 16, paddingTop: 10, paddingBottom: 16, gap: 14 },
