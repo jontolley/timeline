@@ -1,11 +1,12 @@
 import { useEffect } from 'react'
-import { Stack } from 'expo-router'
+import { Stack, usePathname, useRouter } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import * as SystemUI from 'expo-system-ui'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { useAppearanceStore } from '@/store/appearance'
 import { useAuthStore } from '@/store/auth'
+import { takeShareLaunch } from '@/lib/shareLaunch'
 import { useTheme } from '@/theme'
 
 // Keep the native splash up until init() has read the Keychain token and
@@ -27,6 +28,8 @@ export default function RootLayout() {
   const initAppearance = useAppearanceStore((s) => s.init)
   const authed = status === 'authed'
   const t = useTheme()
+  const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
     void initAppearance()
@@ -36,6 +39,15 @@ export default function RootLayout() {
   useEffect(() => {
     if (status !== 'loading') SplashScreen.hide()
   }, [status])
+
+  // A cold launch from the share sheet lands on the Timeline (the gate hid New
+  // Moment while init() ran); open it now that we're signed in. Wait until the
+  // gate has moved off /login — pushing earlier gets reset by its redirect.
+  useEffect(() => {
+    if (authed && pathname !== '/login' && takeShareLaunch() && pathname !== '/event/new') {
+      router.push('/event/new?shared=1')
+    }
+  }, [authed, pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // The root window colour shows during transitions and behind sheets; keep it
   // on the page colour so switching appearance never flashes white.

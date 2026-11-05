@@ -10,6 +10,8 @@ from auth import require_auth
 router = APIRouter(prefix="/api/places", dependencies=[Depends(require_auth)])
 
 NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse"
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
+_NOMINATIM_HEADERS = {"User-Agent": "personal-timeline/1.0", "Accept-Language": "en"}
 _MAX_REDIRECTS = 5
 # Apostrophes are allowed: Google leaves them unencoded in place names.
 _URL_RE = re.compile(r"https?://[^\s<>\"]+")
@@ -105,6 +107,18 @@ def _parse_google(url: str) -> dict | None:
     return {"name": _clean(name), "address": None, "lat": coords[0], "lng": coords[1]}
 
 
+def _google_search_text(url: str) -> str | None:
+    """The ?q= text of a Google link with no coordinates. The Google Maps iOS
+    app shares links that resolve to maps.google.com?q=<name, address>&ftid=…
+    — the place's pin isn't in the URL, only its name and street address."""
+    query = parse_qs(urlsplit(url).query)
+    for key in ("q", "query"):
+        val = _clean((query.get(key) or [None])[0])
+        if val and not _latlng(val):
+            return val
+    return None
+
+
 def _parse_apple(url: str) -> dict | None:
     query = parse_qs(urlsplit(url).query)
 
@@ -143,6 +157,7 @@ async def _follow_short_link(client: httpx.AsyncClient, url: str) -> str:
         url = urljoin(url, location)
         if _source_for(url) is None:
             break
+    print(f"[places] couldn't follow {url}", flush=True)
     raise HTTPException(status_code=422, detail="Couldn't open that map link.")
 
 
@@ -151,12 +166,40 @@ async def _reverse_geocode(client: httpx.AsyncClient, lat: float, lng: float) ->
         resp = await client.get(
             NOMINATIM_REVERSE_URL,
             params={"lat": lat, "lon": lng, "format": "json"},
-            headers={"User-Agent": "personal-timeline/1.0", "Accept-Language": "en"},
+            headers=_NOMINATIM_HEADERS,
         )
         resp.raise_for_status()
         return resp.json()
     except Exception:
         return {}
+
+
+async def _geocode_search_text(client: httpx.AsyncClient, text: str) -> dict | None:
+    """Place a "<name>, <street address>" search string. Nominatim rarely
+    knows a business by name, so geocode the address part first and fall
+    back to the whole string; the name is kept from the text either way."""
+    name, _, address = text.partition(", ")
+    if not address:
+        name, address = None, text
+    for q in dict.fromkeys((address, text)):
+        try:
+            resp = await client.get(
+                NOMINATIM_SEARCH_URL,
+                params={"q": q, "format": "json", "limit": 1},
+                headers=_NOMINATIM_HEADERS,
+            )
+            resp.raise_for_status()
+            hits = resp.json()
+        except Exception:
+            continue
+        if hits:
+            return {
+                "name": _clean(name),
+                "address": _clean(address),
+                "lat": float(hits[0]["lat"]),
+                "lng": float(hits[0]["lon"]),
+            }
+    return None
 
 
 @router.post("/resolve")
@@ -166,6 +209,7 @@ async def resolve_place_link(req: ResolveRequest):
     real place). No API keys: the share links carry the place in the URL."""
     link = next((u.rstrip(".,)'") for u in _URL_RE.findall(req.text or "") if _source_for(u)), None)
     if not link:
+        print(f"[places] no map link in {req.text[:200]!r}", flush=True)
         raise HTTPException(status_code=422, detail="That isn't a Google Maps or Apple Maps link.")
     source = _source_for(link)
 
@@ -175,7 +219,10 @@ async def resolve_place_link(req: ResolveRequest):
         except httpx.HTTPError:
             raise HTTPException(status_code=502, detail="Couldn't reach the map service.")
         place = _parse_google(target) if source == "google" else _parse_apple(target)
+        if place is None and source == "google" and (search := _google_search_text(target)):
+            place = await _geocode_search_text(client, search)
         if place is None:
+            print(f"[places] no place in {link} -> {target}", flush=True)
             raise HTTPException(status_code=422, detail="Couldn't find a place in that link.")
         if not place["address"] or not place["name"]:
             data = await _reverse_geocode(client, place["lat"], place["lng"])
