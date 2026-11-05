@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useLocalSearchParams } from 'expo-router'
-import { File } from 'expo-file-system'
+import { File, Paths } from 'expo-file-system'
 import { useIncomingShare } from 'expo-sharing'
 import EventForm from '@/components/EventForm'
 import type { PickedAsset } from '@/api/uploads'
@@ -12,8 +12,10 @@ import { looksLikeMapLink } from '@/api/places'
 // take what was shared once, hand it to the form, and clear it so it isn't
 // picked up again by the next New Moment.
 // - Photos / videos are attached. The extension copies each into the App
-//   Group container and never deletes it, so drop those copies when this
-//   screen closes (save is blocked until uploads finish).
+//   Group container; move them into the app's own cache first — on a device
+//   the background upload session (run by a system daemon) fails to read
+//   files in the App Group container. Drop the moved files when this screen
+//   closes (save is blocked until uploads finish).
 // - A Google / Apple Maps link (shared as a URL, or inside text) becomes the
 //   location. Any other shared text or link goes into the description.
 // Links and text are read from the raw payloads: resolving a URL payload makes
@@ -53,14 +55,20 @@ export default function NewEventScreen() {
       (p) => (p.shareType === 'image' || p.shareType === 'video') && p.contentUri,
     )
     if (media.length > 0) {
-      toDelete.current = media.map((p) => p.contentUri as string)
-      setSharedAssets(
-        media.map((p) => ({
-          uri: p.contentUri as string,
-          mimeType: p.contentMimeType ?? undefined,
-          fileName: p.originalName,
-        })),
-      )
+      void Promise.all(
+        media.map(async (p, i) => {
+          const file = new File(p.contentUri as string)
+          try {
+            await file.move(new File(Paths.cache, `shared-${Date.now()}-${i}-${file.name}`))
+          } catch {
+            // Keep the App Group copy; the upload may still work from there.
+          }
+          return { uri: file.uri, mimeType: p.contentMimeType ?? undefined, fileName: p.originalName }
+        }),
+      ).then((assets) => {
+        toDelete.current = assets.map((a) => a.uri)
+        setSharedAssets(assets)
+      })
     }
 
     const texts = sharedPayloads

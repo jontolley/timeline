@@ -239,15 +239,18 @@ export default function EventForm({
     }
   }
 
-  async function pickImages() {
+  async function pickMedia() {
     // No permission request: the system picker (PHPicker / Android Photo
     // Picker) runs out of process and only hands back what the user picks, so
     // asking for full library access would just be a needless prompt.
     setError(null)
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
       quality: 1,
+      // Hand back the video as recorded (HEVC stays HEVC) — the default may
+      // transcode it to H.264 first, which is slow for long videos.
+      preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
     })
     if (result.canceled) return
     addAssets(
@@ -288,10 +291,12 @@ export default function EventForm({
             )
           }
         })
-        .catch(() => {
+        .catch((e) => {
           setPending((prev) =>
             prev.map((m) => (m.localUri === localUri ? { ...m, status: 'error' } : m)),
           )
+          const why = e instanceof Error ? e.message : String(e)
+          setError(`Couldn't upload that ${isVideo ? 'video' : 'photo'}: ${why}`)
         })
     }
   }
@@ -516,9 +521,9 @@ export default function EventForm({
           <View>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
               {!readOnly ? (
-                <Pressable style={({ pressed }) => [styles.addTile, pressed && styles.pressed]} onPress={pickImages}>
+                <Pressable style={({ pressed }) => [styles.addTile, pressed && styles.pressed]} onPress={pickMedia}>
                   <Icon name="photo.badge.plus" size={28} color={t.tintText} weight="regular" />
-                  <Text style={styles.addTileText}>Add Photos</Text>
+                  <Text style={styles.addTileText}>Add Media</Text>
                 </Pressable>
               ) : null}
               {serverMedia.map((m) => {
@@ -537,7 +542,7 @@ export default function EventForm({
                         style={styles.remove}
                         onPress={() => detachServerMedia(m.key)}
                         hitSlop={8}
-                        accessibilityLabel="Remove photo"
+                        accessibilityLabel="Remove"
                       >
                         <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
                       </Pressable>
@@ -569,7 +574,7 @@ export default function EventForm({
                       style={styles.remove}
                       onPress={() => dropPending(m.localUri)}
                       hitSlop={8}
-                      accessibilityLabel="Remove photo"
+                      accessibilityLabel="Remove"
                     >
                       <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
                     </Pressable>
@@ -577,7 +582,7 @@ export default function EventForm({
                 </View>
               ))}
             </ScrollView>
-            {isEdit && !readOnly ? <Text style={[styles.footnote, { marginTop: 8 }]}>Photo changes save immediately.</Text> : null}
+            {isEdit && !readOnly ? <Text style={[styles.footnote, { marginTop: 8 }]}>Media changes save immediately.</Text> : null}
           </View>
 
           <View style={styles.group}>
