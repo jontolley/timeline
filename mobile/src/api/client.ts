@@ -44,8 +44,10 @@ export async function http(path: string, options: HttpOptions = {}): Promise<Res
 export async function httpJson<T>(path: string, options?: HttpOptions): Promise<T> {
   const res = await http(path, options)
   if (!res.ok) {
-    const detail = await res.json().catch(() => null)
-    throw new Error((detail as { detail?: string } | null)?.detail || `Request failed: ${res.status}`)
+    const body = (await res.json().catch(() => null)) as { detail?: unknown } | null
+    // FastAPI validation errors (422) carry a list of {msg} instead of a string.
+    const detail = Array.isArray(body?.detail) ? body.detail[0]?.msg : body?.detail
+    throw new Error(typeof detail === 'string' && detail ? detail : `Request failed: ${res.status}`)
   }
   return (await res.json()) as T
 }

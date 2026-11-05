@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react'
 import {
   ActionSheetIOS,
   ActivityIndicator,
@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -24,15 +25,18 @@ import {
   removeMedia,
   updateEvent,
 } from '../api/events'
+import { listPeople } from '../api/people'
 import { listThreads } from '../api/threads'
 import { extractExif, isVideoAsset, uploadMedia, videoPoster, type PickedAsset } from '../api/uploads'
 import { reverseGeocode } from '../api/geocode'
 import { resolvePlaceLink } from '../api/places'
 import { extractVideoMetadata } from '../lib/videoMetadata'
-import type { LocationDetail, MediaRef, Thread, TimelineEvent } from '../api/types'
+import type { LocationDetail, MediaRef, Person, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
+import LocationPicker from '@/components/LocationPicker'
+import PeoplePicker from '@/components/PeoplePicker'
 import { FillButton, Icon, IconTile, TintButton } from '@/components/ui'
-import { paletteColor, useTheme, type Theme } from '@/theme'
+import { avatarColor, initials, paletteColor, useTheme, type Theme } from '@/theme'
 
 // Shared create/edit form. `eventId` undefined → create; present → edit (loads
 // the event, supports delete, and manages media through the dedicated attach/
@@ -55,20 +59,45 @@ type PendingMedia = {
   previewUri?: string
 }
 
-// Dates store UTC; format/parse in UTC and submit at UTC midnight so the day
-// never shifts (CLAUDE.md dates invariant). In edit mode an untouched date is
-// submitted verbatim so any existing time-of-day is preserved.
+// Dates store UTC wall-clock: the calendar day and time the user picked are
+// written as if they were UTC, and formatted/parsed in UTC, so nothing shifts
+// with the device's time zone (CLAUDE.md dates invariant). A date with no time
+// is UTC midnight; any other time-of-day means "has a time", like the web's
+// hasTime(). In edit mode untouched dates aren't resubmitted at all.
 function toCalendarDate(d: Date): string {
   return d.toISOString().slice(0, 10)
+}
+function hasTime(iso: string | null | undefined): boolean {
+  if (!iso) return false
+  const d = new Date(iso)
+  return d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0
+}
+function hhmm(d: Date): string {
+  return d.toISOString().slice(11, 16)
+}
+// The picked day (and time, when the event has one) as the stored ISO string.
+function toIso(d: Date, withTime: boolean): string {
+  return `${toCalendarDate(d)}T${withTime ? hhmm(d) : '00:00'}:00.000Z`
+}
+// Keep `d`'s calendar day, take the time-of-day from `time` (both UTC).
+function withDay(time: Date, day: Date): Date {
+  return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), time.getUTCHours(), time.getUTCMinutes()))
+}
+// A default time for a newly switched-on Time: this device's current clock
+// time, rounded to 5 minutes, as UTC wall-clock on the event's day.
+function nowOn(day: Date): Date {
+  const now = new Date()
+  const mins = Math.round((now.getHours() * 60 + now.getMinutes()) / 5) * 5
+  return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), 0, Math.min(mins, 23 * 60 + 55)))
+}
+function displayTime(d: Date): string {
+  return d.toLocaleTimeString(undefined, { timeZone: 'UTC', hour: 'numeric', minute: '2-digit' })
 }
 // Today's *local* calendar day as UTC midnight. new Date() alone would be read
 // as a UTC date, which is already tomorrow on a US evening.
 function todayUtcMidnight(): Date {
   const now = new Date()
   return new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()))
-}
-function toUtcMidnightIso(d: Date): string {
-  return `${toCalendarDate(d)}T00:00:00.000Z`
 }
 function displayDate(d: Date): string {
   return d.toLocaleDateString(undefined, {
@@ -78,10 +107,9 @@ function displayDate(d: Date): string {
     day: 'numeric',
   })
 }
-function initialLocationName(loc: TimelineEvent['location']): string {
-  if (!loc) return ''
-  if (typeof loc === 'string') return loc
-  return loc.name || loc.address || ''
+function initialLocation(loc: TimelineEvent['location']): LocationDetail | null {
+  if (!loc) return null
+  return typeof loc === 'string' ? { name: loc } : loc
 }
 function thumbUriFor(m: MediaRef): string | null {
   return m.thumb_url || m.url || null
@@ -111,22 +139,31 @@ export default function EventForm({
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
-  const [locationName, setLocationName] = useState('')
+  // `date` / `endDate` carry the time-of-day too, used only while `timeOn`.
   const [date, setDate] = useState<Date>(todayUtcMidnight)
+  const [timeOn, setTimeOn] = useState(false)
+  const [endOn, setEndOn] = useState(false)
+  const [endDate, setEndDate] = useState<Date>(todayUtcMidnight)
   const [dateTouched, setDateTouched] = useState(false)
+  // Which inline date/time picker is open under the date rows.
+  const [openPicker, setOpenPicker] = useState<'date' | 'time' | 'end' | 'endTime' | null>(null)
+  const [location, setLocation] = useState<LocationDetail | null>(null)
   const [locationTouched, setLocationTouched] = useState(false)
-  // Coords + full address from photo EXIF; dropped as soon as the user edits
-  // the place text, since they'd no longer describe what's typed.
-  const [locationDetail, setLocationDetail] = useState<LocationDetail | null>(null)
   const [findingPlace, setFindingPlace] = useState(false)
+  const [tags, setTags] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+  const tagRef = useRef<ComponentRef<typeof TextInput>>(null)
+  const [people, setPeople] = useState<string[]>([])
+  const [allPeople, setAllPeople] = useState<Person[]>([])
+  // Shared events name their people here; the ids belong to the owner.
+  const [peopleDisplay, setPeopleDisplay] = useState<{ id: string; name: string }[]>([])
+  const [sheet, setSheet] = useState<'location' | 'people' | null>(null)
   // Set by the date/location handlers and read inside the async EXIF prefill,
   // which must not overwrite a user edit.
   const touched = useRef({ date: false, location: false })
   // Dev effects run twice; the shared photos must only be queued once.
   const sharedTaken = useRef(false)
   const linkTaken = useRef(false)
-  const [originalDateIso, setOriginalDateIso] = useState<string | null>(null)
-  const [showPicker, setShowPicker] = useState(false)
 
   const [threads, setThreads] = useState<Thread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -149,6 +186,12 @@ export default function EventForm({
   }, [isEdit])
 
   useEffect(() => {
+    listPeople()
+      .then(setAllPeople)
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
     if (!eventId) return
     // Guard against stale responses: dev double-invokes effects and the
     // endpoint can intermittently time out, so a late reject from a discarded
@@ -161,9 +204,14 @@ export default function EventForm({
         if (cancelled) return
         setTitle(ev.title)
         setDescription(ev.description || '')
-        setLocationName(initialLocationName(ev.location))
-        setOriginalDateIso(ev.date)
+        setLocation(initialLocation(ev.location))
         setDate(new Date(ev.date))
+        setTimeOn(hasTime(ev.date) || hasTime(ev.end_date))
+        setEndOn(!!ev.end_date)
+        if (ev.end_date) setEndDate(new Date(ev.end_date))
+        setTags(ev.tags || [])
+        setPeople(ev.people || [])
+        setPeopleDisplay(ev.people_display || [])
         setThreadId(ev.thread_id)
         setServerMedia(ev.media || [])
         setLoadError(null)
@@ -213,8 +261,7 @@ export default function EventForm({
     try {
       const place = await resolvePlaceLink(link)
       if (touched.current.location) return
-      setLocationDetail(place)
-      setLocationName(place.name || place.address || '')
+      setLocation(place)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't read that map link.")
     } finally {
@@ -225,13 +272,15 @@ export default function EventForm({
   async function prefillFromMedia(asset: PickedAsset, useLocation: boolean) {
     try {
       const exif = isVideoAsset(asset) ? await extractVideoMetadata(asset.uri) : await extractExif(asset)
-      if (exif.date && !touched.current.date) setDate(new Date(`${exif.date}T00:00:00.000Z`))
+      if (exif.date && !touched.current.date) {
+        setDate(new Date(`${exif.date}T${exif.time || '00:00'}:00.000Z`))
+        if (exif.time) setTimeOn(true)
+      }
       if (!useLocation || exif.lat == null || exif.lng == null || touched.current.location) return
       setFindingPlace(true)
       const place = await reverseGeocode(exif.lat, exif.lng).catch(() => null)
       if (touched.current.location) return
-      setLocationDetail(place ?? { lat: exif.lat, lng: exif.lng })
-      if (place?.name) setLocationName(place.name)
+      setLocation(place ?? { lat: exif.lat, lng: exif.lng })
     } catch {
       // No metadata (or a screenshot) — the form just keeps today's date.
     } finally {
@@ -323,22 +372,31 @@ export default function EventForm({
       setError('A title is required.')
       return
     }
+    const dateIso = toIso(date, timeOn)
+    const endIso = endOn ? toIso(endDate, timeOn) : null
+    if (endIso && endIso < dateIso) {
+      setError('The end is before the start.')
+      return
+    }
+    // A tag typed but not yet added with Return still counts.
+    const allTags = tagInput.trim() && !tags.includes(tagInput.trim()) ? [...tags, tagInput.trim()] : tags
     setSaving(true)
     try {
       if (isEdit && eventId) {
-        // Send only the fields that should change. Date/location are guarded
-        // so an untouched edit doesn't clobber an existing time or coords.
+        // Send only the fields that should change. Dates/location are guarded
+        // so an untouched edit never rewrites them.
         const payload: Partial<TimelineEvent> = {
           title: title.trim(),
           description: description.trim() || null,
           thread_id: threadId ?? undefined,
+          tags: allTags,
+          people,
         }
-        if (dateTouched) payload.date = toUtcMidnightIso(date)
-        if (locationTouched) {
-          payload.location = locationName.trim()
-            ? ({ name: locationName.trim() } as LocationDetail)
-            : null
+        if (dateTouched) {
+          payload.date = dateIso
+          payload.end_date = endIso
         }
+        if (locationTouched) payload.location = location
         await updateEvent(eventId, payload)
       } else {
         const attached = pending
@@ -347,10 +405,11 @@ export default function EventForm({
         await createEvent({
           title: title.trim(),
           description: description.trim() || undefined,
-          date: toUtcMidnightIso(date),
-          location: locationName.trim()
-            ? { ...locationDetail, name: locationName.trim() }
-            : locationDetail ?? undefined,
+          date: dateIso,
+          end_date: endIso,
+          location: location ?? undefined,
+          tags: allTags,
+          people,
           thread_id: threadId ?? undefined,
           media: attached,
         })
@@ -421,66 +480,250 @@ export default function EventForm({
   const thread = threads.find((th) => th._id === threadId)
   const heading = readOnly ? 'Moment' : isEdit ? 'Edit Moment' : 'New Moment'
 
+  function markDates() {
+    touched.current.date = true
+    setDateTouched(true)
+  }
+  const togglePicker = (which: NonNullable<typeof openPicker>) => setOpenPicker((cur) => (cur === which ? null : which))
+
+  // One inline date (calendar) or time (wheels) picker, rendered in UTC so the
+  // shown day/time is exactly what's stored.
+  function inlinePicker(which: NonNullable<typeof openPicker>, value: Date, onPick: (picked: Date) => void) {
+    if (openPicker !== which || readOnly) return null
+    const mode = which === 'time' || which === 'endTime' ? 'time' : 'date'
+    return (
+      <DateTimePicker
+        value={value}
+        mode={mode}
+        timeZoneName="UTC"
+        accentColor={t.tint}
+        themeVariant={t.dark ? 'dark' : 'light'}
+        display={Platform.OS === 'ios' ? (mode === 'date' ? 'inline' : 'spinner') : 'default'}
+        style={styles.picker}
+        onValueChange={(_event, picked) => {
+          // A calendar closes on a pick; the time wheels stay up while they spin.
+          if (Platform.OS !== 'ios' || mode === 'date') setOpenPicker(null)
+          markDates()
+          onPick(picked)
+        }}
+        onDismiss={() => setOpenPicker(null)}
+      />
+    )
+  }
+
+  function pill(which: NonNullable<typeof openPicker>, text: string) {
+    return (
+      <Pressable
+        style={styles.datePill}
+        onPress={() => togglePicker(which)}
+        disabled={readOnly}
+      >
+        <Text style={styles.datePillText}>{text}</Text>
+      </Pressable>
+    )
+  }
+
+  function setTime(on: boolean) {
+    markDates()
+    setTimeOn(on)
+    if (!on) {
+      setOpenPicker((cur) => (cur === 'time' || cur === 'endTime' ? null : cur))
+      return
+    }
+    // A date-only event gets a sensible starting time (now), and its end an
+    // hour later, rather than midnight.
+    const start = hhmm(date) === '00:00' ? nowOn(date) : date
+    setDate(start)
+    setEndDate((e) => (hhmm(e) === '00:00' ? withDay(new Date(start.getTime() + 3600_000), e) : e))
+    setOpenPicker('time')
+  }
+
+  function setEnd(on: boolean) {
+    markDates()
+    setEndOn(on)
+    if (on) {
+      setEndDate(new Date(date.getTime() + (timeOn ? 3600_000 : 86400_000)))
+      setOpenPicker('end')
+    } else {
+      setOpenPicker((cur) => (cur === 'end' || cur === 'endTime' ? null : cur))
+    }
+  }
+
+  function addTags(raw: string[]) {
+    const fresh = raw.map((x) => x.trim()).filter(Boolean)
+    if (fresh.length) setTags((cur) => [...cur, ...fresh.filter((x, i) => !cur.includes(x) && fresh.indexOf(x) === i)])
+  }
+  // Return or a comma adds the tag. The field is cleared natively too: with
+  // fast typing a controlled reset to '' can be dropped, leaving the old text.
+  function onTagText(v: string) {
+    if (!v.includes(',')) return setTagInput(v)
+    const parts = v.split(',')
+    const rest = parts.pop() ?? ''
+    addTags(parts)
+    if (!rest) tagRef.current?.clear()
+    setTagInput(rest)
+  }
+
+  const personName = (id: string) =>
+    allPeople.find((p) => p._id === id)?.name ?? peopleDisplay.find((p) => p.id === id)?.name
+  const peopleNames = people.map(personName).filter((n): n is string => !!n)
+  const placeText = location?.name || location?.address || ''
+
   // Grouped detail rows, iOS Settings style: coloured icon tile, label, value.
   const rows: { key: string; node: ReactNode }[] = [
     {
       key: 'date',
       node: (
         <View>
-          <Pressable style={styles.row} onPress={() => !readOnly && setShowPicker((v) => !v)} disabled={readOnly}>
+          <View style={styles.row}>
             <IconTile icon="calendar" color="#E5484D" />
-            <Text style={styles.rowLabel}>Date</Text>
-            <View style={styles.datePill}>
-              <Text style={styles.datePillText}>{displayDate(date)}</Text>
+            <Text style={styles.rowLabel}>{endOn ? 'Starts' : 'Date'}</Text>
+            <View style={styles.pills}>
+              {pill('date', displayDate(date))}
+              {timeOn ? pill('time', displayTime(date)) : null}
             </View>
-          </Pressable>
-          {showPicker && !readOnly ? (
-            <DateTimePicker
-              value={date}
-              mode="date"
-              // Render in UTC so the highlighted day matches the stored date
-              // (local rendering shows the previous day west of Greenwich).
-              timeZoneName="UTC"
-              accentColor={t.tint}
-              themeVariant={t.dark ? 'dark' : 'light'}
-              display={Platform.OS === 'ios' ? 'inline' : 'default'}
-              style={styles.picker}
-              onValueChange={(_event, picked) => {
-                if (Platform.OS !== 'ios') setShowPicker(false)
-                touched.current.date = true
-                setDateTouched(true)
-                setDate(new Date(Date.UTC(picked.getUTCFullYear(), picked.getUTCMonth(), picked.getUTCDate())))
-              }}
-              onDismiss={() => setShowPicker(false)}
-            />
-          ) : null}
-        </View>
-      ),
-    },
-    {
-      key: 'location',
-      node: (
-        <View style={styles.row}>
-          <IconTile icon="mappin" color={t.tint} />
-          <Text style={styles.rowLabel}>Location</Text>
-          <TextInput
-            style={styles.rowInput}
-            value={locationName}
-            onChangeText={(v) => {
-              touched.current.location = true
-              setLocationTouched(true)
-              setLocationDetail(null)
-              setLocationName(v)
-            }}
-            placeholder={findingPlace ? 'Finding place…' : 'Add place'}
-            placeholderTextColor={t.placeholder}
-            editable={!readOnly}
-            returnKeyType="done"
-          />
+          </View>
+          {inlinePicker('date', date, (picked) => {
+            const next = withDay(date, picked)
+            setDate(next)
+            // Moving the start past the end drags the end along.
+            if (endOn && endDate.getTime() < next.getTime()) setEndDate(next)
+          })}
+          {inlinePicker('time', date, (picked) => setDate(withDay(picked, date)))}
         </View>
       ),
     },
   ]
+  if (!readOnly) {
+    rows.push(
+      {
+        key: 'time',
+        node: (
+          <View style={styles.row}>
+            <IconTile icon="clock.fill" color="#007AFF" />
+            <Text style={styles.rowLabel}>Time</Text>
+            <Switch style={styles.switch} value={timeOn} onValueChange={setTime} />
+          </View>
+        ),
+      },
+      {
+        key: 'range',
+        node: (
+          <View style={styles.row}>
+            <IconTile icon="calendar.badge.clock" color="#FF9500" />
+            <Text style={styles.rowLabel}>End Date</Text>
+            <Switch style={styles.switch} value={endOn} onValueChange={setEnd} />
+          </View>
+        ),
+      },
+    )
+  }
+  if (endOn) {
+    rows.push({
+      key: 'end',
+      node: (
+        <View>
+          <View style={styles.row}>
+            <IconTile icon="calendar" color="#E5484D" />
+            <Text style={styles.rowLabel}>Ends</Text>
+            <View style={styles.pills}>
+              {pill('end', displayDate(endDate))}
+              {timeOn ? pill('endTime', displayTime(endDate)) : null}
+            </View>
+          </View>
+          {inlinePicker('end', endDate, (picked) => setEndDate(withDay(endDate, picked)))}
+          {inlinePicker('endTime', endDate, (picked) => setEndDate(withDay(picked, endDate)))}
+        </View>
+      ),
+    })
+  }
+  rows.push(
+    {
+      key: 'location',
+      node: (
+        <Pressable style={styles.row} onPress={() => setSheet('location')} disabled={readOnly}>
+          <IconTile icon="mappin" color={t.tint} />
+          <Text style={styles.rowLabel}>Location</Text>
+          <View style={styles.rowValue}>
+            <Text style={[styles.rowValueText, !placeText && { color: t.placeholder }]} numberOfLines={1}>
+              {placeText || (findingPlace ? 'Finding place…' : readOnly ? 'None' : 'Add place')}
+            </Text>
+            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
+          </View>
+        </Pressable>
+      ),
+    },
+    {
+      key: 'people',
+      node: (
+        <Pressable style={styles.row} onPress={() => setSheet('people')} disabled={readOnly}>
+          <IconTile icon="person.2.fill" color="#34A853" />
+          <Text style={styles.rowLabel}>People</Text>
+          <View style={styles.rowValue}>
+            {peopleNames.length ? (
+              <View style={styles.avatars}>
+                {peopleNames.slice(0, 3).map((name, i) => (
+                  <View
+                    key={`${name}-${i}`}
+                    style={[styles.avatar, { backgroundColor: avatarColor(name) }, i > 0 && { marginLeft: -6 }]}
+                  >
+                    <Text style={styles.avatarText}>{initials(name)}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            <Text style={[styles.rowValueText, !peopleNames.length && { color: t.placeholder }]} numberOfLines={1}>
+              {peopleNames.length ? peopleNames.join(', ') : readOnly ? 'None' : 'Add people'}
+            </Text>
+            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
+          </View>
+        </Pressable>
+      ),
+    },
+    {
+      key: 'tags',
+      node: (
+        <View style={[styles.row, styles.tagsRow]}>
+          <IconTile icon="tag.fill" color="#E8833A" />
+          <View style={styles.tagWrap}>
+            {tags.map((tag) => (
+              <Pressable
+                key={tag}
+                style={styles.tag}
+                onPress={() => setTags((cur) => cur.filter((x) => x !== tag))}
+                disabled={readOnly}
+                accessibilityLabel={readOnly ? tag : `Remove tag ${tag}`}
+              >
+                <Text style={styles.tagText}>{tag}</Text>
+                {!readOnly ? <Icon name="xmark" size={9} color={t.secondary} weight="bold" /> : null}
+              </Pressable>
+            ))}
+            {!readOnly ? (
+              <TextInput
+                style={styles.tagInput}
+                value={tagInput}
+                ref={tagRef}
+                onChangeText={onTagText}
+                onSubmitEditing={() => {
+                  addTags([tagInput])
+                  tagRef.current?.clear()
+                  setTagInput('')
+                }}
+                placeholder={tags.length ? 'Add tag' : 'Tags'}
+                placeholderTextColor={t.placeholder}
+                autoCapitalize="none"
+                autoCorrect={false}
+                returnKeyType="done"
+                submitBehavior="submit"
+              />
+            ) : !tags.length ? (
+              <Text style={[styles.rowLabel, { color: t.placeholder }]}>No tags</Text>
+            ) : null}
+          </View>
+        </View>
+      ),
+    },
+  )
   if (threads.length > 1) {
     rows.push({
       key: 'thread',
@@ -630,6 +873,29 @@ export default function EventForm({
           {error ? <Text style={styles.error}>{error}</Text> : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <LocationPicker
+        visible={sheet === 'location'}
+        initial={location}
+        onCancel={() => setSheet(null)}
+        onDone={(place) => {
+          touched.current.location = true
+          setLocationTouched(true)
+          setLocation(place)
+          setSheet(null)
+        }}
+      />
+      <PeoplePicker
+        visible={sheet === 'people'}
+        people={allPeople}
+        selected={people}
+        onCancel={() => setSheet(null)}
+        onPersonCreated={(person) => setAllPeople((cur) => [...cur, person])}
+        onDone={(ids) => {
+          setPeople(ids)
+          setSheet(null)
+        }}
+      />
     </View>
   )
 }
@@ -707,7 +973,6 @@ function makeStyles(t: Theme) {
     rowValueText: { fontSize: 17, color: t.secondary, flexShrink: 1 },
     dot: { width: 9, height: 9, borderRadius: 5 },
     datePill: {
-      marginLeft: 'auto',
       height: 34,
       paddingHorizontal: 12,
       borderRadius: 8,
@@ -715,7 +980,34 @@ function makeStyles(t: Theme) {
       justifyContent: 'center',
     },
     datePillText: { fontSize: 17, color: t.tintText },
+    pills: { marginLeft: 'auto', flexDirection: 'row', gap: 6 },
     picker: { marginHorizontal: 8 },
+    // RN's iOS Switch defaults to alignSelf: 'flex-start' (top of the row).
+    switch: { marginLeft: 'auto', alignSelf: 'center' },
+    avatars: { flexDirection: 'row' },
+    avatar: {
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1.5,
+      borderColor: t.modalCard,
+    },
+    avatarText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
+    tagsRow: { alignItems: 'flex-start', paddingVertical: 11 },
+    tagWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, minHeight: 30 },
+    tag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      height: 30,
+      paddingHorizontal: 11,
+      borderRadius: 15,
+      backgroundColor: t.fill,
+    },
+    tagText: { fontSize: 15, color: t.label },
+    tagInput: { flexGrow: 1, minWidth: 90, fontSize: 17, color: t.label, paddingVertical: 4 },
     deleteBtn: { height: 52, alignItems: 'center', justifyContent: 'center' },
     deleteText: { fontSize: 17, fontWeight: '500', color: t.danger },
     error: { color: t.danger, fontSize: 15, textAlign: 'center' },

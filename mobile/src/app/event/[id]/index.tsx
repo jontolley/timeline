@@ -52,10 +52,18 @@ function fmtTime(iso: string): string {
     timeZone: 'UTC',
   })
 }
+function fmtShortDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+}
+// A single date reads in full; a range drops the weekday and, when it starts
+// and ends on the same day, the second date ("Nov 4, 2026 at 2:00 PM – 4:00 PM").
 function formatDateRange(start: string, end?: string | null): string {
-  const s = fmtDate(start) + (hasTime(start) ? ` at ${fmtTime(start)}` : '')
-  if (!end) return s
-  const e = fmtDate(end) + (hasTime(end) ? ` at ${fmtTime(end)}` : '')
+  if (!end) return fmtDate(start) + (hasTime(start) ? ` at ${fmtTime(start)}` : '')
+  const s = fmtShortDate(start) + (hasTime(start) ? ` at ${fmtTime(start)}` : '')
+  const sameDay = start.slice(0, 10) === end.slice(0, 10)
+  if (sameDay && hasTime(end)) return `${s} – ${fmtTime(end)}`
+  if (sameDay) return s
+  const e = fmtShortDate(end) + (hasTime(end) ? ` at ${fmtTime(end)}` : '')
   return `${s} – ${e}`
 }
 
@@ -429,7 +437,7 @@ function makeStyles(t: Theme) {
     pageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
     sheet: { backgroundColor: t.detailBg, paddingHorizontal: 20, paddingTop: 22, gap: 18 },
     sheetOverlap: { marginTop: -20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-    meta: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, rowGap: 2 },
     metaText: { fontSize: 15, fontWeight: '500', color: t.secondary },
     metaDate: { flexShrink: 1 },
     dot: { width: 8, height: 8, borderRadius: 4 },

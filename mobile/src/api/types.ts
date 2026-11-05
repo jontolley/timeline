@@ -53,6 +53,7 @@ export type Thread = {
 export type Person = {
   _id: string
   name: string
+  color?: string // palette key
 }
 
 export type YearCount = { year: number; count: number }

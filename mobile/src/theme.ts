@@ -131,9 +131,14 @@ export function paletteColor(key: string | null | undefined, isDark = false): st
 // Stable colour for a person avatar when we only know their name.
 const AVATAR_KEYS = ['rose', 'cyan', 'orange', 'violet', 'emerald', 'amber', 'fuchsia', 'blue']
 export function avatarColor(name: string): string {
+  return PALETTE[avatarKey(name)]
+}
+// The palette key behind avatarColor: what a person added in the app is saved
+// with (the backend requires a palette colour), so web and app agree.
+export function avatarKey(name: string): string {
   let h = 0
   for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0
-  return PALETTE[AVATAR_KEYS[Math.abs(h) % AVATAR_KEYS.length]]
+  return AVATAR_KEYS[Math.abs(h) % AVATAR_KEYS.length]
 }
 
 export function initials(name: string): string {
