@@ -2,6 +2,7 @@ import os
 from contextlib import asynccontextmanager
 
 import aioboto3
+import botocore.session
 from botocore.exceptions import ClientError
 
 R2_ACCOUNT_ID = os.getenv("R2_ACCOUNT_ID")
@@ -80,22 +81,42 @@ async def _client():
         yield client
 
 
-async def presign_put(key: str, content_type: str, expires: int = 300) -> str:
-    async with _client() as c:
-        return await c.generate_presigned_url(
-            "put_object",
-            Params={"Bucket": R2_BUCKET, "Key": key, "ContentType": content_type},
-            ExpiresIn=expires,
+_signer = None
+
+
+def _signing_client():
+    """One long-lived client for presigning. Signing is a local HMAC with no
+    network I/O, but building a client is not — creating one per URL made
+    serializing a page of events (two URLs per media item) cost ~25x more
+    than the signing itself."""
+    global _signer
+    if _signer is None:
+        if not is_configured():
+            raise RuntimeError("R2 storage is not configured (missing R2_* env vars)")
+        _signer = botocore.session.get_session().create_client(
+            "s3",
+            endpoint_url=R2_ENDPOINT,
+            aws_access_key_id=R2_ACCESS_KEY_ID,
+            aws_secret_access_key=R2_SECRET_ACCESS_KEY,
+            region_name="auto",
         )
+    return _signer
+
+
+async def presign_put(key: str, content_type: str, expires: int = 300) -> str:
+    return _signing_client().generate_presigned_url(
+        "put_object",
+        Params={"Bucket": R2_BUCKET, "Key": key, "ContentType": content_type},
+        ExpiresIn=expires,
+    )
 
 
 async def presign_get(key: str, expires: int = 3600) -> str:
-    async with _client() as c:
-        return await c.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": R2_BUCKET, "Key": key},
-            ExpiresIn=expires,
-        )
+    return _signing_client().generate_presigned_url(
+        "get_object",
+        Params={"Bucket": R2_BUCKET, "Key": key},
+        ExpiresIn=expires,
+    )
 
 
 async def object_exists(key: str) -> bool:

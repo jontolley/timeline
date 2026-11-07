@@ -25,6 +25,10 @@ import { useTimelineSignal } from '@/store/timeline'
 import { paletteColor, useTheme, type Theme } from '@/theme'
 
 const PAGE_SIZE = 30
+// How long a year chip's page is reused. Short enough that edits made on
+// another device show up, and well inside the 1h life of the signed media URLs
+// the page carries.
+const YEAR_CACHE_MS = 10 * 60 * 1000
 
 // Dates are stored UTC; format and group in UTC to avoid a day shift (see the
 // web app's utils/date.js invariant).
@@ -171,6 +175,13 @@ export default function TimelineScreen() {
   const [hasMore, setHasMore] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // First page of each year chip's window, so going back to a year is instant.
+  // Cleared whenever the first page reloads (pull-to-refresh, or a create/edit
+  // signal); `cacheGen` keeps a fetch from before the clear from refilling it.
+  const yearCache = useRef(new Map<number, { page: TimelineEvent[]; at: number }>())
+  const yearFetches = useRef(new Map<number, Promise<TimelineEvent[]>>())
+  const cacheGen = useRef(0)
+
   const loadFirstPage = useCallback(async () => {
     setError(null)
     try {
@@ -179,9 +190,14 @@ export default function TimelineScreen() {
         listEventYears().catch(() => [] as YearCount[]),
         listThreads().catch(() => [] as Thread[]),
       ])
+      const sortedYears = [...yrs].sort((a, b) => b.year - a.year)
+      cacheGen.current += 1
+      yearCache.current.clear()
+      yearFetches.current.clear()
+      if (sortedYears[0]) yearCache.current.set(sortedYears[0].year, { page, at: Date.now() })
       setEvents(page)
       setHasMore(page.length === PAGE_SIZE)
-      setYears([...yrs].sort((a, b) => b.year - a.year))
+      setYears(sortedYears)
       setThreads(thr)
       setViewYear(null)
     } catch (e) {
@@ -241,28 +257,57 @@ export default function TimelineScreen() {
   // the list starts at that year's newest event and scrolls on into older
   // years. The newest chip goes back to the top page. (Unlike the web rail
   // there's no upward context — pull-to-refresh or the newest chip returns.)
+  // Shared by press-in (to get a head start) and press, so a tap makes one
+  // request; a cached page skips the network entirely.
+  const fetchYear = useCallback(
+    (year: number): Promise<TimelineEvent[]> => {
+      const hit = yearCache.current.get(year)
+      if (hit && Date.now() - hit.at < YEAR_CACHE_MS) return Promise.resolve(hit.page)
+      let p = yearFetches.current.get(year)
+      if (!p) {
+        const gen = cacheGen.current
+        const newest = years[0] && year === years[0].year
+        p = listEvents(
+          newest ? { limit: PAGE_SIZE } : { limit: PAGE_SIZE, before_date: `${year + 1}-01-01T00:00:00.000Z` },
+        )
+          .then((page) => {
+            if (gen === cacheGen.current) yearCache.current.set(year, { page, at: Date.now() })
+            return page
+          })
+          .finally(() => {
+            if (yearFetches.current.get(year) === p) yearFetches.current.delete(year)
+          })
+        yearFetches.current.set(year, p)
+      }
+      return p
+    },
+    [years],
+  )
+
+  // Only the latest tap applies, so a slow fetch can't land on top of a later one.
+  const jumpToken = useRef(0)
   const jumpTo = useCallback(
     async (year: number) => {
-      if (years[0] && year === years[0].year) {
-        await loadFirstPage()
-      } else {
-        try {
-          const page = await listEvents({ limit: PAGE_SIZE, before_date: `${year + 1}-01-01T00:00:00.000Z` })
-          setEvents(page)
-          setHasMore(page.length === PAGE_SIZE)
-          setViewYear(year)
-        } catch (e) {
-          setError(e instanceof Error ? e.message : 'Failed to load timeline.')
-          return
-        }
+      const token = ++jumpToken.current
+      setViewYear(year)
+      let page: TimelineEvent[]
+      try {
+        page = await fetchYear(year)
+      } catch (e) {
+        if (token === jumpToken.current) setError(e instanceof Error ? e.message : 'Failed to load timeline.')
+        return
       }
+      if (token !== jumpToken.current) return
+      setEvents(page)
+      setHasMore(page.length === PAGE_SIZE)
+      setViewYear(year)
       // The chips stay pinned while scrolled deep into the list, so start the
       // new window at its top rather than mid-way down at the old offset.
       if (scrollY.current > headerH.current) {
         listRef.current?.scrollToOffset({ offset: headerH.current, animated: false })
       }
     },
-    [years, loadFirstPage],
+    [fetchYear],
   )
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -329,6 +374,7 @@ export default function TimelineScreen() {
           return (
             <Pressable
               key={y.year}
+              onPressIn={() => void fetchYear(y.year).catch(() => {})}
               onPress={() => void jumpTo(y.year)}
               onLayout={(e) => (chipFrames.current[y.year] = { x: e.nativeEvent.layout.x, w: e.nativeEvent.layout.width })}
               style={[styles.chip, on && styles.chipOn]}

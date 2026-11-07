@@ -312,6 +312,20 @@ async def _ensure_auth_indexes():
         )
 
 
+async def _ensure_timeline_indexes():
+    """Compound indexes for the paginated timeline (GET /events with `limit`,
+    and the year-chip jumps built on it): filter by visible thread, walk in
+    (date|created_at, _id) order. Without them every page — and every year
+    jump — is a full collection scan plus an in-memory sort."""
+    existing = await events_collection.index_information()
+    for field in ("date", "created_at"):
+        name = f"events_thread_{field}"
+        if name not in existing:
+            await events_collection.create_index(
+                [("thread_id", 1), (field, -1), ("_id", -1)], name=name
+            )
+
+
 async def _ensure_text_index():
     """Create the Mongo full-text index used by the chat keyword search if it
     doesn't already exist. Field weights make title hits dominate, then tags,
@@ -354,6 +368,7 @@ async def _background_startup():
     chat semantic search just misses any newly-created events until
     the catch-up loop here finishes (idempotent, runs every boot)."""
     try:
+        await _ensure_timeline_indexes()
         await embedding_service.ensure_collection()
         await _migrate_photos_to_media()
         # Multi-user bootstrap: seeds users from ALLOWED_EMAILS, backfills
