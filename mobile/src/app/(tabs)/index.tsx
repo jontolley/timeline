@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
+  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
-  SectionList,
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+  type ListViewToken,
+  type ScrollViewInstance,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { Image } from 'expo-image'
@@ -51,20 +56,33 @@ export function coverSource(m: MediaRef): { uri: string; cacheKey: string } | nu
   return uri ? { uri, cacheKey: m.key } : null
 }
 
-type Section = { key: string; title: string; year: string; data: TimelineEvent[] }
+// The timeline is one flat list (not a SectionList) so the year chips can be a
+// row of their own and be the only sticky one: SectionList makes either every
+// section header sticky or none.
+type Row =
+  | { kind: 'years'; key: string }
+  | { kind: 'month'; key: string; title: string; year: string }
+  | { kind: 'event'; key: string; event: TimelineEvent; first: boolean }
 
-function groupByMonth(events: TimelineEvent[]): Section[] {
-  const out: Section[] = []
+function toRows(events: TimelineEvent[], withYears: boolean): Row[] {
+  const out: Row[] = withYears ? [{ kind: 'years', key: 'years' }] : []
+  let month: string | null = null
   for (const ev of events) {
     const key = monthKey(ev.date)
-    let last = out[out.length - 1]
-    if (!last || last.key !== key) {
-      last = { key, title: monthName(ev.date), year: key.slice(0, 4), data: [] }
-      out.push(last)
+    const first = key !== month
+    if (first) {
+      out.push({ kind: 'month', key: `m-${key}`, title: monthName(ev.date), year: key.slice(0, 4) })
+      month = key
     }
-    last.data.push(ev)
+    out.push({ kind: 'event', key: ev._id, event: ev, first })
   }
   return out
+}
+
+function rowYear(row: Row): number | null {
+  if (row.kind === 'month') return Number(row.year)
+  if (row.kind === 'event') return Number(row.event.date.slice(0, 4))
+  return null
 }
 
 function EventCard({
@@ -144,8 +162,9 @@ export default function TimelineScreen() {
   const [events, setEvents] = useState<TimelineEvent[]>([])
   const [threads, setThreads] = useState<Thread[]>([])
   const [years, setYears] = useState<YearCount[]>([])
-  // Year chip the window was jumped to; null = the newest page.
-  const [jumpYear, setJumpYear] = useState<number | null>(null)
+  // Year of the topmost visible event (or the chip just jumped to); null = the
+  // newest year.
+  const [viewYear, setViewYear] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -164,7 +183,7 @@ export default function TimelineScreen() {
       setHasMore(page.length === PAGE_SIZE)
       setYears([...yrs].sort((a, b) => b.year - a.year))
       setThreads(thr)
-      setJumpYear(null)
+      setViewYear(null)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load timeline.')
     }
@@ -212,6 +231,12 @@ export default function TimelineScreen() {
     }
   }, [events, hasMore, loadingMore])
 
+  const listRef = useRef<FlatList<Row>>(null)
+  const scrollY = useRef(0)
+  // Height of the title block above the sticky chips: scrolled past it, the
+  // chips are pinned to the top.
+  const headerH = useRef(0)
+
   // Year chips jump the window: everything before Jan 1 of the next year, so
   // the list starts at that year's newest event and scrolls on into older
   // years. The newest chip goes back to the top page. (Unlike the web rail
@@ -225,61 +250,117 @@ export default function TimelineScreen() {
           const page = await listEvents({ limit: PAGE_SIZE, before_date: `${year + 1}-01-01T00:00:00.000Z` })
           setEvents(page)
           setHasMore(page.length === PAGE_SIZE)
-          setJumpYear(year)
+          setViewYear(year)
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Failed to load timeline.')
           return
         }
       }
+      // The chips stay pinned while scrolled deep into the list, so start the
+      // new window at its top rather than mid-way down at the old offset.
+      if (scrollY.current > headerH.current) {
+        listRef.current?.scrollToOffset({ offset: headerH.current, animated: false })
+      }
     },
     [years, loadFirstPage],
   )
 
-  const sections = useMemo(() => groupByMonth(events), [events])
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    scrollY.current = e.nativeEvent.contentOffset.y
+  }, [])
+
+  // Highlight the year being read, like the web rail's scrollspy. FlatList
+  // requires these to keep the same identity across renders.
+  const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50 }).current
+  const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ListViewToken[] }) => {
+    for (const v of viewableItems) {
+      const y = rowYear(v.item as Row)
+      if (y != null) {
+        setViewYear(y)
+        return
+      }
+    }
+  }).current
+
+  const showYears = years.length > 1
+  const rows = useMemo(() => toRows(events, showYears && events.length > 0), [events, showYears])
   const threadById = useMemo(() => Object.fromEntries(threads.map((th) => [th._id, th])), [threads])
   const showThread = threads.length > 1
-  const activeYear = jumpYear ?? years[0]?.year ?? null
+  const activeYear = viewYear ?? years[0]?.year ?? null
+
+  // Keep the active chip in view as the highlight follows the scroll.
+  const { width: screenW } = useWindowDimensions()
+  const chipsRef = useRef<ScrollViewInstance>(null)
+  const chipsX = useRef(0)
+  const chipFrames = useRef<Record<number, { x: number; w: number }>>({})
+  useEffect(() => {
+    const f = activeYear != null ? chipFrames.current[activeYear] : undefined
+    if (!f) return
+    const pad = 16
+    if (f.x - pad < chipsX.current) {
+      chipsRef.current?.scrollTo({ x: Math.max(0, f.x - pad), animated: true })
+    } else if (f.x + f.w + pad > chipsX.current + screenW) {
+      chipsRef.current?.scrollTo({ x: f.x + f.w + pad - screenW, animated: true })
+    }
+  }, [activeYear, screenW])
 
   const header = (
-    <View style={styles.header}>
+    <View style={styles.header} onLayout={(e) => (headerH.current = e.nativeEvent.layout.height)}>
       <View style={styles.actions}>
         <GlassButton icon="person.crop.circle" accessibilityLabel="Account" onPress={() => router.push('/account')} />
         <TintButton icon="plus" accessibilityLabel="New moment" onPress={() => router.push('/event/new')} />
       </View>
       <Text style={styles.h1}>Timeline</Text>
-      {years.length > 1 ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-          {years.map((y) => {
-            const on = y.year === activeYear
-            return (
-              <Pressable
-                key={y.year}
-                onPress={() => void jumpTo(y.year)}
-                style={[styles.chip, on && styles.chipOn]}
-                accessibilityRole="button"
-                accessibilityState={{ selected: on }}
-              >
-                <Text style={[styles.chipText, on && styles.chipTextOn]}>{y.year}</Text>
-              </Pressable>
-            )
-          })}
-        </ScrollView>
-      ) : null}
     </View>
   )
+
+  const yearChips = showYears ? (
+    <View style={styles.chipBar}>
+      <ScrollView
+        ref={chipsRef}
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chips}
+        onScroll={(e) => (chipsX.current = e.nativeEvent.contentOffset.x)}
+        scrollEventThrottle={16}
+      >
+        {years.map((y) => {
+          const on = y.year === activeYear
+          return (
+            <Pressable
+              key={y.year}
+              onPress={() => void jumpTo(y.year)}
+              onLayout={(e) => (chipFrames.current[y.year] = { x: e.nativeEvent.layout.x, w: e.nativeEvent.layout.width })}
+              style={[styles.chip, on && styles.chipOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextOn]}>{y.year}</Text>
+            </Pressable>
+          )
+        })}
+      </ScrollView>
+    </View>
+  ) : null
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       {loading ? (
         <>
-          <View style={styles.padded}>{header}</View>
+          <View style={styles.padded}>
+            {header}
+            {yearChips}
+          </View>
           <View style={styles.center}>
             <ActivityIndicator color={t.secondary} />
           </View>
         </>
       ) : error ? (
         <>
-          <View style={styles.padded}>{header}</View>
+          <View style={styles.padded}>
+            {header}
+            {yearChips}
+          </View>
           <View style={styles.center}>
             <Text style={styles.error}>{error}</Text>
             <Pressable
@@ -293,29 +374,39 @@ export default function TimelineScreen() {
           </View>
         </>
       ) : (
-        <SectionList
-          sections={sections}
-          keyExtractor={(item) => item._id}
+        <FlatList
+          ref={listRef}
+          data={rows}
+          keyExtractor={(row) => row.key}
           ListHeaderComponent={header}
-          renderSectionHeader={({ section }) => (
-            <View style={styles.monthHeader}>
-              <Text style={styles.month}>{section.title}</Text>
-              <Text style={styles.monthYear}>{section.year}</Text>
-            </View>
-          )}
-          renderItem={({ item }) => (
-            <EventCard
-              event={item}
-              thread={threadById[item.thread_id]}
-              showThread={showThread}
-              onPress={() => router.push(`/event/${item._id}`)}
-              t={t}
-              styles={styles}
-            />
-          )}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
-          // Month headers scroll with the cards, like Photos/Journal.
-          stickySectionHeadersEnabled={false}
+          renderItem={({ item: row }) =>
+            row.kind === 'years' ? (
+              yearChips
+            ) : row.kind === 'month' ? (
+              <View style={styles.monthHeader}>
+                <Text style={styles.month}>{row.title}</Text>
+                <Text style={styles.monthYear}>{row.year}</Text>
+              </View>
+            ) : (
+              <View style={row.first ? null : styles.cardGap}>
+                <EventCard
+                  event={row.event}
+                  thread={threadById[row.event.thread_id]}
+                  showThread={showThread}
+                  onPress={() => router.push(`/event/${row.event._id}`)}
+                  t={t}
+                  styles={styles}
+                />
+              </View>
+            )
+          }
+          // Only the year chips stick; month headers scroll with the cards,
+          // like Photos/Journal. Indices count the ListHeaderComponent as 0.
+          stickyHeaderIndices={rows[0]?.kind === 'years' ? [1] : undefined}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
           contentContainerStyle={styles.list}
           // Native tabs float over the list; let iOS inset the scroll content
           // so the last cards can scroll clear of the tab bar.
@@ -347,12 +438,16 @@ function makeStyles(t: Theme) {
     padded: { paddingHorizontal: 16 },
     actions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, height: 44, marginTop: 4 },
     h1: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 4, letterSpacing: 0.2 },
-    chips: { gap: 8, paddingTop: 12, paddingRight: 16 },
+    // Full-bleed (cancels the list's side padding) and opaque, so cards scroll
+    // out of sight beneath it once it's pinned.
+    chipBar: { marginHorizontal: -16, paddingTop: 12, paddingBottom: 8, backgroundColor: t.bg },
+    chips: { gap: 8, paddingHorizontal: 16 },
     chip: { height: 32, paddingHorizontal: 14, borderRadius: 16, backgroundColor: t.fill, justifyContent: 'center' },
     chipOn: { backgroundColor: t.tint },
     chipText: { fontSize: 15, fontWeight: '500', color: t.label, fontVariant: ['tabular-nums'] },
     chipTextOn: { color: t.onTint, fontWeight: '600' },
     list: { paddingHorizontal: 16, paddingBottom: 24 },
+    cardGap: { paddingTop: 12 },
     monthHeader: { flexDirection: 'row', alignItems: 'baseline', gap: 6, paddingTop: 18, paddingBottom: 10, paddingHorizontal: 4 },
     month: { fontSize: 22, lineHeight: 28, fontWeight: '700', color: t.label },
     monthYear: { fontSize: 17, fontWeight: '500', color: t.secondary },
