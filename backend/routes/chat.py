@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from bson import ObjectId
 from anthropic import AsyncAnthropic
 
+import storage
 from auth import require_auth
 from embeddings import EmbeddingService
 from database import (
@@ -111,6 +112,11 @@ CONFIRM_EDIT_SYSTEM = (
 def _serialize_doc(doc: dict) -> dict:
     doc = dict(doc)
     doc["_id"] = str(doc["_id"])
+    # Stringified like main.py's copy: the result is sent as JSON (SSE) and
+    # stored as the Qdrant payload, whose thread_id filter matches strings.
+    for field in ("thread_id", "owner_id"):
+        if doc.get(field) is not None:
+            doc[field] = str(doc[field])
     for field in ("date", "end_date", "created_at", "updated_at"):
         val = doc.get(field)
         if isinstance(val, datetime):
@@ -118,6 +124,43 @@ def _serialize_doc(doc: dict) -> dict:
                 val = val.replace(tzinfo=timezone.utc)
             doc[field] = val.isoformat()
     return doc
+
+
+async def _source_item(e: dict) -> dict:
+    """A tappable source card for the app: id, title, dates, what the moment
+    leads with, and a signed thumbnail. The web still reads the plain `events`
+    titles alongside it."""
+    media = e.get("media") or e.get("photos") or []
+    visual = [m for m in media if (m.get("kind") or "photo") in ("photo", "video")]
+    loc = e.get("location")
+    if visual:
+        kind = visual[0].get("kind") or "photo"
+    elif any(m.get("kind") == "audio" for m in media):
+        kind = "audio"
+    elif isinstance(loc, dict) and loc.get("lat") is not None and loc.get("lng") is not None:
+        kind = "place"
+    elif any(m.get("kind") == "pdf" for m in media):
+        kind = "pdf"
+    else:
+        kind = "note"
+    thumb_url = None
+    if visual and storage.is_configured():
+        first = visual[0]
+        key = first.get("thumb_key") or (first.get("key") if kind == "photo" else None)
+        if key:
+            try:
+                thumb_url = await storage.presign_get(key)
+            except Exception:
+                thumb_url = None
+    return {
+        "_id": str(e.get("_id")),
+        "title": e.get("title", ""),
+        "date": str(e.get("date") or ""),
+        "end_date": str(e["end_date"]) if e.get("end_date") else None,
+        "kind": kind,
+        "media_count": len(visual),
+        "thumb_url": thumb_url,
+    }
 
 
 _DESCRIPTION_MAX_CHARS = 280
@@ -171,8 +214,19 @@ async def _people_names_for_events(events: list[dict]) -> dict:
     return {str(doc["_id"]): doc["name"] async for doc in cursor if doc.get("name")}
 
 
+def _json_default(value):
+    # Nested Mongo values `_serialize_doc` doesn't reach, e.g. media[].uploaded_at.
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, ObjectId):
+        return str(value)
+    raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
+
+
 def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload)}\n\n"
+    return f"data: {json.dumps(payload, default=_json_default)}\n\n"
 
 
 def _parse_date(date_str: str) -> datetime:
@@ -684,12 +738,16 @@ async def chat(req: ChatRequest, user: dict = Depends(require_auth)):
                         seen_ids.add(eid)
                         events.append(hit)
 
+                # Most relevant first, for the app's source cards.
+                ranked = list(events)
                 # Sort chronologically so before/after questions are easier to answer.
                 events.sort(key=lambda e: str(e.get("date") or ""))
                 events = events[:12]
 
                 sources = [e.get("title", "") for e in events]
-                yield _sse({"type": "sources", "events": sources})
+                kept = {str(e.get("_id")) for e in events}
+                items = [await _source_item(e) for e in [r for r in ranked if str(r.get("_id")) in kept][:5]]
+                yield _sse({"type": "sources", "events": sources, "items": items})
 
                 people_names = await _people_names_for_events(events)
                 context = "\n".join(_format_event_line(e, people_names) for e in events)

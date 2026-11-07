@@ -2,10 +2,10 @@ import { useMemo } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Constants from 'expo-constants'
 import { useRouter } from 'expo-router'
-import { Icon, IconTile, TintButton } from '@/components/ui'
+import { Avatar, Icon, RowIcon, TintButton } from '@/components/ui'
 import { useAppearanceStore, type AppearancePref } from '@/store/appearance'
 import { useAuthStore } from '@/store/auth'
-import { dark, light, useTheme, type Theme } from '@/theme'
+import { cardShadow, dark, font, light, useTheme, type Theme } from '@/theme'
 
 // Account sheet, opened from the person button on the Timeline: who's signed
 // in, the System / Light / Dark appearance picker, links, and Sign Out (kept as
@@ -50,7 +50,7 @@ export default function AccountScreen() {
   const version = Constants.expoConfig?.version ?? ''
 
   const confirmSignOut = () => {
-    Alert.alert('Sign out of Hindsite?', undefined, [
+    Alert.alert('Sign out of Hindsite?', 'Your moments stay safe. You can sign back in with your email.', [
       { text: 'Cancel', style: 'cancel' },
       // The auth guard in _layout swaps the whole tree to /login on its own.
       { text: 'Sign Out', style: 'destructive', onPress: () => void signOut() },
@@ -67,9 +67,7 @@ export default function AccountScreen() {
 
       <ScrollView contentContainerStyle={styles.body}>
         <View style={[styles.card, styles.profile]}>
-          <View style={styles.avatar}>
-            <Text style={styles.avatarText}>{(email[0] || '?').toUpperCase()}</Text>
-          </View>
+          <Avatar name={email || '?'} color={t.second} size={56} />
           <View style={{ flex: 1 }}>
             <Text style={styles.name} numberOfLines={1}>
               {email || 'Signed in'}
@@ -114,7 +112,7 @@ export default function AccountScreen() {
 
         <View style={styles.card}>
           <View style={styles.row}>
-            <IconTile icon="info" color="#8E8E93" />
+            <RowIcon icon="info" tone="neutral" />
             <Text style={styles.rowLabel}>Version</Text>
             <Text style={styles.rowValue}>{version}</Text>
           </View>
@@ -123,14 +121,17 @@ export default function AccountScreen() {
             style={({ pressed }) => [styles.row, pressed && styles.pressed]}
             onPress={() => void Linking.openURL('https://hindsite.app/privacy')}
           >
-            <IconTile icon="hand.raised.fill" color="#34A853" />
+            <RowIcon icon="hand.raised.fill" tone="second" />
             <Text style={styles.rowLabel}>Privacy Policy</Text>
-            <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" />
+            <Icon name="chevron.right" size={14} color={t.secondary} weight="bold" />
           </Pressable>
         </View>
 
-        <Pressable style={({ pressed }) => [styles.card, styles.signOut, pressed && styles.pressed]} onPress={confirmSignOut}>
-          <Text style={styles.signOutText}>Sign Out</Text>
+        <Pressable
+          style={({ pressed }) => [styles.card, styles.signOut, pressed && styles.pressed]}
+          onPress={confirmSignOut}
+        >
+          <Text style={styles.signOutText}>Sign out</Text>
         </Pressable>
       </ScrollView>
     </View>
@@ -141,7 +142,7 @@ type Styles = ReturnType<typeof makeStyles>
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    sheet: { flex: 1, backgroundColor: t.modalBg },
+    sheet: { flex: 1, backgroundColor: t.bg },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -150,23 +151,27 @@ function makeStyles(t: Theme) {
       paddingTop: 14,
       paddingBottom: 4,
     },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: t.label },
-    body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48, gap: 26 },
-    card: { backgroundColor: t.modalCard, borderRadius: 22, overflow: 'hidden' },
+    headerTitle: { fontFamily: font.heavy, fontSize: 17, color: t.label },
+    body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48, gap: 24 },
+    card: { backgroundColor: t.card, borderRadius: 24, ...cardShadow(t) },
     profile: { flexDirection: 'row', alignItems: 'center', gap: 14, paddingHorizontal: 16, paddingVertical: 14 },
-    avatar: {
-      width: 60,
-      height: 60,
-      borderRadius: 30,
-      backgroundColor: t.tint,
-      alignItems: 'center',
-      justifyContent: 'center',
+    name: { fontFamily: font.heavy, fontSize: 17, lineHeight: 22, color: t.label },
+    sub: { fontFamily: font.bold, fontSize: 14, color: t.secondary, marginTop: 2 },
+    sectionLabel: {
+      fontFamily: font.heavy,
+      fontSize: 12,
+      letterSpacing: 1,
+      color: t.secondary,
+      marginHorizontal: 6,
+      marginBottom: 8,
     },
-    avatarText: { color: t.onTint, fontSize: 24, fontWeight: '600' },
-    name: { fontSize: 17, lineHeight: 22, fontWeight: '600', color: t.label },
-    sub: { fontSize: 15, color: t.secondary, marginTop: 2 },
-    sectionLabel: { fontSize: 13, color: t.secondary, marginHorizontal: 16, marginBottom: 8, letterSpacing: 0.2 },
-    modes: { flexDirection: 'row', justifyContent: 'space-around', paddingTop: 18, paddingBottom: 16, paddingHorizontal: 12 },
+    modes: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      paddingTop: 18,
+      paddingBottom: 16,
+      paddingHorizontal: 12,
+    },
     mode: { alignItems: 'center', gap: 10, width: 96 },
     previewFrame: {
       width: 64,
@@ -181,7 +186,7 @@ function makeStyles(t: Theme) {
     previewHalf: { flex: 1, paddingTop: 14, paddingHorizontal: 5, gap: 5 },
     previewBar: { width: '70%', height: 5, borderRadius: 3, opacity: 0.85 },
     previewCard: { height: 26, borderRadius: 6 },
-    modeLabel: { fontSize: 15, fontWeight: '500', color: t.label },
+    modeLabel: { fontFamily: font.bold, fontSize: 15, color: t.label },
     radioOn: {
       width: 24,
       height: 24,
@@ -190,14 +195,21 @@ function makeStyles(t: Theme) {
       alignItems: 'center',
       justifyContent: 'center',
     },
-    radioOff: { width: 24, height: 24, borderRadius: 12, borderWidth: 1.5, borderColor: t.chevron },
-    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, marginHorizontal: 16, marginTop: 8 },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, height: 52 },
-    rowLabel: { flex: 1, fontSize: 17, color: t.label },
-    rowValue: { fontSize: 17, color: t.secondary },
-    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.modalSeparator, marginLeft: 56 },
+    radioOff: { width: 24, height: 24, borderRadius: 12, borderWidth: 2, borderColor: t.separator },
+    footnote: {
+      fontFamily: font.semibold,
+      fontSize: 13.5,
+      lineHeight: 19,
+      color: t.secondary,
+      marginHorizontal: 6,
+      marginTop: 8,
+    },
+    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 62 },
+    rowLabel: { flex: 1, fontFamily: font.heavy, fontSize: 16.5, color: t.label },
+    rowValue: { fontFamily: font.bold, fontSize: 15.5, color: t.secondary },
+    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
     pressed: { opacity: 0.6 },
-    signOut: { height: 52, alignItems: 'center', justifyContent: 'center' },
-    signOutText: { fontSize: 17, fontWeight: '500', color: t.danger },
+    signOut: { height: 56, alignItems: 'center', justifyContent: 'center' },
+    signOutText: { fontFamily: font.heavy, fontSize: 17, color: t.danger },
   })
 }

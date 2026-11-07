@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from 'react'
 import { StyleSheet, Text, View, type StyleProp, type TextStyle, type ViewStyle } from 'react-native'
-import { useTheme } from '@/theme'
+import { font, useTheme } from '@/theme'
 
 // Just enough Markdown for chat replies: paragraphs, headings, bullet and
 // numbered lists (nested by indent), **bold**, *italic* and `code`. Hand-rolled
@@ -114,7 +114,7 @@ export default function Markdown({
         return (
           <Text
             key={i}
-            style={[base, { marginTop: gap }, b.kind === 'h' && { fontSize: fontSize + 2, fontWeight: '700' }]}
+            style={[base, { marginTop: gap }, b.kind === 'h' && { fontSize: fontSize + 2, fontFamily: font.serif }]}
             selectable
           >
             {inline(b.text, codeStyle)}
@@ -126,8 +126,9 @@ export default function Markdown({
 }
 
 const styles = StyleSheet.create({
-  bold: { fontWeight: '700' },
-  italic: { fontStyle: 'italic' },
+  // Each Nunito weight is its own family; fontWeight would fall back to SF.
+  bold: { fontFamily: font.heavy },
+  italic: { fontFamily: font.bodyItalic },
   item: { flexDirection: 'row' },
   marker: { paddingRight: 4 },
   itemText: { flex: 1 },

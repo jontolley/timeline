@@ -32,6 +32,8 @@ export type TimelineEvent = {
   description?: string | null
   date: string
   end_date?: string | null
+  // When the moment was added; used when the timeline sorts by it.
+  created_at?: string | null
   location?: LocationDetail | string | null
   tags?: string[]
   people?: string[]

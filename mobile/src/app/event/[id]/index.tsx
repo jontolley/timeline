@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react'
 import {
-  ActivityIndicator,
   Linking,
   Pressable,
   ScrollView,
@@ -19,17 +18,23 @@ import { getEvent } from '@/api/events'
 import { listPeople } from '@/api/people'
 import { listThreads } from '@/api/threads'
 import type { MediaRef, Thread, TimelineEvent } from '@/api/types'
+import { MapThumb, MediaBadge } from '@/components/EventCard'
 import PhotoViewer from '@/components/PhotoViewer'
-import { GlassButton, Icon, IconTile } from '@/components/ui'
-import { avatarColor, initials, paletteColor, useTheme, type Theme } from '@/theme'
+import { Avatar, Button, EmptyState, GlassButton, Icon, RowIcon, Skeleton, Waveform } from '@/components/ui'
+import { asLoc, fmtDuration, seedOf, type Loc } from '@/lib/format'
+import { cardShadow, font, paletteColor, useTheme, type Theme } from '@/theme'
 
 // Read-only event detail. Tapping a timeline card lands here (push/card); the
 // "Edit" action pushes the shared EventForm at /event/:id/edit as a modal. On
 // returning from edit we reload on focus so changes show; if the event was
 // deleted from the edit screen, getEvent 404s and we bounce back to the
 // timeline. Shared (non-owned) events hide Edit entirely.
+//
+// The hero is the moment's photos / video when it has them, otherwise a map of
+// its place; an audio-led moment has no hero and opens with its player.
 
-const HERO_H = 408
+const HERO_H = 430
+const MAP_HERO_H = 400
 
 // Dates store UTC — format in UTC so the day never shifts (CLAUDE.md invariant).
 function hasTime(iso: string): boolean {
@@ -53,7 +58,12 @@ function fmtTime(iso: string): string {
   })
 }
 function fmtShortDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })
+  return new Date(iso).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 // A single date reads in full; a range drops the weekday and, when it starts
 // and ends on the same day, the second date ("Nov 4, 2026 at 2:00 PM – 4:00 PM").
@@ -67,12 +77,6 @@ function formatDateRange(start: string, end?: string | null): string {
   return `${s} – ${e}`
 }
 
-type Loc = { name?: string | null; address?: string | null; lat?: number | null; lng?: number | null; url?: string | null }
-function asLoc(loc: TimelineEvent['location']): Loc | null {
-  if (!loc) return null
-  if (typeof loc === 'string') return { name: loc }
-  return loc
-}
 // A place shared from Google / Apple Maps opens its original link (the real
 // place, in that app); otherwise a Google Maps pin or search.
 function locationMapUrl(loc: Loc): string | null {
@@ -92,6 +96,61 @@ function src(m: MediaRef, full: boolean): { uri: string; cacheKey: string } | nu
   const uri = full && isPhoto ? m.url || m.thumb_url : m.thumb_url || (isPhoto ? m.url : null)
   return uri ? { uri, cacheKey: `${m.key}${full ? '' : ':thumb'}` } : null
 }
+
+const MONTH_INITIALS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
+
+// Where the moment falls in its year: a season-coloured bar with a marker on
+// the day, and the month initials underneath.
+function YearRibbon({ iso }: { iso: string }) {
+  const t = useTheme()
+  const d = new Date(iso)
+  const y = d.getUTCFullYear()
+  const start = Date.UTC(y, 0, 1)
+  const pct = Math.min(1, Math.max(0, (d.getTime() - start) / (Date.UTC(y + 1, 0, 1) - start)))
+  const month = d.getUTCMonth()
+  // Dec–Feb winter, Mar–May spring, Jun–Aug summer, Sep–Nov autumn.
+  const segs: [number, string][] = [
+    [2, t.winter],
+    [3, t.spring],
+    [3, t.summer],
+    [3, t.autumn],
+    [1, t.winter],
+  ]
+  return (
+    <View style={ribbon.wrap} accessible={false} importantForAccessibility="no-hide-descendants">
+      <View style={ribbon.line}>
+        {segs.map(([n, c], i) => (
+          <View key={i} style={{ flex: n, backgroundColor: c }} />
+        ))}
+      </View>
+      <View style={[ribbon.mark, { left: `${pct * 100}%`, backgroundColor: t.card, borderColor: t.label }]} />
+      <View style={ribbon.months}>
+        {MONTH_INITIALS.map((m, i) => (
+          <Text key={i} style={[ribbon.month, { color: i === month ? t.label : t.secondary }]}>
+            {m}
+          </Text>
+        ))}
+      </View>
+    </View>
+  )
+}
+
+const ribbon = StyleSheet.create({
+  wrap: { height: 40, marginTop: 2, marginBottom: 16 },
+  line: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 9,
+    height: 4,
+    borderRadius: 2,
+    overflow: 'hidden',
+    flexDirection: 'row',
+  },
+  mark: { position: 'absolute', top: 2, width: 18, height: 18, borderRadius: 9, borderWidth: 4, marginLeft: -9 },
+  months: { position: 'absolute', left: 0, right: 0, top: 22, flexDirection: 'row', justifyContent: 'space-between' },
+  month: { fontFamily: font.heavy, fontSize: 10 },
+})
 
 export default function EventDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>()
@@ -157,21 +216,39 @@ export default function EventDetailScreen() {
     }, [load]),
   )
 
+  const backBar = (
+    <View style={[styles.topBar, { paddingTop: insets.top + 6 }]}>
+      <GlassButton icon="chevron.left" accessibilityLabel="Back" onPress={() => router.back()} />
+    </View>
+  )
+
   if (loading) {
     return (
-      <SafeAreaView style={[styles.safe, styles.center]}>
-        <ActivityIndicator color={t.secondary} />
-      </SafeAreaView>
+      <View style={styles.safe}>
+        <Skeleton style={{ height: HERO_H, borderRadius: 0 }} />
+        <View style={[styles.sheet, styles.sheetOverlap]}>
+          <Skeleton style={{ height: 15, width: '55%' }} />
+          <Skeleton style={{ height: 30, width: '80%', marginTop: 12 }} />
+          <Skeleton style={{ height: 16, marginTop: 28 }} />
+          <Skeleton style={{ height: 16, width: '90%', marginTop: 10 }} />
+        </View>
+      </View>
     )
   }
 
   if (error || !event) {
     return (
-      <SafeAreaView style={[styles.safe, styles.center]}>
-        <Text style={styles.error}>{error || 'Event not found.'}</Text>
-        <Pressable onPress={() => router.back()}>
-          <Text style={styles.link}>Go Back</Text>
-        </Pressable>
+      <SafeAreaView style={styles.safe} edges={[]}>
+        {backBar}
+        <EmptyState
+          icon="exclamationmark.triangle"
+          tone="neutral"
+          title="We couldn’t open this moment"
+          text={error || 'It may have been deleted.'}
+          style={{ marginTop: 80, paddingHorizontal: 32 }}
+        >
+          <Button label="Go back" small variant="tonal" onPress={() => router.back()} style={{ marginTop: 10 }} />
+        </EmptyState>
       </SafeAreaView>
     )
   }
@@ -183,12 +260,13 @@ export default function EventDetailScreen() {
   const locName = loc ? loc.name || loc.address || null : null
   const locSub = loc?.name && loc.address && loc.address !== loc.name ? loc.address : null
   const mapUrl = loc ? locationMapUrl(loc) : null
+  const coords = loc?.lat != null && loc?.lng != null ? { lat: loc.lat, lng: loc.lng } : null
 
   const media = event.media || []
   const visual = media.filter(isVisual)
   const audio = media.filter((m) => m.kind === 'audio')
   const pdfs = media.filter((m) => m.kind === 'pdf')
-  const hasHero = visual.length > 0
+  const hero: 'photo' | 'map' | null = visual.length ? 'photo' : coords ? 'map' : null
 
   // People names: shared events use the denormalised people_display.
   const peopleNames: string[] = isShared
@@ -215,10 +293,14 @@ export default function EventDetailScreen() {
     rows.push({
       key: 'loc',
       node: (
-        <Pressable style={styles.row} onPress={() => openExternal(mapUrl)} disabled={!mapUrl}>
-          <IconTile icon="mappin" color={t.tint} size={32} />
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && !!mapUrl && styles.pressed]}
+          onPress={() => openExternal(mapUrl)}
+          disabled={!mapUrl}
+        >
+          <RowIcon icon="mappin" />
           <View style={styles.rowMain}>
-            <Text style={styles.rowTitle} numberOfLines={1}>
+            <Text style={styles.rowTitle} numberOfLines={2}>
               {locName}
             </Text>
             {locSub ? (
@@ -227,7 +309,7 @@ export default function EventDetailScreen() {
               </Text>
             ) : null}
           </View>
-          {mapUrl ? <Text style={styles.rowLink}>Maps</Text> : null}
+          {mapUrl ? <Text style={styles.rowLink}>{hero === 'map' ? 'Open in Maps' : 'Maps'}</Text> : null}
         </Pressable>
       ),
     })
@@ -237,21 +319,14 @@ export default function EventDetailScreen() {
       key: 'people',
       node: (
         <View style={styles.row}>
-          <IconTile icon="person.2.fill" color="#34A853" size={32} />
-          <View style={[styles.rowMain, styles.rowInline]}>
-            <View style={styles.avatars}>
-              {peopleNames.slice(0, 3).map((name, i) => (
-                <View
-                  key={`${name}-${i}`}
-                  style={[styles.avatar, { backgroundColor: avatarColor(name) }, i > 0 && { marginLeft: -8 }]}
-                >
-                  <Text style={styles.avatarText}>{initials(name)}</Text>
-                </View>
-              ))}
-            </View>
-            <Text style={[styles.rowTitle, { flex: 1 }]} numberOfLines={1}>
-              {peopleNames.join(', ')}
-            </Text>
+          <RowIcon icon="person.2.fill" tone="second" />
+          <View style={[styles.rowMain, styles.chips]}>
+            {peopleNames.map((name, i) => (
+              <View key={`${name}-${i}`} style={styles.personChip}>
+                <Avatar name={name} size={26} />
+                <Text style={styles.chipText}>{name}</Text>
+              </View>
+            ))}
           </View>
         </View>
       ),
@@ -262,11 +337,11 @@ export default function EventDetailScreen() {
       key: 'tags',
       node: (
         <View style={styles.row}>
-          <IconTile icon="tag.fill" color="#E8833A" size={32} />
-          <View style={[styles.rowMain, styles.tagWrap]}>
+          <RowIcon icon="tag.fill" tone="third" />
+          <View style={[styles.rowMain, styles.chips]}>
             {event.tags.map((tag) => (
               <View key={tag} style={styles.tag}>
-                <Text style={styles.tagText}>{tag}</Text>
+                <Text style={styles.chipText}>{tag}</Text>
               </View>
             ))}
           </View>
@@ -274,47 +349,71 @@ export default function EventDetailScreen() {
       ),
     })
   }
-  for (const m of audio) {
-    rows.push({
-      key: m.key,
-      node: (
-        <Pressable style={styles.row} onPress={() => openExternal(m.url)}>
-          <IconTile icon="waveform" color="#8E5CD9" size={32} />
-          <Text style={[styles.rowTitle, styles.rowMain]}>Audio recording</Text>
-          <Text style={styles.rowLink}>Play</Text>
-        </Pressable>
-      ),
-    })
-  }
   for (const m of pdfs) {
     rows.push({
       key: m.key,
       node: (
-        <Pressable style={styles.row} onPress={() => openExternal(m.url)}>
-          <IconTile icon="doc.text.fill" color="#E5484D" size={32} />
-          <Text style={[styles.rowTitle, styles.rowMain]}>
-            Document{m.page_count ? ` · ${m.page_count} page${m.page_count === 1 ? '' : 's'}` : ''}
-          </Text>
+        <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => openExternal(m.url)}>
+          <RowIcon icon="doc.text.fill" tone="danger" />
+          <View style={styles.rowMain}>
+            <Text style={styles.rowTitle}>Document</Text>
+            {m.page_count ? (
+              <Text style={styles.rowSub}>
+                {m.page_count} page{m.page_count === 1 ? '' : 's'}
+              </Text>
+            ) : null}
+          </View>
           <Text style={styles.rowLink}>Open</Text>
         </Pressable>
       ),
     })
   }
 
+  // Each recording gets a big player block above the description. Playback
+  // opens the recording in the system player, as before.
+  const listen = audio.map((m) => {
+    const d = fmtDuration(m.duration_seconds)
+    return (
+      <View key={m.key} style={styles.listen}>
+        <View style={styles.listenRow}>
+          <Pressable
+            style={({ pressed }) => [styles.listenBtn, pressed && styles.pressed]}
+            onPress={() => openExternal(m.url)}
+            accessibilityRole="button"
+            accessibilityLabel="Play recording"
+          >
+            <Icon name="play.fill" size={28} color={t.dark ? t.bg : '#FFFFFF'} />
+          </Pressable>
+          <Waveform seed={seedOf(m.key)} bars={30} height={44} on={t.audio} off={t.waveOff} />
+        </View>
+        <View style={styles.listenCap}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+            <Icon name="waveform" size={14} color={t.secondary} />
+            <Text style={styles.capText}>Audio recording{d ? ` · ${d}` : ''}</Text>
+          </View>
+          <Text style={styles.capText}>Opens in your audio player</Text>
+        </View>
+      </View>
+    )
+  })
+
+  const onPhoto = hero === 'photo'
   const topBar = (
-    <View style={[styles.topBar, hasHero && { position: 'absolute', top: insets.top + 6, left: 0, right: 0 }]}>
-      <GlassButton icon="chevron.left" accessibilityLabel="Back" onPress={() => router.back()} />
+    <View style={[styles.topBar, hero && { position: 'absolute', top: insets.top + 6, left: 0, right: 0 }]}>
+      <GlassButton icon="chevron.left" accessibilityLabel="Back" onPress={() => router.back()} onPhoto={onPhoto} />
       <View style={styles.topRight}>
-        <GlassButton icon="square.and.arrow.up" accessibilityLabel="Share" onPress={share} />
-        {!isShared ? <GlassButton label="Edit" onPress={() => router.push(`/event/${event._id}/edit`)} /> : null}
+        <GlassButton icon="square.and.arrow.up" accessibilityLabel="Share" onPress={share} onPhoto={onPhoto} />
+        {!isShared ? (
+          <GlassButton label="Edit" onPress={() => router.push(`/event/${event._id}/edit`)} onPhoto={onPhoto} />
+        ) : null}
       </View>
     </View>
   )
 
   return (
     <View style={styles.safe}>
-      <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: insets.bottom + 32 }}>
-        {hasHero ? (
+      <ScrollView contentInsetAdjustmentBehavior="never" contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}>
+        {hero === 'photo' ? (
           <View style={{ height: HERO_H }}>
             <ScrollView
               ref={heroRef}
@@ -330,11 +429,17 @@ export default function EventDetailScreen() {
                     key={m.key}
                     style={{ width, height: HERO_H, backgroundColor: t.photoPlaceholder }}
                     onPress={() => setLightbox(i)}
+                    accessibilityRole="imagebutton"
+                    accessibilityLabel={m.kind === 'video' ? 'Play video' : `Photo ${i + 1} of ${visual.length}`}
                   >
-                    {s ? <Image source={s} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} /> : null}
+                    {s ? (
+                      <Image source={s} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} />
+                    ) : null}
                     {m.kind === 'video' ? (
                       <View style={styles.heroCenter}>
-                        <Icon name="play.circle.fill" size={56} color="rgba(255,255,255,0.92)" />
+                        <View style={styles.play}>
+                          <Icon name="play.fill" size={34} color="#FFFFFF" />
+                        </View>
                       </View>
                     ) : null}
                   </Pressable>
@@ -342,40 +447,68 @@ export default function EventDetailScreen() {
               })}
             </ScrollView>
             {visual.length > 1 ? (
-              <View style={styles.pageBadge}>
-                <Text style={styles.pageText}>
-                  {page + 1} of {visual.length}
-                </Text>
+              <View style={styles.pager} pointerEvents="none">
+                {visual.map((m, i) => (
+                  <View key={m.key} style={[styles.pagerDot, i === page && styles.pagerDotOn]} />
+                ))}
+              </View>
+            ) : visual[0]?.kind === 'video' && fmtDuration(visual[0].duration_seconds) ? (
+              <View style={styles.heroBadge} pointerEvents="none">
+                <MediaBadge icon="video" text={fmtDuration(visual[0].duration_seconds)!} />
               </View>
             ) : null}
           </View>
+        ) : hero === 'map' && coords ? (
+          <Pressable style={{ height: MAP_HERO_H }} onPress={() => openExternal(mapUrl)} disabled={!mapUrl}>
+            <MapThumb lat={coords.lat} lng={coords.lng} zoom={13} style={StyleSheet.absoluteFill} />
+            {locName ? (
+              <View style={styles.heroBadge} pointerEvents="none">
+                <MediaBadge icon="mappin" text={locName} left />
+              </View>
+            ) : null}
+          </Pressable>
         ) : (
           <View style={{ paddingTop: insets.top + 6 }}>{topBar}</View>
         )}
 
-        <View style={[styles.sheet, hasHero && styles.sheetOverlap]}>
-          <View style={{ gap: 6 }}>
-            <View style={styles.meta}>
-              {showThread ? (
-                <>
-                  <View style={[styles.dot, { backgroundColor: paletteColor(thread!.color, t.dark) }]} />
-                  <Text style={styles.metaText}>{thread!.name}</Text>
-                  <Text style={styles.metaText}>·</Text>
-                </>
-              ) : null}
-              <Text style={[styles.metaText, styles.metaDate]}>{formatDateRange(event.date, event.end_date)}</Text>
+        <View style={[styles.sheet, hero && styles.sheetOverlap]}>
+          {isShared ? (
+            <View style={styles.shared}>
+              <Icon name="lock.fill" size={13} color={t.second} />
+              <Text style={styles.sharedText}>
+                {thread ? `Shared in ${thread.name}` : 'Shared with you'} · read only
+              </Text>
             </View>
-            {isShared ? <Text style={styles.metaText}>Shared with you · read-only</Text> : null}
-            <Text style={styles.title}>{event.title}</Text>
+          ) : null}
+          <View style={styles.dateRow}>
+            <Icon name="calendar" size={15} color={t.tintText} />
+            <Text style={styles.date}>{formatDateRange(event.date, event.end_date)}</Text>
           </View>
+          {showThread ? (
+            <View style={styles.threadRow}>
+              <View style={[styles.dot, { backgroundColor: paletteColor(thread!.color, t.dark) }]} />
+              <Text style={styles.threadText}>{thread!.name}</Text>
+            </View>
+          ) : null}
+          <Text style={styles.title} accessibilityRole="header">
+            {event.title}
+          </Text>
+          <YearRibbon iso={event.date} />
+
+          {listen}
 
           {event.description ? <Text style={styles.description}>{event.description}</Text> : null}
 
-          {rows.length ? (
-            <View style={styles.group}>
+          {rows.length || (hero === 'photo' && coords) ? (
+            <View style={styles.info}>
+              {hero === 'photo' && coords ? (
+                <Pressable onPress={() => openExternal(mapUrl)} disabled={!mapUrl} accessibilityLabel="Open in Maps">
+                  <MapThumb lat={coords.lat} lng={coords.lng} style={{ height: 112 }} />
+                </Pressable>
+              ) : null}
               {rows.map((r, i) => (
                 <Fragment key={r.key}>
-                  {i > 0 ? <View style={styles.separator} /> : null}
+                  {i > 0 || (hero === 'photo' && coords) ? <View style={styles.separator} /> : null}
                   {r.node}
                 </Fragment>
               ))}
@@ -387,9 +520,15 @@ export default function EventDetailScreen() {
               {visual.map((m, i) => {
                 const s = src(m, false)
                 return (
-                  <Pressable key={m.key} onPress={() => showPage(i)} style={styles.thumb}>
-                    {s ? <Image source={s} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
-                    {i === page ? <View style={styles.thumbRing} /> : null}
+                  <Pressable
+                    key={m.key}
+                    onPress={() => showPage(i)}
+                    style={[styles.thumbWrap, i === page && { borderColor: t.tintText }]}
+                    accessibilityLabel={`Show photo ${i + 1}`}
+                  >
+                    <View style={styles.thumb}>
+                      {s ? <Image source={s} style={StyleSheet.absoluteFill} contentFit="cover" /> : null}
+                    </View>
                   </Pressable>
                 )
               })}
@@ -398,7 +537,7 @@ export default function EventDetailScreen() {
         </View>
       </ScrollView>
 
-      {hasHero ? topBar : null}
+      {hero ? topBar : null}
 
       {lightbox !== null && visual[lightbox] ? (
         <PhotoViewer
@@ -417,56 +556,114 @@ export default function EventDetailScreen() {
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    safe: { flex: 1, backgroundColor: t.detailBg },
-    center: { alignItems: 'center', justifyContent: 'center', gap: 12, padding: 40 },
-    error: { color: t.danger, fontSize: 15, textAlign: 'center' },
-    link: { color: t.tintText, fontSize: 17, fontWeight: '600' },
-    topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16 },
+    safe: { flex: 1, backgroundColor: t.bg },
+    pressed: { opacity: 0.6 },
+    topBar: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 10 },
     topRight: { flexDirection: 'row', gap: 10 },
     heroCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
-    pageBadge: {
-      position: 'absolute',
-      right: 16,
-      bottom: 34,
-      height: 26,
-      paddingHorizontal: 10,
-      borderRadius: 13,
-      backgroundColor: t.overlay,
-      justifyContent: 'center',
-    },
-    pageText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
-    sheet: { backgroundColor: t.detailBg, paddingHorizontal: 20, paddingTop: 22, gap: 18 },
-    sheetOverlap: { marginTop: -20, borderTopLeftRadius: 24, borderTopRightRadius: 24 },
-    meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 6, rowGap: 2 },
-    metaText: { fontSize: 15, fontWeight: '500', color: t.secondary },
-    metaDate: { flexShrink: 1 },
-    dot: { width: 8, height: 8, borderRadius: 4 },
-    title: { fontSize: 28, lineHeight: 34, fontWeight: '700', color: t.label, letterSpacing: 0.1 },
-    description: { fontSize: 17, lineHeight: 25, color: t.body },
-    group: { backgroundColor: t.detailGroup, borderRadius: 22, overflow: 'hidden' },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 12, minHeight: 56 },
-    rowMain: { flex: 1 },
-    rowInline: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-    rowTitle: { fontSize: 17, lineHeight: 22, color: t.label },
-    rowSub: { fontSize: 15, lineHeight: 20, color: t.secondary },
-    rowLink: { fontSize: 15, fontWeight: '500', color: t.tintText },
-    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.separator, marginLeft: 58 },
-    avatars: { flexDirection: 'row' },
-    avatar: {
-      width: 30,
-      height: 30,
-      borderRadius: 15,
-      borderWidth: 2,
-      borderColor: t.detailGroup,
+    play: {
+      width: 80,
+      height: 80,
+      borderRadius: 40,
+      backgroundColor: 'rgba(0,0,0,0.28)',
+      borderWidth: StyleSheet.hairlineWidth,
+      borderColor: 'rgba(255,255,255,0.6)',
       alignItems: 'center',
       justifyContent: 'center',
+      paddingLeft: 4,
     },
-    avatarText: { color: '#FFFFFF', fontSize: 12, fontWeight: '600' },
-    tagWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
-    tag: { height: 28, paddingHorizontal: 11, borderRadius: 14, backgroundColor: t.detailChip, justifyContent: 'center' },
-    tagText: { fontSize: 15, color: t.label },
-    thumbs: { gap: 8 },
-    thumb: { width: 76, height: 76, borderRadius: 14, overflow: 'hidden', backgroundColor: t.photoPlaceholder },
-    thumbRing: { ...StyleSheet.absoluteFill, borderRadius: 14, borderWidth: 2.5, borderColor: t.tintText },
+    pager: {
+      position: 'absolute',
+      bottom: 38,
+      alignSelf: 'center',
+      flexDirection: 'row',
+      gap: 6,
+      paddingVertical: 7,
+      paddingHorizontal: 10,
+      borderRadius: 12,
+      backgroundColor: 'rgba(0,0,0,0.25)',
+    },
+    pagerDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.5)' },
+    pagerDotOn: { width: 18, backgroundColor: '#FFFFFF' },
+    // MediaBadge sits 9pt in from its parent; this lifts it above the sheet.
+    heroBadge: { position: 'absolute', left: 7, right: 7, bottom: 29, height: 40 },
+    sheet: { backgroundColor: t.bg, paddingHorizontal: 20, paddingTop: 6 },
+    sheetOverlap: { marginTop: -26, borderTopLeftRadius: 28, borderTopRightRadius: 28, paddingTop: 24 },
+    shared: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      height: 30,
+      paddingHorizontal: 12,
+      borderRadius: 15,
+      backgroundColor: t.secondSoft,
+      marginBottom: 10,
+    },
+    sharedText: { fontFamily: font.heavy, fontSize: 13, color: t.second },
+    dateRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+    date: { flexShrink: 1, fontFamily: font.heavy, fontSize: 14.5, color: t.tintText },
+    threadRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 },
+    threadText: { fontFamily: font.bold, fontSize: 14, color: t.secondary },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    title: {
+      fontFamily: font.serif,
+      fontSize: 31,
+      lineHeight: 35,
+      color: t.label,
+      letterSpacing: -0.3,
+      marginTop: 6,
+      marginBottom: 12,
+    },
+    description: { fontFamily: font.body, fontSize: 17.5, lineHeight: 27, color: t.body },
+    listen: { padding: 16, borderRadius: 24, backgroundColor: t.audioSoft, marginTop: 4, marginBottom: 18 },
+    listenRow: { flexDirection: 'row', alignItems: 'center', gap: 14 },
+    listenBtn: {
+      width: 64,
+      height: 64,
+      borderRadius: 32,
+      backgroundColor: t.audio,
+      alignItems: 'center',
+      justifyContent: 'center',
+      paddingLeft: 4,
+    },
+    listenCap: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 10, gap: 8 },
+    capText: { fontFamily: font.bold, fontSize: 13, color: t.secondary },
+    info: { marginTop: 20, backgroundColor: t.card, borderRadius: 24, overflow: 'hidden', ...cardShadow(t) },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
+      minHeight: 62,
+    },
+    rowMain: { flex: 1, minWidth: 0 },
+    rowTitle: { fontFamily: font.heavy, fontSize: 16, lineHeight: 21, color: t.label },
+    rowSub: { fontFamily: font.semibold, fontSize: 14, lineHeight: 18, color: t.secondary },
+    rowLink: { fontFamily: font.heavy, fontSize: 15.5, color: t.tintText },
+    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 7 },
+    personChip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      height: 34,
+      paddingLeft: 4,
+      paddingRight: 12,
+      borderRadius: 17,
+      backgroundColor: t.surface2,
+    },
+    tag: {
+      height: 34,
+      paddingHorizontal: 12,
+      borderRadius: 17,
+      backgroundColor: t.thirdSoft,
+      justifyContent: 'center',
+    },
+    chipText: { fontFamily: font.heavy, fontSize: 14.5, color: t.label },
+    thumbs: { gap: 10, marginTop: 18, paddingVertical: 3, paddingHorizontal: 1 },
+    thumbWrap: { borderRadius: 21, borderWidth: 3, borderColor: 'transparent', padding: 2 },
+    thumb: { width: 76, height: 76, borderRadius: 16, overflow: 'hidden', backgroundColor: t.photoPlaceholder },
   })
 }

@@ -17,14 +17,7 @@ import { useRouter } from 'expo-router'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
-import {
-  attachMedia,
-  createEvent,
-  deleteEvent,
-  getEvent,
-  removeMedia,
-  updateEvent,
-} from '../api/events'
+import { attachMedia, createEvent, deleteEvent, getEvent, removeMedia, updateEvent } from '../api/events'
 import { listPeople } from '../api/people'
 import { listThreads } from '../api/threads'
 import { extractExif, isVideoAsset, uploadMedia, videoPoster, type PickedAsset } from '../api/uploads'
@@ -35,8 +28,21 @@ import type { LocationDetail, MediaRef, Person, Thread, TimelineEvent } from '..
 import { useTimelineSignal } from '../store/timeline'
 import LocationPicker from '@/components/LocationPicker'
 import PeoplePicker from '@/components/PeoplePicker'
-import { FillButton, Icon, IconTile, TintButton } from '@/components/ui'
-import { avatarColor, initials, paletteColor, useTheme, type Theme } from '@/theme'
+import { MapThumb } from '@/components/EventCard'
+import VoiceRecorder from '@/components/VoiceRecorder'
+import {
+  AvatarStack,
+  EmptyState,
+  FillButton,
+  Icon,
+  RowIcon,
+  Skeleton,
+  TintButton,
+  Waveform,
+  Button,
+} from '@/components/ui'
+import { fmtDuration, seedOf } from '@/lib/format'
+import { cardShadow, font, paletteColor, useTheme, type Theme } from '@/theme'
 
 // Shared create/edit form. `eventId` undefined → create; present → edit (loads
 // the event, supports delete, and manages media through the dedicated attach/
@@ -55,6 +61,9 @@ type PendingMedia = {
   status: 'uploading' | 'done' | 'error'
   ref?: MediaRef
   isVideo?: boolean
+  // A voice note recorded in the form (drawn as a waveform tile).
+  isAudio?: boolean
+  durationSeconds?: number
   // Tile image: the photo itself, or a video's first-frame poster.
   previewUri?: string
 }
@@ -81,7 +90,9 @@ function toIso(d: Date, withTime: boolean): string {
 }
 // Keep `d`'s calendar day, take the time-of-day from `time` (both UTC).
 function withDay(time: Date, day: Date): Date {
-  return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), time.getUTCHours(), time.getUTCMinutes()))
+  return new Date(
+    Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), time.getUTCHours(), time.getUTCMinutes()),
+  )
 }
 // A default time for a newly switched-on Time: this device's current clock
 // time, rounded to 5 minutes, as UTC wall-clock on the event's day.
@@ -158,6 +169,9 @@ export default function EventForm({
   // Shared events name their people here; the ids belong to the owner.
   const [peopleDisplay, setPeopleDisplay] = useState<{ id: string; name: string }[]>([])
   const [sheet, setSheet] = useState<'location' | 'people' | null>(null)
+  const [recording, setRecording] = useState(false)
+  // "Date and place filled in from your photo." after a metadata prefill.
+  const [prefillNote, setPrefillNote] = useState<string | null>(null)
   // Set by the date/location handlers and read inside the async EXIF prefill,
   // which must not overwrite a user edit.
   const touched = useRef({ date: false, location: false })
@@ -262,6 +276,7 @@ export default function EventForm({
       const place = await resolvePlaceLink(link)
       if (touched.current.location) return
       setLocation(place)
+      setPrefillNote('Place added from your Maps link.')
     } catch (e) {
       setError(e instanceof Error ? e.message : "Couldn't read that map link.")
     } finally {
@@ -271,16 +286,22 @@ export default function EventForm({
 
   async function prefillFromMedia(asset: PickedAsset, useLocation: boolean) {
     try {
-      const exif = isVideoAsset(asset) ? await extractVideoMetadata(asset.uri) : await extractExif(asset)
+      const isVideo = isVideoAsset(asset)
+      const exif = isVideo ? await extractVideoMetadata(asset.uri) : await extractExif(asset)
+      const from = isVideo ? 'your video' : 'your photo'
       if (exif.date && !touched.current.date) {
         setDate(new Date(`${exif.date}T${exif.time || '00:00'}:00.000Z`))
         if (exif.time) setTimeOn(true)
+        setPrefillNote(`Date filled in from ${from}.`)
       }
       if (!useLocation || exif.lat == null || exif.lng == null || touched.current.location) return
       setFindingPlace(true)
       const place = await reverseGeocode(exif.lat, exif.lng).catch(() => null)
       if (touched.current.location) return
       setLocation(place ?? { lat: exif.lat, lng: exif.lng })
+      setPrefillNote(
+        exif.date && !touched.current.date ? `Date and place filled in from ${from}.` : `Place filled in from ${from}.`,
+      )
     } catch {
       // No metadata (or a screenshot) — the form just keeps today's date.
     } finally {
@@ -313,13 +334,25 @@ export default function EventForm({
     )
   }
 
-  // Queue each photo and upload it; create mode holds the refs until save,
-  // edit mode attaches each one to the event as soon as it lands.
-  function addAssets(assets: PickedAsset[]) {
+  // Queue each photo / video / voice note and upload it; create mode holds the
+  // refs until save, edit mode attaches each one to the event as soon as it
+  // lands. `extra` adds fields the upload can't know (a recording's length).
+  function addAssets(assets: PickedAsset[], extra?: Partial<MediaRef>) {
     for (const picked of assets) {
       const localUri = picked.uri
       const isVideo = isVideoAsset(picked)
-      setPending((prev) => [...prev, { localUri, status: 'uploading', isVideo, previewUri: isVideo ? undefined : localUri }])
+      const isAudio = (picked.mimeType || '').startsWith('audio/')
+      setPending((prev) => [
+        ...prev,
+        {
+          localUri,
+          status: 'uploading',
+          isVideo,
+          isAudio,
+          durationSeconds: extra?.duration_seconds ?? undefined,
+          previewUri: isVideo || isAudio ? undefined : localUri,
+        },
+      ])
       if (isVideo) {
         videoPoster(localUri)
           .then((frame) =>
@@ -328,24 +361,21 @@ export default function EventForm({
           .catch(() => {})
       }
       uploadMedia(picked)
-        .then(async (ref) => {
+        .then(async (uploaded) => {
+          const ref: MediaRef = { ...uploaded, ...extra }
           if (isEdit && eventId) {
             // Edit mode attaches immediately; resync from the server response.
             const updated = await attachMedia(eventId, ref)
             setServerMedia(updated.media || [])
             setPending((prev) => prev.filter((m) => m.localUri !== localUri))
           } else {
-            setPending((prev) =>
-              prev.map((m) => (m.localUri === localUri ? { ...m, status: 'done', ref } : m)),
-            )
+            setPending((prev) => prev.map((m) => (m.localUri === localUri ? { ...m, status: 'done', ref } : m)))
           }
         })
         .catch((e) => {
-          setPending((prev) =>
-            prev.map((m) => (m.localUri === localUri ? { ...m, status: 'error' } : m)),
-          )
+          setPending((prev) => prev.map((m) => (m.localUri === localUri ? { ...m, status: 'error' } : m)))
           const why = e instanceof Error ? e.message : String(e)
-          setError(`Couldn't upload that ${isVideo ? 'video' : 'photo'}: ${why}`)
+          setError(`Couldn't upload that ${isVideo ? 'video' : isAudio ? 'recording' : 'photo'}: ${why}`)
         })
     }
   }
@@ -362,7 +392,7 @@ export default function EventForm({
       await removeMedia(eventId, key)
     } catch {
       setServerMedia(prev) // roll back on failure
-      setError('Could not remove that photo.')
+      setError('Could not remove that item.')
     }
   }
 
@@ -399,9 +429,7 @@ export default function EventForm({
         if (locationTouched) payload.location = location
         await updateEvent(eventId, payload)
       } else {
-        const attached = pending
-          .filter((m) => m.status === 'done' && m.ref)
-          .map((m) => m.ref as MediaRef)
+        const attached = pending.filter((m) => m.status === 'done' && m.ref).map((m) => m.ref as MediaRef)
         await createEvent({
           title: title.trim(),
           description: description.trim() || undefined,
@@ -454,31 +482,53 @@ export default function EventForm({
         },
       )
     } else {
-      Alert.alert('Thread', undefined, threads.map((th) => ({ text: th.name, onPress: () => setThreadId(th._id) })))
+      Alert.alert(
+        'Thread',
+        undefined,
+        threads.map((th) => ({ text: th.name, onPress: () => setThreadId(th._id) })),
+      )
     }
   }
 
   if (loading) {
     return (
-      <View style={[styles.sheet, styles.center]}>
-        <ActivityIndicator color={t.secondary} />
+      <View style={styles.sheet}>
+        <View style={styles.header}>
+          <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={() => close()} />
+          <Text style={styles.headerTitle}>Edit moment</Text>
+          <View style={{ width: 44 }} />
+        </View>
+        <View style={styles.body}>
+          <Skeleton style={{ height: 104, width: 104, borderRadius: 20 }} />
+          <Skeleton style={{ height: 120, borderRadius: 24 }} />
+          <Skeleton style={{ height: 260, borderRadius: 24 }} />
+        </View>
       </View>
     )
   }
 
   if (loadError) {
     return (
-      <View style={[styles.sheet, styles.center]}>
-        <Text style={styles.error}>{loadError}</Text>
-        <Pressable onPress={() => close()}>
-          <Text style={styles.link}>Go Back</Text>
-        </Pressable>
+      <View style={styles.sheet}>
+        <View style={styles.header}>
+          <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={() => close()} />
+          <View style={{ width: 44 }} />
+        </View>
+        <EmptyState
+          icon="exclamationmark.triangle"
+          tone="neutral"
+          title="We couldn’t open this moment"
+          text={loadError}
+          style={{ marginTop: 60, paddingHorizontal: 32 }}
+        >
+          <Button label="Go back" variant="tonal" small onPress={() => close()} style={{ marginTop: 10 }} />
+        </EmptyState>
       </View>
     )
   }
 
   const thread = threads.find((th) => th._id === threadId)
-  const heading = readOnly ? 'Moment' : isEdit ? 'Edit Moment' : 'New Moment'
+  const heading = readOnly ? 'Moment' : isEdit ? 'Edit moment' : 'New moment'
 
   function markDates() {
     touched.current.date = true
@@ -512,13 +562,14 @@ export default function EventForm({
   }
 
   function pill(which: NonNullable<typeof openPicker>, text: string) {
+    const on = openPicker === which
     return (
       <Pressable
-        style={styles.datePill}
+        style={({ pressed }) => [styles.datePill, on && styles.datePillOn, pressed && styles.pressed]}
         onPress={() => togglePicker(which)}
         disabled={readOnly}
       >
-        <Text style={styles.datePillText}>{text}</Text>
+        <Text style={[styles.datePillText, readOnly && { color: t.label }]}>{text}</Text>
       </Pressable>
     )
   }
@@ -568,19 +619,23 @@ export default function EventForm({
     allPeople.find((p) => p._id === id)?.name ?? peopleDisplay.find((p) => p.id === id)?.name
   const peopleNames = people.map(personName).filter((n): n is string => !!n)
   const placeText = location?.name || location?.address || ''
+  const coords = location?.lat != null && location?.lng != null ? { lat: location.lat, lng: location.lng } : null
+  const hasMedia = serverMedia.length > 0 || pending.length > 0
 
-  // Grouped detail rows, iOS Settings style: coloured icon tile, label, value.
+  const chevron = <Icon name="chevron.right" size={14} color={t.secondary} weight="bold" />
+
+  // Grouped detail rows: round tinted icon, label, value.
   const rows: { key: string; node: ReactNode }[] = [
     {
       key: 'date',
       node: (
         <View>
           <View style={styles.row}>
-            <IconTile icon="calendar" color="#E5484D" />
+            <RowIcon icon="calendar" />
             <Text style={styles.rowLabel}>{endOn ? 'Starts' : 'Date'}</Text>
             <View style={styles.pills}>
               {pill('date', displayDate(date))}
-              {timeOn ? pill('time', displayTime(date)) : null}
+              {timeOn && endOn ? pill('time', displayTime(date)) : null}
             </View>
           </View>
           {inlinePicker('date', date, (picked) => {
@@ -589,34 +644,42 @@ export default function EventForm({
             // Moving the start past the end drags the end along.
             if (endOn && endDate.getTime() < next.getTime()) setEndDate(next)
           })}
-          {inlinePicker('time', date, (picked) => setDate(withDay(picked, date)))}
+          {endOn ? inlinePicker('time', date, (picked) => setDate(withDay(picked, date))) : null}
         </View>
       ),
     },
   ]
+  if (!readOnly || timeOn) {
+    rows.push({
+      key: 'time',
+      node: (
+        <View>
+          <View style={styles.row}>
+            <RowIcon icon="clock.fill" tone="second" />
+            <Text style={styles.rowLabel}>{readOnly ? 'Time' : 'Add a time'}</Text>
+            <View style={styles.pills}>
+              {timeOn && !endOn ? pill('time', displayTime(date)) : null}
+              {!readOnly ? <Switch value={timeOn} onValueChange={setTime} trackColor={{ true: t.tint }} /> : null}
+            </View>
+          </View>
+          {!endOn ? inlinePicker('time', date, (picked) => setDate(withDay(picked, date))) : null}
+        </View>
+      ),
+    })
+  }
   if (!readOnly) {
-    rows.push(
-      {
-        key: 'time',
-        node: (
-          <View style={styles.row}>
-            <IconTile icon="clock.fill" color="#007AFF" />
-            <Text style={styles.rowLabel}>Time</Text>
-            <Switch style={styles.switch} value={timeOn} onValueChange={setTime} />
+    rows.push({
+      key: 'range',
+      node: (
+        <View style={styles.row}>
+          <RowIcon icon="calendar.badge.clock" tone="third" />
+          <Text style={styles.rowLabel}>{timeOn ? 'Add an end' : 'Ends on another day'}</Text>
+          <View style={styles.pills}>
+            <Switch value={endOn} onValueChange={setEnd} trackColor={{ true: t.tint }} />
           </View>
-        ),
-      },
-      {
-        key: 'range',
-        node: (
-          <View style={styles.row}>
-            <IconTile icon="calendar.badge.clock" color="#FF9500" />
-            <Text style={styles.rowLabel}>End Date</Text>
-            <Switch style={styles.switch} value={endOn} onValueChange={setEnd} />
-          </View>
-        ),
-      },
-    )
+        </View>
+      ),
+    })
   }
   if (endOn) {
     rows.push({
@@ -624,7 +687,7 @@ export default function EventForm({
       node: (
         <View>
           <View style={styles.row}>
-            <IconTile icon="calendar" color="#E5484D" />
+            <RowIcon icon="calendar" tone="third" />
             <Text style={styles.rowLabel}>Ends</Text>
             <View style={styles.pills}>
               {pill('end', displayDate(endDate))}
@@ -641,41 +704,52 @@ export default function EventForm({
     {
       key: 'location',
       node: (
-        <Pressable style={styles.row} onPress={() => setSheet('location')} disabled={readOnly}>
-          <IconTile icon="mappin" color={t.tint} />
-          <Text style={styles.rowLabel}>Location</Text>
-          <View style={styles.rowValue}>
-            <Text style={[styles.rowValueText, !placeText && { color: t.placeholder }]} numberOfLines={1}>
-              {placeText || (findingPlace ? 'Finding place…' : readOnly ? 'None' : 'Add place')}
-            </Text>
-            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
-          </View>
-        </Pressable>
+        <View>
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && !readOnly && styles.rowPressed]}
+            onPress={() => setSheet('location')}
+            disabled={readOnly}
+          >
+            <RowIcon icon="mappin" />
+            <Text style={styles.rowLabel}>Place</Text>
+            <View style={styles.rowValue}>
+              {findingPlace && !placeText ? <ActivityIndicator size="small" color={t.secondary} /> : null}
+              <Text style={[styles.rowValueText, !!placeText && styles.rowValueOn]} numberOfLines={1}>
+                {placeText || (findingPlace ? 'Finding place…' : readOnly ? 'None' : 'Add a place')}
+              </Text>
+              {!readOnly ? chevron : null}
+            </View>
+          </Pressable>
+          {coords ? (
+            <Pressable onPress={() => setSheet('location')} disabled={readOnly} style={styles.miniMap}>
+              <MapThumb lat={coords.lat} lng={coords.lng} style={StyleSheet.absoluteFill} />
+            </Pressable>
+          ) : null}
+        </View>
       ),
     },
     {
       key: 'people',
       node: (
-        <Pressable style={styles.row} onPress={() => setSheet('people')} disabled={readOnly}>
-          <IconTile icon="person.2.fill" color="#34A853" />
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && !readOnly && styles.rowPressed]}
+          onPress={() => setSheet('people')}
+          disabled={readOnly}
+        >
+          <RowIcon icon="person.2.fill" tone="second" />
           <Text style={styles.rowLabel}>People</Text>
           <View style={styles.rowValue}>
-            {peopleNames.length ? (
-              <View style={styles.avatars}>
-                {peopleNames.slice(0, 3).map((name, i) => (
-                  <View
-                    key={`${name}-${i}`}
-                    style={[styles.avatar, { backgroundColor: avatarColor(name) }, i > 0 && { marginLeft: -6 }]}
-                  >
-                    <Text style={styles.avatarText}>{initials(name)}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : null}
-            <Text style={[styles.rowValueText, !peopleNames.length && { color: t.placeholder }]} numberOfLines={1}>
-              {peopleNames.length ? peopleNames.join(', ') : readOnly ? 'None' : 'Add people'}
+            {peopleNames.length ? <AvatarStack names={peopleNames} size={26} ring={t.card} /> : null}
+            <Text style={[styles.rowValueText, !!peopleNames.length && styles.rowValueOn]} numberOfLines={1}>
+              {peopleNames.length
+                ? peopleNames.length > 2
+                  ? `${peopleNames.length} people`
+                  : peopleNames.join(', ')
+                : readOnly
+                  ? 'None'
+                  : 'Add people'}
             </Text>
-            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
+            {!readOnly ? chevron : null}
           </View>
         </Pressable>
       ),
@@ -684,8 +758,9 @@ export default function EventForm({
       key: 'tags',
       node: (
         <View style={[styles.row, styles.tagsRow]}>
-          <IconTile icon="tag.fill" color="#E8833A" />
+          <RowIcon icon="tag.fill" tone="third" />
           <View style={styles.tagWrap}>
+            {!tags.length && readOnly ? <Text style={styles.rowLabel}>No tags</Text> : null}
             {tags.map((tag) => (
               <Pressable
                 key={tag}
@@ -709,15 +784,13 @@ export default function EventForm({
                   tagRef.current?.clear()
                   setTagInput('')
                 }}
-                placeholder={tags.length ? 'Add tag' : 'Tags'}
-                placeholderTextColor={t.placeholder}
+                placeholder={tags.length ? 'Add tag' : 'Add a tag'}
+                placeholderTextColor={t.secondary}
                 autoCapitalize="none"
                 autoCorrect={false}
                 returnKeyType="done"
                 submitBehavior="submit"
               />
-            ) : !tags.length ? (
-              <Text style={[styles.rowLabel, { color: t.placeholder }]}>No tags</Text>
             ) : null}
           </View>
         </View>
@@ -728,20 +801,121 @@ export default function EventForm({
     rows.push({
       key: 'thread',
       node: (
-        <Pressable style={styles.row} onPress={pickThread} disabled={readOnly}>
-          <IconTile icon="line.3.horizontal" color="#8E8E93" />
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && !readOnly && styles.rowPressed]}
+          onPress={pickThread}
+          disabled={readOnly}
+        >
+          <RowIcon icon="line.3.horizontal" tone="neutral" />
           <Text style={styles.rowLabel}>Thread</Text>
           <View style={styles.rowValue}>
             {thread ? <View style={[styles.dot, { backgroundColor: paletteColor(thread.color, t.dark) }]} /> : null}
-            <Text style={styles.rowValueText} numberOfLines={1}>
+            <Text style={[styles.rowValueText, styles.rowValueOn]} numberOfLines={1}>
               {thread?.name ?? 'Choose'}
             </Text>
-            {!readOnly ? <Icon name="chevron.right" size={13} color={t.chevron} weight="bold" /> : null}
+            {!readOnly ? chevron : null}
           </View>
         </Pressable>
       ),
     })
   }
+
+  const removeButton = (onPress: () => void) => (
+    <Pressable style={styles.remove} onPress={onPress} hitSlop={8} accessibilityLabel="Remove">
+      <Icon name="xmark" size={11} color="#FFFFFF" weight="bold" />
+    </Pressable>
+  )
+
+  // Tile art for media without a picture: a waveform for audio, a page for a PDF.
+  const glyphTile = (kind: 'audio' | 'pdf', duration?: number | null, seed = 7) =>
+    kind === 'audio' ? (
+      <View style={[styles.tileCenter, { backgroundColor: t.audioSoft, paddingHorizontal: 14, gap: 6 }]}>
+        <Waveform seed={seed} bars={12} height={30} on={t.audio} off={t.audio} />
+        {fmtDuration(duration) ? <Text style={styles.tileDur}>{fmtDuration(duration)}</Text> : null}
+      </View>
+    ) : (
+      <View style={[styles.tileCenter, { backgroundColor: t.dangerSoft }]}>
+        <Icon name="doc.text.fill" size={30} color={t.danger} weight="regular" />
+      </View>
+    )
+
+  const mediaStrip = (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
+      {serverMedia.map((m) => {
+        const uri = m.kind === 'audio' || m.kind === 'pdf' ? null : thumbUriFor(m)
+        return (
+          <View key={m.key} style={styles.tile}>
+            {uri ? (
+              <Image source={{ uri, cacheKey: `${m.key}:thumb` }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            ) : m.kind === 'audio' || m.kind === 'pdf' ? (
+              glyphTile(m.kind, m.duration_seconds, seedOf(m.key))
+            ) : null}
+            {m.kind === 'video' ? (
+              <View style={styles.tileCenter} pointerEvents="none">
+                <Icon name="play.fill" size={24} color="#FFFFFF" weight="regular" />
+              </View>
+            ) : null}
+            {!readOnly ? removeButton(() => detachServerMedia(m.key)) : null}
+          </View>
+        )
+      })}
+      {pending.map((m) => (
+        <View key={m.localUri} style={styles.tile}>
+          {m.isAudio ? glyphTile('audio', m.durationSeconds, seedOf(m.localUri)) : null}
+          {m.previewUri ? (
+            <Image source={{ uri: m.previewUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          ) : null}
+          {m.isVideo && m.status === 'done' ? (
+            <View style={styles.tileCenter} pointerEvents="none">
+              <Icon name="play.fill" size={24} color="#FFFFFF" weight="regular" />
+            </View>
+          ) : null}
+          {m.status === 'uploading' ? (
+            <View style={[styles.tileCenter, styles.tileDim]}>
+              <ActivityIndicator color="#FFFFFF" />
+            </View>
+          ) : m.status === 'error' ? (
+            <View style={[styles.tileCenter, styles.tileError]}>
+              <Text style={styles.tileErrorText}>Failed</Text>
+            </View>
+          ) : null}
+          {m.status !== 'uploading' ? removeButton(() => dropPending(m.localUri)) : null}
+        </View>
+      ))}
+      {!readOnly ? (
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.tile, styles.addTile, pressed && styles.pressed]}
+            onPress={pickMedia}
+            accessibilityLabel="Add photos or videos"
+          >
+            <Icon name="plus" size={22} color={t.tintText} weight="bold" />
+            <Text style={styles.addTileText}>Add</Text>
+          </Pressable>
+          {!recording ? (
+            <Pressable
+              style={({ pressed }) => [styles.tile, styles.addTile, styles.voiceTile, pressed && styles.pressed]}
+              onPress={() => setRecording(true)}
+              accessibilityLabel="Record a voice note"
+            >
+              <Icon name="mic.fill" size={22} color={t.audio} />
+              <Text style={[styles.addTileText, { color: t.audio }]}>Voice</Text>
+            </Pressable>
+          ) : null}
+        </>
+      ) : null}
+    </ScrollView>
+  )
+
+  const recorder = recording ? (
+    <VoiceRecorder
+      onCancel={() => setRecording(false)}
+      onRecorded={(asset, secs) => {
+        setRecording(false)
+        addAssets([asset], { duration_seconds: secs })
+      }}
+    />
+  ) : null
 
   return (
     <View style={styles.sheet}>
@@ -759,87 +933,67 @@ export default function EventForm({
 
       <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-          {readOnly ? <Text style={styles.footnote}>This moment is shared with you — read only.</Text> : null}
+          {readOnly ? (
+            <View style={styles.banner}>
+              <Icon name="lock.fill" size={16} color={t.second} />
+              <Text style={styles.bannerText}>This moment is shared with you — read only.</Text>
+            </View>
+          ) : null}
 
-          <View>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
-              {!readOnly ? (
-                <Pressable style={({ pressed }) => [styles.addTile, pressed && styles.pressed]} onPress={pickMedia}>
-                  <Icon name="photo.badge.plus" size={28} color={t.tintText} weight="regular" />
-                  <Text style={styles.addTileText}>Add Media</Text>
-                </Pressable>
+          {recorder}
+
+          {hasMedia ? (
+            <View>
+              {mediaStrip}
+              {isEdit && !readOnly ? (
+                <Text style={styles.footnote}>Photo, video and voice changes save right away.</Text>
               ) : null}
-              {serverMedia.map((m) => {
-                const uri = thumbUriFor(m)
-                return (
-                  <View key={m.key} style={styles.tile}>
-                    {uri ? (
-                      <Image source={{ uri, cacheKey: `${m.key}:thumb` }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                    ) : (
-                      <View style={styles.tileCenter}>
-                        <Text style={styles.tileKind}>{m.kind}</Text>
-                      </View>
-                    )}
-                    {!readOnly ? (
-                      <Pressable
-                        style={styles.remove}
-                        onPress={() => detachServerMedia(m.key)}
-                        hitSlop={8}
-                        accessibilityLabel="Remove"
-                      >
-                        <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
-                      </Pressable>
-                    ) : null}
-                  </View>
-                )
-              })}
-              {pending.map((m) => (
-                <View key={m.localUri} style={styles.tile}>
-                  {m.previewUri ? (
-                    <Image source={{ uri: m.previewUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-                  ) : null}
-                  {m.isVideo && m.status === 'done' ? (
-                    <View style={styles.tileCenter} pointerEvents="none">
-                      <Icon name="play.fill" size={26} color="#FFFFFF" weight="regular" />
-                    </View>
-                  ) : null}
-                  {m.status === 'uploading' ? (
-                    <View style={[styles.tileCenter, styles.tileDim]}>
-                      <ActivityIndicator color="#FFFFFF" />
-                    </View>
-                  ) : m.status === 'error' ? (
-                    <View style={[styles.tileCenter, styles.tileError]}>
-                      <Text style={styles.tileErrorText}>Failed</Text>
-                    </View>
-                  ) : null}
-                  {m.status !== 'uploading' ? (
-                    <Pressable
-                      style={styles.remove}
-                      onPress={() => dropPending(m.localUri)}
-                      hitSlop={8}
-                      accessibilityLabel="Remove"
-                    >
-                      <Icon name="xmark" size={10} color="#FFFFFF" weight="bold" />
-                    </Pressable>
-                  ) : null}
+            </View>
+          ) : !readOnly && !recording ? (
+            <View style={{ gap: 10 }}>
+              <Pressable
+                style={({ pressed }) => [styles.addMedia, pressed && styles.pressed]}
+                onPress={pickMedia}
+                accessibilityRole="button"
+              >
+                <View style={styles.addMediaIcon}>
+                  <Icon name="photo.badge.plus" size={24} color={t.onTint} />
                 </View>
-              ))}
-            </ScrollView>
-            {isEdit && !readOnly ? <Text style={[styles.footnote, { marginTop: 8 }]}>Media changes save immediately.</Text> : null}
-          </View>
+                <View>
+                  <Text style={styles.addMediaTitle}>Add photos or videos</Text>
+                  <Text style={styles.addMediaSub}>From your library</Text>
+                </View>
+              </Pressable>
+              <Pressable
+                style={({ pressed }) => [styles.voiceRow, pressed && styles.pressed]}
+                onPress={() => setRecording(true)}
+                accessibilityRole="button"
+              >
+                <Icon name="mic.fill" size={17} color={t.audio} />
+                <Text style={styles.voiceRowText}>Record a voice note</Text>
+              </Pressable>
+            </View>
+          ) : null}
 
-          <View style={styles.group}>
+          {prefillNote && !readOnly ? (
+            <View style={styles.banner}>
+              <Icon name="sparkles" size={17} color={t.second} />
+              <Text style={styles.bannerText}>{prefillNote}</Text>
+            </View>
+          ) : null}
+
+          <View style={styles.fields}>
             <TextInput
               style={styles.titleInput}
               value={title}
               onChangeText={setTitle}
-              placeholder="Title"
+              placeholder="Give it a title"
               placeholderTextColor={t.placeholder}
               autoFocus={!isEdit}
               editable={!readOnly}
               returnKeyType="next"
             />
-            <View style={[styles.separator, { marginLeft: 16 }]} />
+            <View style={styles.fieldRule} />
             <TextInput
               style={styles.descInput}
               value={description}
@@ -862,11 +1016,13 @@ export default function EventForm({
 
           {isEdit && !readOnly ? (
             <Pressable
-              style={({ pressed }) => [styles.group, styles.deleteBtn, pressed && styles.pressed]}
+              style={({ pressed }) => [styles.deleteBtn, pressed && styles.pressed]}
               onPress={confirmDelete}
               disabled={saving}
+              accessibilityRole="button"
             >
-              <Text style={styles.deleteText}>Delete Moment</Text>
+              <Icon name="trash" size={18} color={t.danger} />
+              <Text style={styles.deleteText}>Delete moment</Text>
             </Pressable>
           ) : null}
 
@@ -902,115 +1058,171 @@ export default function EventForm({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    sheet: { flex: 1, backgroundColor: t.modalBg },
+    sheet: { flex: 1, backgroundColor: t.bg },
     flex: { flex: 1 },
-    center: { alignItems: 'center', justifyContent: 'center', gap: 12 },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'space-between',
       paddingHorizontal: 16,
       paddingTop: 14,
-      paddingBottom: 4,
+      paddingBottom: 6,
     },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: t.label },
-    body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 48, gap: 22 },
-    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, paddingHorizontal: 4 },
-    photos: { gap: 10 },
-    addTile: {
-      width: 104,
-      height: 104,
-      borderRadius: 18,
-      backgroundColor: t.modalCard,
+    headerTitle: { fontFamily: font.heavy, fontSize: 17, color: t.label },
+    body: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 48, gap: 14 },
+    footnote: {
+      fontFamily: font.semibold,
+      fontSize: 13.5,
+      lineHeight: 18,
+      color: t.secondary,
+      paddingHorizontal: 6,
+      marginTop: 8,
+    },
+    pressed: { opacity: 0.6 },
+    addMedia: {
+      height: 124,
+      borderRadius: 24,
+      borderWidth: 2.5,
+      borderStyle: 'dashed',
+      borderColor: t.tint + '80',
+      backgroundColor: t.primarySoft + '55',
+      flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
-      gap: 6,
+      gap: 14,
     },
-    addTileText: { fontSize: 13, fontWeight: '600', color: t.tintText },
-    pressed: { opacity: 0.6 },
-    tile: { width: 104, height: 104, borderRadius: 18, overflow: 'hidden', backgroundColor: t.photoPlaceholder },
+    addMediaIcon: {
+      width: 52,
+      height: 52,
+      borderRadius: 26,
+      backgroundColor: t.tint,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    addMediaTitle: { fontFamily: font.heavy, fontSize: 17, color: t.tintText },
+    addMediaSub: { fontFamily: font.semibold, fontSize: 14, color: t.secondary, marginTop: 2 },
+    voiceRow: {
+      height: 48,
+      borderRadius: 24,
+      backgroundColor: t.audioSoft,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+    },
+    voiceRowText: { fontFamily: font.heavy, fontSize: 15.5, color: t.audio },
+    photos: { gap: 10 },
+    tile: { width: 104, height: 104, borderRadius: 20, overflow: 'hidden', backgroundColor: t.photoPlaceholder },
+    addTile: {
+      backgroundColor: 'transparent',
+      borderWidth: 2.5,
+      borderStyle: 'dashed',
+      borderColor: t.tint + '80',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 4,
+    },
+    voiceTile: { borderColor: t.audio + '66' },
+    addTileText: { fontFamily: font.heavy, fontSize: 13, color: t.tintText },
     tileCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
-    tileKind: { fontSize: 12, color: t.secondary, textTransform: 'uppercase' },
+    tileDur: { fontFamily: font.heavy, fontSize: 12, color: t.audio },
     tileDim: { backgroundColor: 'rgba(0,0,0,0.35)' },
-    tileError: { backgroundColor: 'rgba(229,72,77,0.6)' },
-    tileErrorText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
+    tileError: { backgroundColor: 'rgba(184,67,58,0.7)' },
+    tileErrorText: { color: '#FFFFFF', fontSize: 13, fontFamily: font.heavy },
     remove: {
       position: 'absolute',
       top: 6,
       right: 6,
-      width: 24,
-      height: 24,
-      borderRadius: 12,
-      backgroundColor: t.overlay,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      backgroundColor: 'rgba(0,0,0,0.5)',
       alignItems: 'center',
       justifyContent: 'center',
     },
-    group: { backgroundColor: t.modalCard, borderRadius: 22, overflow: 'hidden' },
+    banner: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingVertical: 11,
+      paddingHorizontal: 14,
+      borderRadius: 16,
+      backgroundColor: t.secondSoft,
+    },
+    bannerText: { flex: 1, fontFamily: font.bold, fontSize: 14.5, lineHeight: 19, color: t.label },
+    fields: { backgroundColor: t.card, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 6, ...cardShadow(t) },
     titleInput: {
-      fontSize: 22,
-      lineHeight: 28,
-      fontWeight: '600',
+      fontFamily: font.serif,
+      fontSize: 24,
+      lineHeight: 30,
       color: t.label,
-      paddingHorizontal: 16,
-      paddingTop: 14,
+      paddingTop: 10,
       paddingBottom: 12,
     },
+    fieldRule: { height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
     descInput: {
-      fontSize: 17,
-      lineHeight: 23,
+      fontFamily: font.semibold,
+      fontSize: 16.5,
+      lineHeight: 24,
       color: t.label,
-      paddingHorizontal: 16,
       paddingTop: 12,
-      paddingBottom: 14,
-      minHeight: 92,
+      paddingBottom: 12,
+      minHeight: 84,
       textAlignVertical: 'top',
     },
-    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.modalSeparator, marginLeft: 56 },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, minHeight: 52 },
-    rowLabel: { fontSize: 17, color: t.label },
-    rowInput: { flex: 1, fontSize: 17, color: t.label, textAlign: 'right', paddingVertical: 14 },
-    rowValue: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
-    rowValueText: { fontSize: 17, color: t.secondary, flexShrink: 1 },
-    dot: { width: 9, height: 9, borderRadius: 5 },
-    datePill: {
-      height: 34,
-      paddingHorizontal: 12,
-      borderRadius: 8,
-      backgroundColor: t.fill,
-      justifyContent: 'center',
-    },
-    datePillText: { fontSize: 17, color: t.tintText },
-    pills: { marginLeft: 'auto', flexDirection: 'row', gap: 6 },
-    picker: { marginHorizontal: 8 },
-    // RN's iOS Switch defaults to alignSelf: 'flex-start' (top of the row).
-    switch: { marginLeft: 'auto', alignSelf: 'center' },
-    avatars: { flexDirection: 'row' },
-    avatar: {
-      width: 24,
-      height: 24,
-      borderRadius: 12,
+    group: { backgroundColor: t.card, borderRadius: 24, overflow: 'hidden', ...cardShadow(t) },
+    separator: { height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
+    row: {
+      flexDirection: 'row',
       alignItems: 'center',
-      justifyContent: 'center',
-      borderWidth: 1.5,
-      borderColor: t.modalCard,
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      minHeight: 62,
     },
-    avatarText: { color: '#FFFFFF', fontSize: 10, fontWeight: '700' },
-    tagsRow: { alignItems: 'flex-start', paddingVertical: 11 },
-    tagWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, minHeight: 30 },
+    rowPressed: { backgroundColor: t.surface2 },
+    rowLabel: { fontFamily: font.heavy, fontSize: 16.5, color: t.label },
+    rowValue: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 6 },
+    rowValueText: { fontFamily: font.bold, fontSize: 15.5, color: t.secondary, flexShrink: 1 },
+    rowValueOn: { color: t.label },
+    miniMap: { height: 112, marginHorizontal: 12, marginBottom: 12, borderRadius: 16, overflow: 'hidden' },
+    dot: { width: 10, height: 10, borderRadius: 5 },
+    datePill: {
+      height: 36,
+      paddingHorizontal: 13,
+      borderRadius: 12,
+      backgroundColor: t.surface2,
+      justifyContent: 'center',
+    },
+    datePillOn: { backgroundColor: t.primarySoft },
+    datePillText: { fontFamily: font.heavy, fontSize: 15, color: t.tintText },
+    pills: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 8 },
+    picker: { marginHorizontal: 8 },
+    tagsRow: { alignItems: 'flex-start' },
+    tagWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, minHeight: 38 },
     tag: {
       flexDirection: 'row',
       alignItems: 'center',
-      gap: 5,
-      height: 30,
-      paddingHorizontal: 11,
-      borderRadius: 15,
-      backgroundColor: t.fill,
+      gap: 6,
+      height: 34,
+      paddingHorizontal: 12,
+      borderRadius: 17,
+      backgroundColor: t.thirdSoft,
     },
-    tagText: { fontSize: 15, color: t.label },
-    tagInput: { flexGrow: 1, minWidth: 90, fontSize: 17, color: t.label, paddingVertical: 4 },
-    deleteBtn: { height: 52, alignItems: 'center', justifyContent: 'center' },
-    deleteText: { fontSize: 17, fontWeight: '500', color: t.danger },
-    error: { color: t.danger, fontSize: 15, textAlign: 'center' },
-    link: { color: t.tintText, fontSize: 17, fontWeight: '600' },
+    tagText: { fontFamily: font.heavy, fontSize: 14.5, color: t.label },
+    tagInput: { flexGrow: 1, minWidth: 90, fontFamily: font.bold, fontSize: 16, color: t.label, paddingVertical: 6 },
+    deleteBtn: {
+      height: 56,
+      borderRadius: 20,
+      backgroundColor: t.card,
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'center',
+      gap: 8,
+      marginTop: 4,
+      ...cardShadow(t),
+    },
+    deleteText: { fontFamily: font.heavy, fontSize: 17, color: t.danger },
+    error: { color: t.danger, fontFamily: font.bold, fontSize: 15, textAlign: 'center' },
   })
 }

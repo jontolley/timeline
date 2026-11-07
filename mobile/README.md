@@ -14,13 +14,21 @@ mobile/
 │   │   ├── login.tsx         # Email → 6-digit code sign-in, or Continue with Google
 │   │   ├── (tabs)/
 │   │   │   ├── _layout.tsx   # Native tabs (system tab bar, SF Symbols)
-│   │   │   ├── index.tsx     # Timeline list (paginated, pull-to-refresh)
-│   │   │   └── chat.tsx      # Streaming chat (SSE) + pending-edit / event cards
+│   │   │   ├── index.tsx     # Timeline: season-coloured time axis, sticky years, year scrubber
+│   │   │   └── chat.tsx      # Streaming chat (SSE) + source / pending-edit / event cards
+│   │   ├── search.tsx        # Keyword search (GET /events/search), "#tag" = exact tag
+│   │   ├── filters.tsx       # Filters sheet (threads, people, sort) shared by Timeline + Search
 │   │   └── event/            # new.tsx, [id]/index.tsx (detail), [id]/edit.tsx
 │   ├── components/EventForm.tsx  # Shared create/edit form
 │   ├── components/LocationPicker.tsx, PeoplePicker.tsx  # The form's place + people sheets
 │   ├── config.ts             # API base URL resolution
-│   ├── theme.ts              # Hindsite color tokens
+│   ├── components/EventCard.tsx  # Timeline cards (photo/video/map/audio/doc/note), CompactRow, MapThumb
+│   ├── components/YearScrubber.tsx  # Right-edge year scrubber (drag + haptics)
+│   ├── components/VoiceRecorder.tsx  # expo-audio voice-note recorder for the form
+│   ├── components/ui.tsx     # Buttons, RowIcon, Avatar, Waveform, Skeleton, EmptyState
+│   ├── lib/format.ts         # UTC date / place / media helpers shared by the screens
+│   ├── store/filters.ts      # Shared Timeline + Search filters
+│   ├── theme.ts              # Harbor palette tokens, fonts (Fraunces + Nunito), seasons
 │   ├── store/auth.ts         # Zustand auth store + SecureStore token
 │   └── api/                  # Ported from frontend/src/api/*
 │       ├── client.ts         # fetch wrapper w/ Bearer + 401 handling
@@ -92,7 +100,9 @@ App Store note: guideline 4.8 expects Sign in with Apple alongside a third-party
 - Email-code or Google sign-in → persisted session → auto-login on relaunch → sign-out.
 - Full REST client for events / threads / people / uploads (parity with the web `api/` layer).
 - Timeline: paginated list (bidirectional cursor), pull-to-refresh, infinite scroll, thumbnails.
-- Chat: live SSE token streaming, plus the edit-confirm card (Confirm / Choose another / Cancel → `confirm_edit` action) and tappable cards for events chat created or updated (which also refresh the Timeline).
+- Chat: live SSE token streaming, suggested questions on the empty screen, tappable source cards for the moments an answer drew on (the `sources` SSE event carries `items` — id, title, dates, kind, signed thumbnail — next to the plain `events` titles the web reads), the edit-confirm card, and tappable cards for events chat created or updated (which also refresh the Timeline). Tapping Update re-posts the transcript with a `confirm_edit` action, which the backend applies directly.
+- **Search & filters** — `/search` (keyword search over titles, descriptions, places, people and tags; `#word` searches a tag; no results offers Chat) and the `/filters` sheet (threads, people, sort by when it happened / was added). Both read `src/store/filters.ts`, which the Timeline also applies to its list, year counts and cursors (`sortDateOf`).
+- **Voice notes** — the form records audio with `expo-audio` (`VoiceRecorder.tsx`, AAC `.m4a` uploaded as `audio/mp4` with its `duration_seconds`); playback still opens the system player.
 - Photo upload: full + thumbnail resize (`expo-image-manipulator`) → presigned R2 PUT. Server-side EXIF + AI caption helpers.
 - **Event detail screen** — `src/app/event/[id]/index.tsx`, a read-only view opened by tapping a timeline card (pushed card with native back swipe). Full-bleed swipeable photo hero with glass Back / Share / Edit buttons, then thread + date, title, description, a grouped card of location (opens Maps) / people / tags / audio / PDF rows, and a thumbnail strip. Photos and videos open a full-screen viewer (`src/components/PhotoViewer.tsx`): swipe between items, pinch or double-tap to zoom, tap to hide the controls. Videos play in place with `expo-video` (native controls, inset below the Close button) and pause when swiped away; audio/PDFs still open externally via `Linking`. "Edit" pushes the form modal; reloads on focus so edits show on return, and bounces back to the timeline if the event was deleted underneath it. Shared (non-owned) events hide Edit/Delete.
 - **Add / edit / delete event** — one shared form (`src/components/EventForm.tsx`), rendered by `src/app/event/new.tsx` (create) and `src/app/event/[id]/edit.tsx` (edit, opened from the detail screen). Both present as modals. Title / description / thread picker, plus:
@@ -119,7 +129,7 @@ App Store note: guideline 4.8 expects Sign in with Apple alongside a third-party
 - **Native document scan** — replace the web OpenCV-WASM path with VisionKit `VNDocumentCameraViewController` (far better, free on iOS).
 - **Sign in with Apple** — required next to Google for App Store review (guideline 4.8); needs the paid developer account for the capability.
 - **Push notifications** ("on this day") — `expo-notifications` + a backend device-token registry.
-- Threads/people management, search, filters, event detail with lightbox.
+- Threads/people management.
 
 ## Notes & gotchas
 
@@ -129,6 +139,7 @@ App Store note: guideline 4.8 expects Sign in with Apple alongside a third-party
 - **Dates are UTC calendar days.** The form holds UTC-midnight `Date`s; "today" is built from the *local* calendar day, and the date picker renders with `timeZoneName="UTC"`. A bare `new Date()` or a local-time picker shifts the day by one in US time zones.
 - **Thread colors are palette keys** (`rose`, `cyan`, …), not CSS colors — always resolve them with `paletteColor()` from `theme.ts` (mirror of `frontend/src/utils/colors.js`).
 - **No photo-library permission prompt.** `launchImageLibraryAsync` uses the out-of-process system picker, which needs no permission; don't add `requestMediaLibraryPermissionsAsync` back.
+- **Fonts are one family per weight.** Fraunces (headings) and Nunito (UI) load from `@expo-google-fonts/*` in the root layout, which holds the splash until they're ready. Use the `font.*` names from `theme.ts` and never add `fontWeight` — iOS would synthesize a fake bold. System UI (tab bar, alerts, action sheets) keeps SF Pro.
 - **Light/dark is a token swap, set by one writer.** Every screen styles from `useTheme()` (`src/theme.ts`, `light` / `dark` palettes) via a `makeStyles(t)` + `useMemo` pair — never hardcode hex. The Account sheet's System / Light / Dark picker (`src/store/appearance.ts`) is the only caller of `Appearance.setColorScheme`, which overrides the native trait so the tab bar, date picker, alerts and `useColorScheme()` all follow; the choice persists across launches. `userInterfaceStyle` is `automatic`, so changing it again needs a native rebuild (`npx expo prebuild -p ios` then `npx expo run:ios`).
 - **Liquid Glass controls** (`GlassButton` in `src/components/ui.tsx`) use `expo-glass-effect` and fall back to a translucent fill when `isLiquidGlassAvailable()` is false (pre-iOS 26).
 - The token is the only persisted auth state; there's no refresh endpoint, so after 30 days the user re-enters a code. Add silent re-auth later if desired.

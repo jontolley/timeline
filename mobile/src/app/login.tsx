@@ -14,7 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useAuthStore } from '@/store/auth'
 import { Icon } from '@/components/ui'
-import { useTheme, type Theme } from '@/theme'
+import { cardShadow, font, useTheme, type Theme } from '@/theme'
 
 type Step = 'email' | 'code'
 
@@ -152,6 +152,7 @@ export default function LoginScreen() {
             </>
           ) : (
             <>
+              <Text style={styles.codeTitle}>Check your email</Text>
               <Text style={styles.hint}>
                 Enter the code we sent to{'\n'}
                 <Text style={styles.hintStrong}>{email}</Text>
@@ -180,7 +181,7 @@ export default function LoginScreen() {
                 onPress={onVerify}
                 disabled={busy}
               >
-                {busy ? <ActivityIndicator color={t.onTint} /> : <Text style={styles.buttonText}>Sign In</Text>}
+                {busy ? <ActivityIndicator color={t.onTint} /> : <Text style={styles.buttonText}>Sign in</Text>}
               </Pressable>
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Pressable
@@ -192,7 +193,7 @@ export default function LoginScreen() {
                 disabled={busy}
                 hitSlop={8}
               >
-                <Text style={styles.link}>Use a Different Email</Text>
+                <Text style={styles.link}>Use a different email</Text>
               </Pressable>
             </>
           )}
@@ -208,13 +209,13 @@ function makeStyles(t: Theme) {
     flex: { flex: 1 },
     // paddingBottom keeps the tagline clear of the email field when the
     // keyboard is up and squeezes the hero.
-    hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: 32, paddingBottom: 30 },
+    hero: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6, paddingHorizontal: 32, paddingBottom: 30 },
     // Sized to fit above the form with the keyboard up (the email field
     // autofocuses, so that's the layout people actually see).
     appIcon: {
       width: 92,
       height: 92,
-      borderRadius: 21,
+      borderRadius: 24,
       backgroundColor: t.tint,
       alignItems: 'center',
       justifyContent: 'center',
@@ -223,42 +224,58 @@ function makeStyles(t: Theme) {
       shadowRadius: 15,
       shadowOffset: { width: 0, height: 10 },
     },
-    brand: { fontSize: 34, lineHeight: 41, fontWeight: '700', color: t.label, marginTop: 4 },
-    tagline: { fontSize: 17, lineHeight: 22, color: t.secondary, textAlign: 'center' },
+    brand: { fontFamily: font.serif, fontSize: 40, lineHeight: 48, color: t.label, marginTop: 10, letterSpacing: -0.4 },
+    tagline: { fontFamily: font.serifItalic, fontSize: 19, lineHeight: 24, color: t.secondary, textAlign: 'center' },
     form: { paddingHorizontal: 20, paddingBottom: 24, gap: 12 },
     field: {
-      height: 54,
-      borderRadius: 16,
+      height: 56,
+      borderRadius: 18,
       backgroundColor: t.card,
       flexDirection: 'row',
       alignItems: 'center',
       paddingHorizontal: 16,
       gap: 10,
+      ...cardShadow(t),
     },
-    input: { flex: 1, fontSize: 17, color: t.label, height: '100%' },
-    codeInput: { letterSpacing: 8, textAlign: 'center', fontSize: 22, fontVariant: ['tabular-nums'] },
-    button: { height: 54, borderRadius: 27, backgroundColor: t.tint, alignItems: 'center', justifyContent: 'center' },
+    input: { flex: 1, fontFamily: font.semibold, fontSize: 17, color: t.label, height: '100%' },
+    codeInput: {
+      letterSpacing: 8,
+      textAlign: 'center',
+      fontFamily: font.heavy,
+      fontSize: 24,
+      fontVariant: ['tabular-nums'],
+    },
+    button: { height: 56, borderRadius: 28, backgroundColor: t.tint, alignItems: 'center', justifyContent: 'center' },
     buttonDim: { opacity: 0.7 },
-    buttonText: { color: t.onTint, fontSize: 17, fontWeight: '600' },
+    buttonText: { color: t.onTint, fontFamily: font.heavy, fontSize: 17 },
     orRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginVertical: 2 },
     orLine: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: t.separator },
-    orText: { fontSize: 13, color: t.secondary },
+    orText: { fontFamily: font.bold, fontSize: 13, color: t.secondary },
     googleButton: {
-      height: 54,
-      borderRadius: 27,
+      height: 56,
+      borderRadius: 28,
       backgroundColor: t.card,
       flexDirection: 'row',
       alignItems: 'center',
       justifyContent: 'center',
       gap: 10,
+      ...cardShadow(t),
     },
     googleLogo: { width: 20, height: 20 },
-    googleText: { color: t.label, fontSize: 17, fontWeight: '600' },
-    footnote: { fontSize: 13, lineHeight: 18, color: t.secondary, textAlign: 'center' },
-    footLink: { color: t.tintText, fontWeight: '500' },
-    link: { color: t.tintText, textAlign: 'center', fontSize: 15, fontWeight: '500', marginTop: 4 },
-    hint: { fontSize: 15, lineHeight: 21, color: t.secondary, textAlign: 'center', marginBottom: 4 },
-    hintStrong: { color: t.label, fontWeight: '600' },
-    error: { color: t.danger, textAlign: 'center', fontSize: 15 },
+    googleText: { color: t.label, fontFamily: font.heavy, fontSize: 17 },
+    footnote: { fontFamily: font.semibold, fontSize: 13.5, lineHeight: 19, color: t.secondary, textAlign: 'center' },
+    footLink: { color: t.tintText, fontFamily: font.heavy },
+    link: { color: t.tintText, textAlign: 'center', fontFamily: font.heavy, fontSize: 16, marginTop: 6 },
+    codeTitle: { fontFamily: font.serif, fontSize: 28, color: t.label, textAlign: 'center' },
+    hint: {
+      fontFamily: font.semibold,
+      fontSize: 15.5,
+      lineHeight: 22,
+      color: t.secondary,
+      textAlign: 'center',
+      marginBottom: 6,
+    },
+    hintStrong: { color: t.label, fontFamily: font.heavy },
+    error: { color: t.danger, textAlign: 'center', fontFamily: font.bold, fontSize: 15 },
   })
 }

@@ -24,10 +24,22 @@ export type PendingEdit = {
 
 export type ChatAction = { type: 'confirm_edit'; event_id: string; changes: EditChanges }
 
+// A moment the answer drew on, most relevant first: enough to draw a tappable
+// card (thumbnail is a signed R2 URL, null when the moment has no picture).
+export type SourceItem = {
+  _id: string
+  title: string
+  date: string
+  end_date?: string | null
+  kind: 'photo' | 'video' | 'audio' | 'place' | 'pdf' | 'note'
+  media_count: number
+  thumb_url?: string | null
+}
+
 export type ChatCallbacks = {
-  // Titles of the events the answer drew on — the backend sends strings, not
-  // event objects (no ids), so these can only be shown, not linked.
-  onSources?: (titles: string[]) => void
+  // Titles of the events the answer drew on (what the web shows), plus — from
+  // newer backends — `items` with ids and thumbnails for linked cards.
+  onSources?: (titles: string[], items: SourceItem[]) => void
   onToken?: (text: string) => void
   onEventCreated?: (event: TimelineEvent) => void
   onEventUpdated?: (event: TimelineEvent) => void
@@ -71,7 +83,7 @@ export async function streamChat(
       if (!line.startsWith('data: ')) continue
       try {
         const data = JSON.parse(line.slice(6))
-        if (data.type === 'sources') onSources?.(data.events)
+        if (data.type === 'sources') onSources?.(data.events, data.items ?? [])
         else if (data.type === 'token') onToken?.(data.content)
         else if (data.type === 'event_created') onEventCreated?.(data.event)
         else if (data.type === 'event_updated') onEventUpdated?.(data.event)

@@ -15,8 +15,8 @@ import { AppleMaps } from 'expo-maps'
 import { reverseGeocode, searchPlaces } from '../api/geocode'
 import { looksLikeMapLink, resolvePlaceLink } from '../api/places'
 import type { LocationDetail } from '../api/types'
-import { FillButton, Icon, TintButton } from '@/components/ui'
-import { useTheme, type Theme } from '@/theme'
+import { FillButton, Icon, RowIcon, TintButton } from '@/components/ui'
+import { cardShadow, font, useTheme, type Theme } from '@/theme'
 
 // Full-screen place picker for the event form, the native take on the web
 // LocationPicker: search places (Nominatim, debounced like the web), paste a
@@ -137,12 +137,12 @@ export default function LocationPicker({
       <View style={styles.sheet}>
         <View style={styles.header}>
           <FillButton icon="xmark" accessibilityLabel="Cancel" onPress={onCancel} />
-          <Text style={styles.headerTitle}>Location</Text>
+          <Text style={styles.headerTitle}>Place</Text>
           <TintButton icon="checkmark" accessibilityLabel="Done" onPress={done} />
         </View>
 
         <View style={styles.search}>
-          <Icon name="magnifyingglass" size={16} color={t.secondary} />
+          <Icon name="magnifyingglass" size={18} color={t.secondary} />
           <TextInput
             style={styles.searchInput}
             value={query}
@@ -174,34 +174,49 @@ export default function LocationPicker({
               onMapClick={(e) => void dropPin(e.coordinates.latitude, e.coordinates.longitude)}
             />
             <View style={styles.hint} pointerEvents="none">
-              <Text style={styles.hintText}>Tap the map to drop a pin</Text>
+              <Icon name="mappin" size={12} color="#1F2A37" weight="bold" />
+              <Text style={styles.hintText}>
+                {hasCoords(place) ? 'Tap the map to move the pin' : 'Tap the map to drop a pin'}
+              </Text>
             </View>
           </View>
 
           <View style={styles.card}>
             <View style={styles.nameRow}>
-              <TextInput
-                style={styles.nameInput}
-                value={name}
-                onChangeText={setName}
-                placeholder={naming ? 'Finding place…' : 'Name this place'}
-                placeholderTextColor={t.placeholder}
-                returnKeyType="done"
-              />
-              {naming ? <ActivityIndicator color={t.secondary} /> : null}
+              <RowIcon icon="mappin" />
+              <View style={styles.flex}>
+                <TextInput
+                  style={styles.nameInput}
+                  value={name}
+                  onChangeText={setName}
+                  placeholder={naming ? 'Finding place…' : 'Name this place'}
+                  placeholderTextColor={t.placeholder}
+                  returnKeyType="done"
+                />
+                {place?.address ? (
+                  <Text style={styles.address} numberOfLines={2}>
+                    {place.address}
+                  </Text>
+                ) : null}
+              </View>
+              {naming ? (
+                <ActivityIndicator color={t.secondary} />
+              ) : (
+                <Icon name="square.and.pencil" size={18} color={t.secondary} />
+              )}
             </View>
-            {place?.address ? (
-              <Text style={styles.address} numberOfLines={2}>
-                {place.address}
-              </Text>
-            ) : null}
             {error ? <Text style={styles.error}>{error}</Text> : null}
-            {place || name ? (
-              <Pressable onPress={() => onDone(null)} hitSlop={8}>
-                <Text style={styles.remove}>Remove Location</Text>
-              </Pressable>
-            ) : null}
           </View>
+          <Text style={styles.footnote}>The name is yours to change, like “Grandma’s house”.</Text>
+          {place || name ? (
+            <Pressable
+              style={({ pressed }) => [styles.removeBtn, pressed && styles.pressed]}
+              onPress={() => onDone(null)}
+            >
+              <Text style={styles.remove}>Remove place</Text>
+            </Pressable>
+          ) : null}
+          <View style={{ height: 32 }} />
 
           {showResults ? (
             <FlatList
@@ -209,13 +224,16 @@ export default function LocationPicker({
               data={results}
               keyExtractor={(p, i) => `${p.lat},${p.lng},${i}`}
               keyboardShouldPersistTaps="handled"
-              contentContainerStyle={styles.results}
+              contentContainerStyle={[styles.results, results.length > 0 && styles.resultsCard]}
               ListEmptyComponent={
                 searching ? undefined : <Text style={styles.empty}>{error ?? 'No places found.'}</Text>
               }
               renderItem={({ item }) => (
-                <Pressable style={({ pressed }) => [styles.result, pressed && styles.pressed]} onPress={() => choose(item)}>
-                  <Icon name="mappin.circle.fill" size={28} color={t.tint} weight="regular" />
+                <Pressable
+                  style={({ pressed }) => [styles.result, pressed && styles.pressed]}
+                  onPress={() => choose(item)}
+                >
+                  <RowIcon icon="mappin" />
                   <View style={styles.resultText}>
                     <Text style={styles.resultName} numberOfLines={1}>
                       {item.name}
@@ -236,7 +254,7 @@ export default function LocationPicker({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    sheet: { flex: 1, backgroundColor: t.modalBg },
+    sheet: { flex: 1, backgroundColor: t.bg },
     flex: { flex: 1 },
     header: {
       flexDirection: 'row',
@@ -246,50 +264,76 @@ function makeStyles(t: Theme) {
       paddingTop: 14,
       paddingBottom: 10,
     },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: t.label },
+    headerTitle: { fontFamily: font.heavy, fontSize: 17, color: t.label },
     search: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       marginHorizontal: 16,
       marginBottom: 12,
-      paddingHorizontal: 12,
-      height: 44,
-      borderRadius: 12,
-      backgroundColor: t.fill,
+      paddingHorizontal: 14,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: t.card,
+      ...cardShadow(t),
     },
-    searchInput: { flex: 1, fontSize: 17, color: t.label },
-    resultsLayer: { ...StyleSheet.absoluteFill, backgroundColor: t.modalBg },
-    results: { paddingHorizontal: 16, paddingBottom: 40 },
-    result: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10 },
+    searchInput: { flex: 1, fontFamily: font.semibold, fontSize: 16.5, color: t.label },
+    resultsLayer: { ...StyleSheet.absoluteFill, backgroundColor: t.bg },
+    results: { marginHorizontal: 16, paddingBottom: 8 },
+    resultsCard: { backgroundColor: t.card, borderRadius: 22, overflow: 'hidden', ...cardShadow(t) },
+    result: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 16,
+      paddingVertical: 12,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.separator,
+    },
     resultText: { flex: 1, gap: 2 },
-    resultName: { fontSize: 17, color: t.label },
-    resultAddress: { fontSize: 13, lineHeight: 17, color: t.secondary },
+    resultName: { fontFamily: font.bold, fontSize: 16, color: t.label },
+    resultAddress: { fontFamily: font.semibold, fontSize: 14, lineHeight: 18, color: t.secondary },
     pressed: { opacity: 0.6 },
-    empty: { fontSize: 15, color: t.secondary, textAlign: 'center', marginTop: 24 },
-    mapWrap: { flex: 1, marginHorizontal: 16, borderRadius: 22, overflow: 'hidden' },
+    empty: { fontFamily: font.semibold, fontSize: 15, color: t.secondary, textAlign: 'center', marginTop: 24 },
+    mapWrap: { flex: 1, marginHorizontal: 16, borderRadius: 24, overflow: 'hidden', backgroundColor: t.surface2 },
     hint: {
       position: 'absolute',
-      top: 10,
-      alignSelf: 'center',
-      paddingHorizontal: 12,
-      paddingVertical: 6,
+      top: 12,
+      left: 12,
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 5,
+      height: 28,
+      paddingHorizontal: 10,
       borderRadius: 14,
-      backgroundColor: t.overlay,
+      backgroundColor: 'rgba(255,255,255,0.94)',
     },
-    hintText: { color: '#FFFFFF', fontSize: 13, fontWeight: '500' },
+    hintText: { color: '#1F2A37', fontFamily: font.heavy, fontSize: 12.5 },
     card: {
-      margin: 16,
-      marginBottom: 40,
-      padding: 16,
+      marginHorizontal: 16,
+      marginTop: 14,
+      paddingHorizontal: 16,
+      paddingVertical: 13,
       gap: 8,
-      borderRadius: 22,
-      backgroundColor: t.modalCard,
+      borderRadius: 24,
+      backgroundColor: t.card,
+      ...cardShadow(t),
     },
-    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-    nameInput: { flex: 1, fontSize: 20, fontWeight: '600', color: t.label },
-    address: { fontSize: 15, lineHeight: 20, color: t.secondary },
-    error: { fontSize: 15, color: t.danger },
-    remove: { fontSize: 17, color: t.danger, marginTop: 4 },
+    nameRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    nameInput: { fontFamily: font.heavy, fontSize: 16.5, color: t.label, paddingVertical: 2 },
+    address: { fontFamily: font.semibold, fontSize: 14, lineHeight: 18, color: t.secondary },
+    error: { fontFamily: font.semibold, fontSize: 14.5, color: t.danger },
+    footnote: { fontFamily: font.semibold, fontSize: 13.5, color: t.secondary, paddingHorizontal: 26, paddingTop: 8 },
+    removeBtn: {
+      marginHorizontal: 16,
+      marginTop: 14,
+      height: 52,
+      borderRadius: 20,
+      backgroundColor: t.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+      ...cardShadow(t),
+    },
+    remove: { fontFamily: font.heavy, fontSize: 17, color: t.danger },
   })
 }

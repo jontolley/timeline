@@ -24,9 +24,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F2F2F7",
+          "backgroundColor": "#EEF1F5",
           "dark": {
-            "backgroundColor": "#14161A"
+            "backgroundColor": "#121820"
           }
         }
       ],
@@ -36,7 +36,7 @@
         {
           "photosPermission": "Hindsite needs access to your photos so you can attach them to events.",
           "cameraPermission": false,
-          "microphonePermission": false
+          "microphonePermission": "Hindsite uses the microphone to record voice notes for your moments."
         }
       ],
       "@react-native-community/datetimepicker",
@@ -58,7 +58,13 @@
       ],
       "expo-web-browser",
       "expo-video",
-      "expo-maps"
+      "expo-maps",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "Hindsite uses the microphone to record voice notes for your moments."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

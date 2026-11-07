@@ -18,6 +18,7 @@ import { Image } from 'expo-image'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import type { MediaRef } from '@/api/types'
 import { Icon } from '@/components/ui'
+import { font } from '@/theme'
 
 // Full-screen photo viewer, Photos-app style: swipe left/right between items,
 // pinch to zoom, double-tap to zoom in/out, single tap to show/hide the chrome.
@@ -223,10 +224,10 @@ export default function PhotoViewer({
               accessibilityRole="button"
               accessibilityLabel="Close"
             >
-              <Icon name="xmark" size={18} color="#FFFFFF" weight="bold" />
+              <Icon name="xmark" size={19} color="#FFFFFF" weight="bold" />
             </Pressable>
             {items.length > 1 && !onVideo ? (
-              <View style={[styles.count, { bottom: insets.bottom + 20 }]} pointerEvents="none">
+              <View style={[styles.count, { top: insets.top + 13 }]} pointerEvents="none">
                 <Text style={styles.countText}>
                   {index + 1} of {items.length}
                 </Text>
@@ -243,22 +244,22 @@ const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: '#000000' },
   close: {
     position: 'absolute',
-    right: 16,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    left: 16,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     alignItems: 'center',
     justifyContent: 'center',
   },
   count: {
     position: 'absolute',
     alignSelf: 'center',
-    height: 28,
-    paddingHorizontal: 12,
-    borderRadius: 14,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 17,
+    backgroundColor: 'rgba(255,255,255,0.16)',
     justifyContent: 'center',
   },
-  countText: { color: '#FFFFFF', fontSize: 15, fontWeight: '500' },
+  countText: { color: '#FFFFFF', fontSize: 15, fontFamily: font.bold },
 })

@@ -1,6 +1,15 @@
 import { useEffect } from 'react'
 import { Stack, usePathname, useRouter } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
+import { useFonts } from 'expo-font'
+import { Fraunces_500Medium } from '@expo-google-fonts/fraunces/500Medium'
+import { Fraunces_500Medium_Italic } from '@expo-google-fonts/fraunces/500Medium_Italic'
+import { Fraunces_600SemiBold } from '@expo-google-fonts/fraunces/600SemiBold'
+import { Nunito_400Regular } from '@expo-google-fonts/nunito/400Regular'
+import { Nunito_400Regular_Italic } from '@expo-google-fonts/nunito/400Regular_Italic'
+import { Nunito_600SemiBold } from '@expo-google-fonts/nunito/600SemiBold'
+import { Nunito_700Bold } from '@expo-google-fonts/nunito/700Bold'
+import { Nunito_800ExtraBold } from '@expo-google-fonts/nunito/800ExtraBold'
 import * as SystemUI from 'expo-system-ui'
 import { StatusBar } from 'expo-status-bar'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
@@ -30,6 +39,19 @@ export default function RootLayout() {
   const t = useTheme()
   const router = useRouter()
   const pathname = usePathname()
+  // A font that fails to load falls back to the system font, so an error
+  // counts as done rather than holding the splash forever.
+  const [fontsLoaded, fontError] = useFonts({
+    Fraunces_500Medium,
+    Fraunces_500Medium_Italic,
+    Fraunces_600SemiBold,
+    Nunito_400Regular,
+    Nunito_400Regular_Italic,
+    Nunito_600SemiBold,
+    Nunito_700Bold,
+    Nunito_800ExtraBold,
+  })
+  const fontsReady = fontsLoaded || !!fontError
 
   useEffect(() => {
     void initAppearance()
@@ -37,8 +59,8 @@ export default function RootLayout() {
   }, [init, initAppearance])
 
   useEffect(() => {
-    if (status !== 'loading') SplashScreen.hide()
-  }, [status])
+    if (status !== 'loading' && fontsReady) SplashScreen.hide()
+  }, [status, fontsReady])
 
   // A cold launch from the share sheet lands on the Timeline (the gate hid New
   // Moment while init() ran); open it now that we're signed in. Wait until the
@@ -54,6 +76,8 @@ export default function RootLayout() {
   useEffect(() => {
     void SystemUI.setBackgroundColorAsync(t.bg)
   }, [t.bg])
+
+  if (!fontsReady) return null
 
   return (
     <SafeAreaProvider>
@@ -74,6 +98,17 @@ export default function RootLayout() {
           <Stack.Screen
             name="account"
             options={{ presentation: 'modal', contentStyle: { backgroundColor: t.modalBg } }}
+          />
+          <Stack.Screen name="search" options={{ animation: 'fade' }} />
+          <Stack.Screen
+            name="filters"
+            options={{
+              presentation: 'formSheet',
+              sheetAllowedDetents: [0.75, 1],
+              sheetGrabberVisible: true,
+              sheetCornerRadius: 28,
+              contentStyle: { backgroundColor: t.bg },
+            }}
           />
         </Stack.Protected>
         <Stack.Protected guard={!authed}>

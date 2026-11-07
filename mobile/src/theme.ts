@@ -1,31 +1,45 @@
 import { useColorScheme } from 'react-native'
 
-// iOS-native palettes for the "Journal cards" redesign. Light follows the
-// system grouped-background look; dark is softened on purpose (charcoal, not
-// pure black; off-white, not pure white) to cut glare — see the Hindsite iOS
-// Redesign canvas. Screens read these via useTheme() and never hardcode hex.
+// Harbor palette for the Hindsite redesign (design-preview/01-design-direction.md):
+// denim, steel blue and periwinkle on a cool paper white, with a dark variant.
+// Screens read these via useTheme() and never hardcode hex.
 //
-// The `detail*` and `modal*` groups exist because iOS layers surfaces
-// differently per mode: in light the detail sheet is white with grey groups,
-// in dark the sheet is the page colour with raised groups; modals in dark are
-// a step lighter than the page underneath.
+// The older token names (card, fill, detail*, modal*) are kept so every screen
+// keeps resolving; in Harbor the page, detail and modal backgrounds are all
+// `bg`, and cards / grouped rows are all `card`.
 export type Theme = {
   dark: boolean
   bg: string // page background
   card: string // cards / grouped sections on the page
+  surface2: string // fields, chips, pills, placeholders
   fill: string // neutral pill / chip / secondary-button fill
   label: string // primary text
   secondary: string // metadata, captions
   body: string // long-form copy
   placeholder: string
-  separator: string
+  separator: string // hairlines inside cards
   chevron: string
   tint: string // filled buttons, bubbles, selected chips
   tintText: string // tint used as text/icon colour on the page
   onTint: string
+  primarySoft: string // tinted backgrounds behind tint-coloured glyphs
+  second: string // people, "shared", chat avatar
+  secondSoft: string
+  third: string // tags, notes, search highlights
+  thirdSoft: string
+  audio: string // audio player and waveform
+  audioSoft: string
+  waveOff: string
   danger: string
+  dangerSoft: string
   glass: string // fallback for glass controls when Liquid Glass is unavailable
   overlay: string // badges over photos
+  shadow: boolean // light mode lifts cards with a shadow; dark uses a hairline
+  // Time-axis ribbon colours, one per season.
+  spring: string
+  summer: string
+  autumn: string
+  winter: string
   detailBg: string
   detailGroup: string
   detailChip: string
@@ -37,54 +51,84 @@ export type Theme = {
 
 export const light: Theme = {
   dark: false,
-  bg: '#F2F2F7',
-  card: '#FFFFFF',
-  fill: 'rgba(118,118,128,0.12)',
-  label: '#000000',
-  secondary: '#6C6C70',
-  body: '#1C1C1E',
-  placeholder: '#8E8E93',
-  separator: '#C6C6C8',
-  chevron: '#C4C4C7',
-  tint: '#2E5BB0',
-  tintText: '#2E5BB0',
+  bg: '#EEF1F5',
+  card: '#FBFCFD',
+  surface2: '#DFE6EE',
+  fill: '#DFE6EE',
+  label: '#1F2A37',
+  secondary: '#5D6A7A',
+  body: '#2A3646',
+  placeholder: '#8794A4',
+  separator: '#D3DBE5',
+  chevron: '#9AA6B5',
+  tint: '#2C5A85',
+  tintText: '#2C5A85',
   onTint: '#FFFFFF',
-  danger: '#E5484D',
-  glass: 'rgba(255,255,255,0.8)',
-  overlay: 'rgba(0,0,0,0.55)',
-  detailBg: '#FFFFFF',
-  detailGroup: '#F2F2F7',
-  detailChip: '#FFFFFF',
-  modalBg: '#F2F2F7',
-  modalCard: '#FFFFFF',
-  modalSeparator: '#C6C6C8',
-  photoPlaceholder: '#E5E5EA',
+  primarySoft: '#DAE5F1',
+  second: '#3F7FA0',
+  secondSoft: '#D7E8F1',
+  third: '#6C86B8',
+  thirdSoft: '#E1E7F4',
+  audio: '#4B5B9E',
+  audioSoft: '#E1E4F3',
+  waveOff: '#C5CBE6',
+  danger: '#B8433A',
+  dangerSoft: '#F4DEDB',
+  glass: 'rgba(251,252,253,0.82)',
+  overlay: 'rgba(255,255,255,0.94)',
+  shadow: true,
+  spring: '#6FB0B8',
+  summer: '#3F86C9',
+  autumn: '#2C5A85',
+  winter: '#9CB3CC',
+  detailBg: '#EEF1F5',
+  detailGroup: '#FBFCFD',
+  detailChip: '#DFE6EE',
+  modalBg: '#EEF1F5',
+  modalCard: '#FBFCFD',
+  modalSeparator: '#D3DBE5',
+  photoPlaceholder: '#DFE6EE',
 }
 
 export const dark: Theme = {
   dark: true,
-  bg: '#14161A',
-  card: '#1F2227',
-  fill: 'rgba(118,118,128,0.24)',
-  label: '#E4E7EE',
-  secondary: '#9AA0AB',
-  body: '#C5C9D2',
-  placeholder: '#6E737D',
-  separator: '#343841',
-  chevron: '#5A5E66',
-  tint: '#3F6FD0',
-  tintText: '#7FA0E0',
-  onTint: '#FFFFFF',
-  danger: '#FF6B6B',
-  glass: 'rgba(42,46,53,0.8)',
-  overlay: 'rgba(0,0,0,0.55)',
-  detailBg: '#14161A',
-  detailGroup: '#1F2227',
-  detailChip: '#2A2E35',
-  modalBg: '#1F2227',
-  modalCard: '#2A2E35',
-  modalSeparator: '#3A3F48',
-  photoPlaceholder: '#2A2E35',
+  bg: '#121820',
+  card: '#1B232D',
+  surface2: '#26303C',
+  fill: '#26303C',
+  label: '#E6ECF3',
+  secondary: '#9AA8B8',
+  body: '#CBD5E1',
+  placeholder: '#6B7889',
+  separator: '#2F3A47',
+  chevron: '#4F5B6A',
+  tint: '#7FAEDB',
+  tintText: '#7FAEDB',
+  onTint: '#0D1B2A',
+  primarySoft: '#22364B',
+  second: '#7DB6D1',
+  secondSoft: '#1F3540',
+  third: '#A3B8E0',
+  thirdSoft: '#26304A',
+  audio: '#9AA6E6',
+  audioSoft: '#272D4A',
+  waveOff: '#343B5E',
+  danger: '#F08A80',
+  dangerSoft: '#3A2422',
+  glass: 'rgba(27,35,45,0.82)',
+  overlay: 'rgba(255,255,255,0.94)',
+  shadow: false,
+  spring: '#8CC8CF',
+  summer: '#6FA8DE',
+  autumn: '#4F7FB0',
+  winter: '#B8C8DA',
+  detailBg: '#121820',
+  detailGroup: '#1B232D',
+  detailChip: '#26303C',
+  modalBg: '#121820',
+  modalCard: '#1B232D',
+  modalSeparator: '#2F3A47',
+  photoPlaceholder: '#26303C',
 }
 
 // The effective scheme: the Appearance preference (store/appearance.ts) sets a
@@ -93,34 +137,79 @@ export function useTheme(): Theme {
   return useColorScheme() === 'dark' ? dark : light
 }
 
-// Thread/person colors are stored as palette keys ('rose', 'cyan', …), not CSS
-// colors — mirror of frontend/src/utils/colors.js. Some keys happen to be valid
-// RN named colors but 'rose' etc. aren't, so always resolve through here.
-const PALETTE: Record<string, string> = {
-  blue: '#4b6cb7',
-  rose: '#c64d6a',
-  emerald: '#3a8a6d',
-  amber: '#d49a2a',
-  violet: '#7a55c4',
-  cyan: '#2da3ad',
-  orange: '#d0743a',
-  lime: '#6ea03a',
-  fuchsia: '#b8479f',
-  slate: '#6b7a8c',
+// Font families, loaded in app/_layout.tsx. Fraunces for headings, Nunito for
+// everything else; system UI (tab bar, alerts, action sheets) keeps SF Pro.
+// Each weight is its own family, so never combine these with `fontWeight`.
+export const font = {
+  serif: 'Fraunces_600SemiBold',
+  serifMedium: 'Fraunces_500Medium',
+  serifItalic: 'Fraunces_500Medium_Italic',
+  body: 'Nunito_400Regular',
+  bodyItalic: 'Nunito_400Regular_Italic',
+  semibold: 'Nunito_600SemiBold',
+  bold: 'Nunito_700Bold',
+  heavy: 'Nunito_800ExtraBold',
 }
 
-// Lifted variants so small dots stay legible on the dark charcoal.
+// Cards lift off the page with a soft shadow in light mode; in dark mode a
+// hairline border does that job instead.
+export function cardShadow(t: Theme) {
+  return t.shadow
+    ? {
+        shadowColor: '#1F2A37',
+        shadowOpacity: 0.08,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 5 },
+      }
+    : { borderWidth: 1, borderColor: t.separator }
+}
+
+export type Season = 'winter' | 'spring' | 'summer' | 'autumn'
+// Northern-hemisphere meteorological seasons, from a UTC ISO date.
+export function seasonOf(iso: string): Season {
+  const m = Number(iso.slice(5, 7))
+  if (m === 12 || m <= 2) return 'winter'
+  if (m <= 5) return 'spring'
+  if (m <= 8) return 'summer'
+  return 'autumn'
+}
+export const SEASON_LABEL: Record<Season, string> = {
+  winter: 'Winter',
+  spring: 'Spring',
+  summer: 'Summer',
+  autumn: 'Autumn',
+}
+
+// Thread/person colors are stored as palette keys ('rose', 'cyan', …), not CSS
+// colors — mirror of frontend/src/utils/colors.js. Some keys happen to be valid
+// RN named colors but 'rose' etc. aren't, so always resolve through here. The
+// web shows its own colours for these keys; the app maps each key to a Harbor
+// shade so dots and avatars sit inside the palette.
+const PALETTE: Record<string, string> = {
+  blue: '#2C5A85',
+  rose: '#7A5C9E',
+  emerald: '#2F7F7A',
+  amber: '#8A7A3E',
+  violet: '#4B5B9E',
+  cyan: '#3F7FA0',
+  orange: '#9A6A55',
+  lime: '#4F8A5E',
+  fuchsia: '#8E5A88',
+  slate: '#5D6A7A',
+}
+
+// Lifted variants so small dots stay legible on the dark page.
 const PALETTE_DARK: Record<string, string> = {
-  blue: '#7d98d8',
-  rose: '#e0708b',
-  emerald: '#5cb391',
-  amber: '#e5b450',
-  violet: '#9b7ae0',
-  cyan: '#3fc1cb',
-  orange: '#e8925a',
-  lime: '#8fc25a',
-  fuchsia: '#d46bbd',
-  slate: '#8e9bab',
+  blue: '#7FAEDB',
+  rose: '#B79ADB',
+  emerald: '#6FC1B8',
+  amber: '#D2C17E',
+  violet: '#9AA6E6',
+  cyan: '#7DB6D1',
+  orange: '#D9A58E',
+  lime: '#8CC79A',
+  fuchsia: '#D49ACB',
+  slate: '#9AA8B8',
 }
 
 export function paletteColor(key: string | null | undefined, isDark = false): string {
@@ -130,8 +219,8 @@ export function paletteColor(key: string | null | undefined, isDark = false): st
 
 // Stable colour for a person avatar when we only know their name.
 const AVATAR_KEYS = ['rose', 'cyan', 'orange', 'violet', 'emerald', 'amber', 'fuchsia', 'blue']
-export function avatarColor(name: string): string {
-  return PALETTE[avatarKey(name)]
+export function avatarColor(name: string, isDark = false): string {
+  return paletteColor(avatarKey(name), isDark)
 }
 // The palette key behind avatarColor: what a person added in the app is saved
 // with (the backend requires a palette colour), so web and app agree.

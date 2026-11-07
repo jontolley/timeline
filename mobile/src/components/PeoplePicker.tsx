@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
 import { createPerson } from '../api/people'
 import type { Person } from '../api/types'
-import { FillButton, Icon, TintButton } from '@/components/ui'
-import { avatarColor, avatarKey, initials, useTheme, type Theme } from '@/theme'
+import { Avatar, FillButton, Icon, TintButton } from '@/components/ui'
+import { avatarKey, cardShadow, font, useTheme, type Theme } from '@/theme'
 
 // Pick who was there: a checklist of the user's people (like the web form's
 // people pills), filtered by the search field, which can also add someone new
@@ -75,7 +75,7 @@ export default function PeoplePicker({
         </View>
 
         <View style={styles.search}>
-          <Icon name="magnifyingglass" size={16} color={t.secondary} />
+          <Icon name="magnifyingglass" size={18} color={t.secondary} />
           <TextInput
             style={styles.searchInput}
             value={query}
@@ -97,13 +97,21 @@ export default function PeoplePicker({
           keyExtractor={(p) => p._id}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, (shown.length > 0 || (q && !exactMatch)) && styles.listCard]}
           ListHeaderComponent={
             <>
               {q && !exactMatch ? (
-                <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={add} disabled={adding}>
+                <Pressable
+                  style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+                  onPress={add}
+                  disabled={adding}
+                >
                   <View style={[styles.avatar, { backgroundColor: t.tint }]}>
-                    {adding ? <ActivityIndicator color={t.onTint} /> : <Icon name="plus" size={16} color={t.onTint} weight="bold" />}
+                    {adding ? (
+                      <ActivityIndicator color={t.onTint} />
+                    ) : (
+                      <Icon name="plus" size={16} color={t.onTint} weight="bold" />
+                    )}
                   </View>
                   <Text style={[styles.name, { color: t.tintText }]} numberOfLines={1}>
                     Add “{q}”
@@ -116,6 +124,10 @@ export default function PeoplePicker({
           ListEmptyComponent={
             q ? undefined : <Text style={styles.empty}>No people yet. Type a name above to add someone.</Text>
           }
+          ListFooterComponentStyle={styles.footer}
+          ListFooterComponent={
+            shown.length > 0 ? <Text style={styles.footnote}>Type a new name to add someone.</Text> : undefined
+          }
           renderItem={({ item }) => {
             const on = picked.includes(item._id)
             return (
@@ -125,14 +137,16 @@ export default function PeoplePicker({
                 accessibilityRole="checkbox"
                 accessibilityState={{ checked: on }}
               >
-                <View style={[styles.avatar, { backgroundColor: avatarColor(item.name) }]}>
-                  <Text style={styles.avatarText}>{initials(item.name)}</Text>
-                </View>
+                <Avatar name={item.name} size={36} />
                 <Text style={styles.name} numberOfLines={1}>
                   {item.name}
                 </Text>
-                {on ? <Icon name="checkmark.circle.fill" size={24} color={t.tint} weight="regular" /> : (
-                  <Icon name="circle" size={24} color={t.chevron} weight="regular" />
+                {on ? (
+                  <View style={styles.check}>
+                    <Icon name="checkmark" size={14} color={t.onTint} weight="bold" />
+                  </View>
+                ) : (
+                  <View style={styles.uncheck} />
                 )}
               </Pressable>
             )
@@ -145,7 +159,7 @@ export default function PeoplePicker({
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
-    sheet: { flex: 1, backgroundColor: t.modalBg },
+    sheet: { flex: 1, backgroundColor: t.bg },
     header: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -154,26 +168,53 @@ function makeStyles(t: Theme) {
       paddingTop: 14,
       paddingBottom: 10,
     },
-    headerTitle: { fontSize: 17, fontWeight: '600', color: t.label },
+    headerTitle: { fontFamily: font.heavy, fontSize: 17, color: t.label },
     search: {
       flexDirection: 'row',
       alignItems: 'center',
       gap: 8,
       marginHorizontal: 16,
-      marginBottom: 8,
-      paddingHorizontal: 12,
-      height: 44,
-      borderRadius: 12,
-      backgroundColor: t.fill,
+      marginBottom: 12,
+      paddingHorizontal: 14,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: t.card,
+      ...cardShadow(t),
     },
-    searchInput: { flex: 1, fontSize: 17, color: t.label },
-    list: { paddingHorizontal: 16, paddingBottom: 40 },
-    row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 8 },
+    searchInput: { flex: 1, fontFamily: font.semibold, fontSize: 16.5, color: t.label },
+    list: { marginHorizontal: 16, paddingBottom: 4 },
+    listCard: { backgroundColor: t.card, borderRadius: 22, ...cardShadow(t) },
+    footer: { marginBottom: 40 },
+    row: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      paddingHorizontal: 14,
+      paddingVertical: 10,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: t.separator,
+    },
     pressed: { opacity: 0.6 },
     avatar: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-    avatarText: { color: '#FFFFFF', fontSize: 14, fontWeight: '600' },
-    name: { flex: 1, fontSize: 17, color: t.label },
-    empty: { fontSize: 15, lineHeight: 20, color: t.secondary, textAlign: 'center', marginTop: 24 },
-    error: { fontSize: 15, color: t.danger, paddingVertical: 8 },
+    name: { flex: 1, fontFamily: font.bold, fontSize: 16.5, color: t.label },
+    check: {
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: t.tint,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    uncheck: { width: 28, height: 28, borderRadius: 14, borderWidth: 2, borderColor: t.separator },
+    empty: {
+      fontFamily: font.semibold,
+      fontSize: 15,
+      lineHeight: 20,
+      color: t.secondary,
+      textAlign: 'center',
+      marginTop: 24,
+    },
+    footnote: { fontFamily: font.semibold, fontSize: 13.5, color: t.secondary, paddingHorizontal: 10, paddingTop: 12 },
+    error: { fontFamily: font.semibold, fontSize: 15, color: t.danger, padding: 14 },
   })
 }
