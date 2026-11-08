@@ -639,14 +639,22 @@ export default function TimelineScreen() {
       </View>
     )
 
+  // The first load after launch: just the logo, centred on the whole screen.
+  // It's kept outside the SafeAreaView on purpose — that view gets its top
+  // inset a frame after it first lays out, which nudged a logo centred
+  // inside it down by half the status-bar height.
+  if (loading && !booted) {
+    return (
+      <View style={[s.safe, s.launch]} accessibilityLabel="Loading your timeline">
+        <Image source={require('../../../assets/icon.png')} style={s.launchLogo} />
+      </View>
+    )
+  }
+
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.body}>
-        {loading && !booted ? (
-          <View style={s.launch} accessibilityLabel="Loading your timeline">
-            <Image source={require('../../../assets/icon.png')} style={s.launchLogo} />
-          </View>
-        ) : loading ? (
+        {loading ? (
           <>
             {header}
             {skeleton}
@@ -932,9 +940,7 @@ function makeStyles(t: Theme) {
       top: 6,
     },
 
-    // Centred on the whole screen (not just below the safe-area top), so it
-    // sits where the eye already is coming off the splash.
-    launch: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+    launch: { alignItems: 'center', justifyContent: 'center' },
     launchLogo: { width: 96, height: 96, borderRadius: 22 },
     skel: { paddingLeft: CONTENT_X, paddingRight: 18, paddingTop: 14, gap: 16 },
     skelCard: {
