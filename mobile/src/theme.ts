@@ -137,18 +137,23 @@ export function useTheme(): Theme {
   return useColorScheme() === 'dark' ? dark : light
 }
 
-// Font families, loaded in app/_layout.tsx. Fraunces for headings, Nunito for
-// everything else; system UI (tab bar, alerts, action sheets) keeps SF Pro.
-// Each weight is its own family, so never combine these with `fontWeight`.
+// Font families, loaded in app/_layout.tsx. One typeface, Lato, for
+// everything; hierarchy comes from size, weight and colour. System UI (tab
+// bar, alerts, action sheets) keeps SF Pro. Each weight is its own family, so
+// never combine these with `fontWeight`. Lato has no 500/600/800, so the roles
+// share two weights: Bold for headlines, labels and buttons (headlines stand
+// out by size), Regular for body and secondary text. The role names (`serif`,
+// `heavy`…) date from the old Fraunces + Nunito pairing; they're kept so a
+// later change to the type only touches this map.
 export const font = {
-  serif: 'Fraunces_600SemiBold',
-  serifMedium: 'Fraunces_500Medium',
-  serifItalic: 'Fraunces_500Medium_Italic',
-  body: 'Nunito_400Regular',
-  bodyItalic: 'Nunito_400Regular_Italic',
-  semibold: 'Nunito_600SemiBold',
-  bold: 'Nunito_700Bold',
-  heavy: 'Nunito_800ExtraBold',
+  serif: 'Lato_700Bold',
+  serifMedium: 'Lato_700Bold',
+  serifItalic: 'Lato_400Regular_Italic',
+  body: 'Lato_400Regular',
+  bodyItalic: 'Lato_400Regular_Italic',
+  semibold: 'Lato_400Regular',
+  bold: 'Lato_700Bold',
+  heavy: 'Lato_700Bold',
 }
 
 // Cards lift off the page with a soft shadow in light mode; in dark mode a

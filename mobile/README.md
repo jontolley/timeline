@@ -28,7 +28,7 @@ mobile/
 │   ├── components/ui.tsx     # Buttons, RowIcon, Avatar, Waveform, Skeleton, EmptyState
 │   ├── lib/format.ts         # UTC date / place / media helpers shared by the screens
 │   ├── store/filters.ts      # Shared Timeline + Search filters
-│   ├── theme.ts              # Harbor palette tokens, fonts (Fraunces + Nunito), seasons
+│   ├── theme.ts              # Harbor palette tokens, fonts (Lato), seasons
 │   ├── store/auth.ts         # Zustand auth store + SecureStore token
 │   └── api/                  # Ported from frontend/src/api/*
 │       ├── client.ts         # fetch wrapper w/ Bearer + 401 handling
@@ -139,7 +139,7 @@ App Store note: guideline 4.8 expects Sign in with Apple alongside a third-party
 - **Dates are UTC calendar days.** The form holds UTC-midnight `Date`s; "today" is built from the *local* calendar day, and the date picker renders with `timeZoneName="UTC"`. A bare `new Date()` or a local-time picker shifts the day by one in US time zones.
 - **Thread colors are palette keys** (`rose`, `cyan`, …), not CSS colors — always resolve them with `paletteColor()` from `theme.ts` (mirror of `frontend/src/utils/colors.js`).
 - **No photo-library permission prompt.** `launchImageLibraryAsync` uses the out-of-process system picker, which needs no permission; don't add `requestMediaLibraryPermissionsAsync` back.
-- **Fonts are one family per weight.** Fraunces (headings) and Nunito (UI) load from `@expo-google-fonts/*` in the root layout, which holds the splash until they're ready. Use the `font.*` names from `theme.ts` and never add `fontWeight` — iOS would synthesize a fake bold. System UI (tab bar, alerts, action sheets) keeps SF Pro.
+- **Fonts are one family per weight.** One typeface, Lato (Regular, Italic, Bold), loads from `@expo-google-fonts/lato` in the root layout, which holds the splash until it's ready. Hierarchy comes from size, weight and colour: headlines, labels and buttons are Bold, body and secondary text Regular. Lato has no 500/600/800, so several `font.*` roles share a weight; the role names (`serif`, `heavy`…) are left over from the old Fraunces + Nunito pairing. Use the `font.*` names from `theme.ts` and never add `fontWeight` — iOS would synthesize a fake bold. System UI (tab bar, alerts, action sheets) keeps SF Pro.
 - **Light/dark is a token swap, set by one writer.** Every screen styles from `useTheme()` (`src/theme.ts`, `light` / `dark` palettes) via a `makeStyles(t)` + `useMemo` pair — never hardcode hex. The Account sheet's System / Light / Dark picker (`src/store/appearance.ts`) is the only caller of `Appearance.setColorScheme`, which overrides the native trait so the tab bar, date picker, alerts and `useColorScheme()` all follow; the choice persists across launches. `userInterfaceStyle` is `automatic`, so changing it again needs a native rebuild (`npx expo prebuild -p ios` then `npx expo run:ios`).
 - **Liquid Glass controls** (`GlassButton` in `src/components/ui.tsx`) use `expo-glass-effect` and fall back to a translucent fill when `isLiquidGlassAvailable()` is false (pre-iOS 26).
 - The token is the only persisted auth state; there's no refresh endpoint, so after 30 days the user re-enters a code. Add silent re-auth later if desired.

@@ -12,8 +12,7 @@
     "doctor": "expo-doctor"
   },
   "dependencies": {
-    "@expo-google-fonts/fraunces": "^0.4.1",
-    "@expo-google-fonts/nunito": "^0.4.2",
+    "@expo-google-fonts/lato": "^0.4.1",
     "@react-native-community/datetimepicker": "9.2.1",
     "expo": "~58.0.22",
     "expo-audio": "~58.0.11",

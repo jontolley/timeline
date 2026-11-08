@@ -126,7 +126,7 @@ export default function Markdown({
 }
 
 const styles = StyleSheet.create({
-  // Each Nunito weight is its own family; fontWeight would fall back to SF.
+  // Each Lato weight is its own family; fontWeight would fall back to SF.
   bold: { fontFamily: font.heavy },
   italic: { fontFamily: font.bodyItalic },
   item: { flexDirection: 'row' },
