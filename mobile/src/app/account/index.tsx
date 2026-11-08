@@ -1,14 +1,17 @@
-import { useMemo } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import Constants from 'expo-constants'
-import { useRouter } from 'expo-router'
+import { useFocusEffect, useRouter } from 'expo-router'
+import { listPeople } from '@/api/people'
+import { listThreads } from '@/api/threads'
 import { Avatar, Icon, RowIcon, TintButton } from '@/components/ui'
 import { useAppearanceStore, type AppearancePref } from '@/store/appearance'
 import { useAuthStore } from '@/store/auth'
 import { cardShadow, dark, font, light, useTheme, type Theme } from '@/theme'
 
 // Account sheet, opened from the person button on the Timeline: who's signed
-// in, the System / Light / Dark appearance picker, links, and Sign Out (kept as
+// in, Threads and People (pushed inside the sheet, see account/_layout.tsx),
+// the System / Light / Dark appearance picker, links, and Sign Out (kept as
 // its own card at the bottom so it's hard to hit by accident).
 
 const MODES: { pref: AppearancePref; label: string }[] = [
@@ -49,6 +52,21 @@ export default function AccountScreen() {
   const email = user?.email ?? ''
   const version = Constants.expoConfig?.version ?? ''
 
+  // Counts beside Threads / People, refreshed when the sheet comes back to
+  // this screen after an edit.
+  const [counts, setCounts] = useState<{ threads?: number; people?: number }>({})
+  useFocusEffect(
+    useCallback(() => {
+      let live = true
+      void Promise.all([listThreads().catch(() => null), listPeople().catch(() => null)]).then(([th, pp]) => {
+        if (live) setCounts({ threads: th?.length, people: pp?.length })
+      })
+      return () => {
+        live = false
+      }
+    }, []),
+  )
+
   const confirmSignOut = () => {
     Alert.alert('Sign out of Hindsite?', 'Your moments stay safe. You can sign back in with your email.', [
       { text: 'Cancel', style: 'cancel' },
@@ -74,6 +92,30 @@ export default function AccountScreen() {
             </Text>
             {user?.role === 'admin' ? <Text style={styles.sub}>Admin</Text> : null}
           </View>
+        </View>
+
+        <View style={styles.card}>
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            onPress={() => router.push('/account/threads')}
+            accessibilityRole="button"
+          >
+            <RowIcon icon="line.3.horizontal" tone="primary" />
+            <Text style={styles.rowLabel}>Threads</Text>
+            {counts.threads != null ? <Text style={styles.rowValue}>{counts.threads}</Text> : null}
+            <Icon name="chevron.right" size={14} color={t.secondary} weight="bold" />
+          </Pressable>
+          <View style={styles.separator} />
+          <Pressable
+            style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+            onPress={() => router.push('/account/people')}
+            accessibilityRole="button"
+          >
+            <RowIcon icon="person.2.fill" tone="second" />
+            <Text style={styles.rowLabel}>People</Text>
+            {counts.people != null ? <Text style={styles.rowValue}>{counts.people}</Text> : null}
+            <Icon name="chevron.right" size={14} color={t.secondary} weight="bold" />
+          </Pressable>
         </View>
 
         <View>

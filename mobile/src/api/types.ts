@@ -50,6 +50,14 @@ export type Thread = {
   visibility: 'private' | 'shared'
   subscriber_count?: number
   subscription?: { _id: string; visible: boolean }
+  owner_email?: string // set on threads shared with you
+}
+
+export type Subscriber = {
+  _id: string
+  subscriber_user_id: string
+  subscriber_email: string
+  visible: boolean
 }
 
 export type Person = {

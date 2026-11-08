@@ -1,5 +1,5 @@
 import { httpJson } from './client'
-import type { Thread } from './types'
+import type { Subscriber, Thread } from './types'
 
 export function listThreads(): Promise<Thread[]> {
   return httpJson<Thread[]>('/threads')
@@ -33,8 +33,8 @@ export function inviteToThread(threadId: string, email: string): Promise<unknown
   })
 }
 
-export function listSubscribers(threadId: string): Promise<unknown> {
-  return httpJson(`/threads/${threadId}/subscribers`)
+export function listSubscribers(threadId: string): Promise<Subscriber[]> {
+  return httpJson<Subscriber[]>(`/threads/${threadId}/subscribers`)
 }
 
 export function revokeSubscriber(threadId: string, subscriberUserId: string): Promise<unknown> {
