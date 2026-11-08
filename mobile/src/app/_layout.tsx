@@ -62,9 +62,10 @@ export default function RootLayout() {
     if (status !== 'loading' && fontsReady) SplashScreen.hide()
   }, [status, fontsReady])
 
-  // A cold launch from the share sheet lands on the Timeline (the gate hid New
-  // Moment while init() ran); open it now that we're signed in. Wait until the
-  // gate has moved off /login — pushing earlier gets reset by its redirect.
+  // A cold launch from the share sheet can land on the Timeline instead of New
+  // Moment (the launch URL is resolved before we're signed in); open it now
+  // that we are. Wait until the gate is off /login — pushing earlier gets
+  // reset by its redirect. If it did land on New Moment, this just clears the flag.
   useEffect(() => {
     if (authed && pathname !== '/login' && takeShareLaunch() && pathname !== '/event/new') {
       router.push('/event/new?shared=1')
@@ -77,7 +78,13 @@ export default function RootLayout() {
     void SystemUI.setBackgroundColorAsync(t.bg)
   }, [t.bg])
 
-  if (!fontsReady) return null
+  // Don't mount the navigator until init() knows whether we're signed in.
+  // While status is 'loading' the guards below would leave /login as the only
+  // route, so it would mount under the splash and its autoFocus would raise
+  // the keyboard — a window above the splash — and then the Timeline would
+  // slide in over it once init() finished. Mounting late, the first screen is
+  // already the right one.
+  if (!fontsReady || status === 'loading') return null
 
   return (
     <SafeAreaProvider>
