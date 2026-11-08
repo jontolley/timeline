@@ -15,11 +15,13 @@ import { AppleMaps } from 'expo-maps'
 import { reverseGeocode, searchPlaces } from '../api/geocode'
 import { looksLikeMapLink, resolvePlaceLink } from '../api/places'
 import type { LocationDetail } from '../api/types'
+import { lastKnownSpot } from '../lib/currentPlace'
 import { FillButton, Icon, RowIcon, TintButton } from '@/components/ui'
 import { cardShadow, font, useTheme, type Theme } from '@/theme'
 
 // Full-screen place picker for the event form, the native take on the web
-// LocationPicker: search places (Nominatim, debounced like the web), paste a
+// LocationPicker: search places (Apple Maps search near the moment's place or
+// the phone, falling back to Nominatim; debounced like the web), paste a
 // Google / Apple Maps link (resolved by the backend), or tap the map to drop a
 // pin (reverse-geocoded). The name stays editable, so a pin can be called
 // "Grandma's house", and a name with no pin is still a valid location.
@@ -53,6 +55,10 @@ export default function LocationPicker({
   const [name, setName] = useState(initial?.name || initial?.address || '')
   const [naming, setNaming] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Where search results should cluster: the moment's place when it has one
+  // (an old trip's searches stay local to it), else where the phone is.
+  const [phoneSpot, setPhoneSpot] = useState<{ lat: number; lng: number } | null>(null)
+  const near = hasCoords(place) ? { lat: place.lat, lng: place.lng } : phoneSpot
 
   // Each open starts from the form's current location.
   useEffect(() => {
@@ -62,6 +68,7 @@ export default function LocationPicker({
     setError(null)
     setPlace(initial)
     setName(initial?.name || initial?.address || '')
+    void lastKnownSpot().then(setPhoneSpot)
   }, [visible]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Debounced search; a pasted map link resolves to its place instead. The
@@ -82,7 +89,7 @@ export default function LocationPicker({
           if (!stale) choose(resolved)
           return
         }
-        const hits = await searchPlaces(q)
+        const hits = await searchPlaces(q, near)
         if (!stale) setResults(hits)
       } catch (e) {
         if (!stale) setError(e instanceof Error ? e.message : "Couldn't search for that place.")

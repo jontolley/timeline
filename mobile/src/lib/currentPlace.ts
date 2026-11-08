@@ -33,3 +33,16 @@ export async function currentPlace(): Promise<LocationDetail | null> {
     return null
   }
 }
+
+// The phone's last known position, for centring place search. Never prompts:
+// null unless location permission was already granted.
+export async function lastKnownSpot(): Promise<{ lat: number; lng: number } | null> {
+  try {
+    const perm = await Location.getForegroundPermissionsAsync()
+    if (perm.status !== Location.PermissionStatus.GRANTED) return null
+    const pos = await Location.getLastKnownPositionAsync()
+    return pos ? { lat: pos.coords.latitude, lng: pos.coords.longitude } : null
+  } catch {
+    return null
+  }
+}
