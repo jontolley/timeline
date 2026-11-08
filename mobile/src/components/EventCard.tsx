@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
-import { Linking, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native'
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native'
 import { Image } from 'expo-image'
 import { AppleMaps } from 'expo-maps'
-import type { TimelineEvent } from '@/api/types'
+import type { MediaRef, TimelineEvent } from '@/api/types'
 import {
   asLoc,
   cardDay,
@@ -17,6 +17,7 @@ import {
   thumbSource,
 } from '@/lib/format'
 import { AvatarStack, Icon, Waveform } from '@/components/ui'
+import { useRecordingPlayer } from '@/lib/useRecordingPlayer'
 import { cardShadow, font, paletteColor, useTheme, type Theme } from '@/theme'
 
 // The timeline's "mat" cards — one look per kind of moment (photos, video, a
@@ -117,6 +118,34 @@ export function EventThumb({ event, size = 54, radius = 14 }: { event: TimelineE
   )
 }
 
+// An audio card's player: plays the recording right here, filling the
+// waveform as it goes. Its own component so the player hook only exists on
+// audio cards.
+function AudioLead({ media, s, t }: { media: MediaRef; s: Styles; t: Theme }) {
+  const rec = useRecordingPlayer(media.url, media.duration_seconds)
+  const shown = fmtDuration(rec.started ? rec.position : rec.duration || media.duration_seconds)
+  return (
+    <View style={s.player}>
+      <Pressable
+        style={({ pressed }) => [s.playBtn, rec.playing && { paddingLeft: 0 }, pressed && s.pressed]}
+        onPress={() => void rec.toggle()}
+        disabled={!media.url}
+        accessibilityRole="button"
+        accessibilityLabel={rec.playing ? 'Pause recording' : 'Play recording'}
+        hitSlop={6}
+      >
+        {rec.loading ? (
+          <ActivityIndicator color={t.dark ? t.bg : '#FFFFFF'} />
+        ) : (
+          <Icon name={rec.playing ? 'pause.fill' : 'play.fill'} size={21} color={t.dark ? t.bg : '#FFFFFF'} />
+        )}
+      </Pressable>
+      <Waveform seed={seedOf(media.key)} bars={30} progress={rec.progress} on={t.audio} off={t.waveOff} />
+      {shown ? <Text style={s.dur}>{shown}</Text> : null}
+    </View>
+  )
+}
+
 export function EventCard({
   event,
   names,
@@ -174,21 +203,7 @@ export function EventCard({
       </View>
     )
   } else if (kind === 'audio' && audio) {
-    const d = fmtDuration(audio.duration_seconds)
-    lead = (
-      <View style={s.player}>
-        <Pressable
-          style={({ pressed }) => [s.playBtn, pressed && s.pressed]}
-          onPress={() => audio.url && void Linking.openURL(audio.url)}
-          accessibilityLabel="Play recording"
-          hitSlop={6}
-        >
-          <Icon name="play.fill" size={21} color={t.dark ? t.bg : '#FFFFFF'} />
-        </Pressable>
-        <Waveform seed={seedOf(audio.key)} bars={30} on={t.audio} off={t.waveOff} />
-        {d ? <Text style={s.dur}>{d}</Text> : null}
-      </View>
-    )
+    lead = <AudioLead media={audio} s={s} t={t} />
   } else if (kind === 'doc' && pdf) {
     lead = (
       <View style={[s.player, { backgroundColor: t.dangerSoft }]}>
@@ -304,6 +319,8 @@ export function CompactRow({
 const styles = StyleSheet.create({
   center: { alignItems: 'center', justifyContent: 'center' },
 })
+
+type Styles = ReturnType<typeof makeStyles>
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({

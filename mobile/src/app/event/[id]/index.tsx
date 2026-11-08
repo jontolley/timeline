@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type ComponentRef, type ReactNode } from 'react'
 import {
+  ActivityIndicator,
   Linking,
   Pressable,
   ScrollView,
@@ -22,6 +23,7 @@ import { MapThumb, MediaBadge } from '@/components/EventCard'
 import PhotoViewer from '@/components/PhotoViewer'
 import { Avatar, Button, EmptyState, GlassButton, Icon, RowIcon, Skeleton, Waveform } from '@/components/ui'
 import { asLoc, fmtDuration, seedOf, type Loc } from '@/lib/format'
+import { useRecordingPlayer } from '@/lib/useRecordingPlayer'
 import { cardShadow, font, paletteColor, useTheme, type Theme } from '@/theme'
 
 // Read-only event detail. Tapping a timeline card lands here (push/card); the
@@ -369,33 +371,8 @@ export default function EventDetailScreen() {
     })
   }
 
-  // Each recording gets a big player block above the description. Playback
-  // opens the recording in the system player, as before.
-  const listen = audio.map((m) => {
-    const d = fmtDuration(m.duration_seconds)
-    return (
-      <View key={m.key} style={styles.listen}>
-        <View style={styles.listenRow}>
-          <Pressable
-            style={({ pressed }) => [styles.listenBtn, pressed && styles.pressed]}
-            onPress={() => openExternal(m.url)}
-            accessibilityRole="button"
-            accessibilityLabel="Play recording"
-          >
-            <Icon name="play.fill" size={28} color={t.dark ? t.bg : '#FFFFFF'} />
-          </Pressable>
-          <Waveform seed={seedOf(m.key)} bars={30} height={44} on={t.audio} off={t.waveOff} />
-        </View>
-        <View style={styles.listenCap}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-            <Icon name="waveform" size={14} color={t.secondary} />
-            <Text style={styles.capText}>Audio recording{d ? ` · ${d}` : ''}</Text>
-          </View>
-          <Text style={styles.capText}>Opens in your audio player</Text>
-        </View>
-      </View>
-    )
-  })
+  // Each recording gets a big player block above the description.
+  const listen = audio.map((m) => <ListenBlock key={m.key} media={m} styles={styles} t={t} />)
 
   const onPhoto = hero === 'photo'
   const topBar = (
@@ -553,6 +530,47 @@ export default function EventDetailScreen() {
     </View>
   )
 }
+
+// A recording's big player: plays in the app, filling the waveform as it
+// goes, with the elapsed time beside the length once it's started.
+function ListenBlock({ media, styles, t }: { media: MediaRef; styles: Styles; t: Theme }) {
+  const rec = useRecordingPlayer(media.url, media.duration_seconds)
+  const total = fmtDuration(rec.duration || media.duration_seconds)
+  const onDark = t.dark ? t.bg : '#FFFFFF'
+  return (
+    <View style={styles.listen}>
+      <View style={styles.listenRow}>
+        <Pressable
+          style={({ pressed }) => [styles.listenBtn, rec.playing && { paddingLeft: 0 }, pressed && styles.pressed]}
+          onPress={() => void rec.toggle()}
+          disabled={!media.url}
+          accessibilityRole="button"
+          accessibilityLabel={rec.playing ? 'Pause recording' : 'Play recording'}
+        >
+          {rec.loading ? (
+            <ActivityIndicator color={onDark} />
+          ) : (
+            <Icon name={rec.playing ? 'pause.fill' : 'play.fill'} size={28} color={onDark} />
+          )}
+        </Pressable>
+        <Waveform seed={seedOf(media.key)} bars={30} height={44} progress={rec.progress} on={t.audio} off={t.waveOff} />
+      </View>
+      <View style={styles.listenCap}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+          <Icon name="waveform" size={14} color={t.secondary} />
+          <Text style={styles.capText}>Audio recording</Text>
+        </View>
+        {total ? (
+          <Text style={[styles.capText, { fontVariant: ['tabular-nums'] }]}>
+            {rec.started ? `${fmtDuration(rec.position)} / ${total}` : total}
+          </Text>
+        ) : null}
+      </View>
+    </View>
+  )
+}
+
+type Styles = ReturnType<typeof makeStyles>
 
 function makeStyles(t: Theme) {
   return StyleSheet.create({
