@@ -176,6 +176,16 @@ export default function TimelineScreen() {
   const [refreshing, setRefreshing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
+  // A jumped-to window starts mid-timeline, so there are newer moments above
+  // it to load as you scroll up. `anchorNewer` turns on the list's
+  // keep-my-place behaviour; it's only switched on once a jump's scroll has
+  // settled, so swapping in a whole new window can't drag the offset around.
+  const [hasNewer, setHasNewer] = useState(false)
+  const [anchorNewer, setAnchorNewer] = useState(false)
+  const loadingNewer = useRef(false)
+  // Bumped whenever the window is replaced (first page or a jump), so a page
+  // that was in flight for the old window is dropped instead of spliced in.
+  const windowGen = useRef(0)
   const [error, setError] = useState<string | null>(null)
 
   // First page of each year's window, so going back to a year is instant.
@@ -201,8 +211,12 @@ export default function TimelineScreen() {
       yearCache.current.clear()
       yearFetches.current.clear()
       if (sortedYears[0]) yearCache.current.set(sortedYears[0].year, { page, at: Date.now() })
+      windowGen.current += 1
+      jumpToken.current += 1
       setEvents(page)
       setHasMore(page.length === PAGE_SIZE)
+      setHasNewer(false)
+      setAnchorNewer(false)
       setYears(sortedYears)
       setThreads(thr)
       setPeople(ppl)
@@ -239,6 +253,7 @@ export default function TimelineScreen() {
   const loadMore = useCallback(async () => {
     if (loadingMore || !hasMore || events.length === 0) return
     setLoadingMore(true)
+    const gen = windowGen.current
     try {
       const oldest = events[events.length - 1]
       // Bidirectional cursor: before_date + before_id returns older events
@@ -250,6 +265,7 @@ export default function TimelineScreen() {
         before_date: sortDateOf(oldest, sortBy),
         before_id: oldest._id,
       })
+      if (gen !== windowGen.current) return
       setEvents((prev) => [...prev, ...page])
       setHasMore(page.length === PAGE_SIZE)
     } catch {
@@ -258,6 +274,44 @@ export default function TimelineScreen() {
       setLoadingMore(false)
     }
   }, [events, hasMore, loadingMore, params, sortBy])
+
+  // Scrolling up in a jumped-to window: fetch the moments just newer than the
+  // top one and put them above it. The backend's after_date + after_id cursor
+  // returns the page closest to the cursor, newest first. Once a short page
+  // comes back the window reaches today, so it becomes the ordinary timeline.
+  const loadNewer = useCallback(async () => {
+    if (loadingNewer.current || !hasNewer || !anchorNewer || events.length === 0) return
+    loadingNewer.current = true
+    const gen = windowGen.current
+    try {
+      const newest = events[0]
+      const page = await listEvents({
+        ...params,
+        limit: PAGE_SIZE,
+        after_date: sortDateOf(newest, sortBy),
+        after_id: newest._id,
+      })
+      if (gen !== windowGen.current) return
+      setEvents((prev) => [...page, ...prev])
+      if (page.length < PAGE_SIZE) {
+        setHasNewer(false)
+        setJumped(false)
+      }
+    } catch {
+      // Keep what we have; scrolling up again retries.
+    } finally {
+      loadingNewer.current = false
+    }
+  }, [anchorNewer, events, hasNewer, params, sortBy])
+
+  // A jump lands on the top of its window, already close to the newer edge,
+  // so fetch one newer page straight away; after that, onStartReached loads
+  // more as you scroll up.
+  useEffect(() => {
+    if (anchorNewer && hasNewer) void loadNewer()
+    // Only when the anchor switches on, not on every loadNewer identity change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [anchorNewer])
 
   const listRef = useRef<FlatList<Row>>(null)
   const scrollY = useRef(0)
@@ -323,8 +377,11 @@ export default function TimelineScreen() {
       }
       if (token !== jumpToken.current) return
       const newest = years[0] && year === years[0].year
+      windowGen.current += 1
       setEvents(page)
       setHasMore(page.length === PAGE_SIZE)
+      setHasNewer(!newest && page.length > 0)
+      setAnchorNewer(false)
       setViewYear(year)
       setJumped(!newest)
       // Start the new window at its top (the year row pinned), not mid-way
@@ -336,6 +393,15 @@ export default function TimelineScreen() {
         offset: newest ? 0 : headerH.current,
         animated: false,
       })
+      // Two frames: one for the new window to mount, one for the scroll to
+      // land. Only then may prepending newer pages hold the position.
+      if (!newest) {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (token === jumpToken.current) setAnchorNewer(true)
+          }),
+        )
+      }
     },
     [fetchYear, years],
   )
@@ -617,6 +683,12 @@ export default function TimelineScreen() {
             refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
             onEndReached={loadMore}
             onEndReachedThreshold={0.5}
+            onStartReached={hasNewer ? loadNewer : undefined}
+            onStartReachedThreshold={1}
+            // Keep the row you're reading still while newer moments are added
+            // above it. Index 0 is the header, which never moves, so anchor on
+            // the first row after it.
+            maintainVisibleContentPosition={anchorNewer ? { minIndexForVisible: 1 } : undefined}
             ListEmptyComponent={empty}
             ListFooterComponent={
               loadingMore ? <ActivityIndicator color={t.secondary} style={{ marginVertical: 20 }} /> : undefined
