@@ -191,6 +191,9 @@ export default function EventForm({
   const sharedTaken = useRef(false)
   const linkTaken = useRef(false)
   const hereTried = useRef(false)
+  // Set once a photo or video has filled in the date or place, so adding more
+  // media later doesn't keep moving them.
+  const mediaPrefilled = useRef(false)
 
   const [threads, setThreads] = useState<Thread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -274,8 +277,7 @@ export default function EventForm({
     addAssets(sharedAssets)
     // A shared map link names the place better than a reverse-geocoded pin.
     // A PDF carries no date or place to read.
-    const visual = sharedAssets.find((a) => !isPdfAsset(a))
-    if (visual) void prefillFromMedia(visual, !sharedLink)
+    void prefillFromFirst(sharedAssets)
   }, [sharedAssets, isEdit])
 
   useEffect(() => {
@@ -318,7 +320,24 @@ export default function EventForm({
     }
   }
 
-  async function prefillFromMedia(asset: PickedAsset, useLocation: boolean) {
+  // New moments only: fill the date and place from the first photo or video
+  // (in the order given) that carries them, like the web's "Event from photo
+  // or video". Screenshots and PDFs have nothing to read, so try the next.
+  // A shared Maps link names the place better than a reverse-geocoded pin.
+  async function prefillFromFirst(assets: PickedAsset[]) {
+    if (isEdit || mediaPrefilled.current) return
+    const visual = assets.filter((a) => !isPdfAsset(a) && !(a.mimeType || '').startsWith('audio/')).slice(0, 3)
+    for (const asset of visual) {
+      if (mediaPrefilled.current) return
+      if (await prefillFromMedia(asset, !sharedLink)) {
+        mediaPrefilled.current = true
+        return
+      }
+    }
+  }
+
+  // True when the asset had a date or place to read.
+  async function prefillFromMedia(asset: PickedAsset, useLocation: boolean): Promise<boolean> {
     try {
       const isVideo = isVideoAsset(asset)
       const exif = isVideo ? await extractVideoMetadata(asset.uri) : await extractExif(asset)
@@ -328,16 +347,20 @@ export default function EventForm({
         if (exif.time) setTimeOn(true)
         setPrefillNote(`Date filled in from ${from}.`)
       }
-      if (!useLocation || exif.lat == null || exif.lng == null || touched.current.location) return
+      const { lat, lng } = exif
+      const hasPlace = lat != null && lng != null
+      if (!useLocation || !hasPlace || touched.current.location) return !!exif.date || hasPlace
       setFindingPlace(true)
-      const place = await reverseGeocode(exif.lat, exif.lng).catch(() => null)
-      if (touched.current.location) return
-      setLocation(place ?? { lat: exif.lat, lng: exif.lng })
+      const place = await reverseGeocode(lat, lng).catch(() => null)
+      if (touched.current.location) return true
+      setLocation(place ?? { lat, lng })
       setPrefillNote(
         exif.date && !touched.current.date ? `Date and place filled in from ${from}.` : `Place filled in from ${from}.`,
       )
+      return true
     } catch {
       // No metadata (or a screenshot) — the form just keeps today's date.
+      return false
     } finally {
       setFindingPlace(false)
     }
@@ -357,15 +380,15 @@ export default function EventForm({
       preferredAssetRepresentationMode: ImagePicker.UIImagePickerPreferredAssetRepresentationMode.Current,
     })
     if (result.canceled) return
-    addAssets(
-      result.assets.map((asset) => ({
-        uri: asset.uri,
-        width: asset.width,
-        height: asset.height,
-        mimeType: asset.mimeType,
-        fileName: asset.fileName,
-      })),
-    )
+    const picked = result.assets.map((asset) => ({
+      uri: asset.uri,
+      width: asset.width,
+      height: asset.height,
+      mimeType: asset.mimeType,
+      fileName: asset.fileName,
+    }))
+    addAssets(picked)
+    void prefillFromFirst(picked)
   }
 
   // "Add a document": scan pages, combine photos into one PDF, or pick PDFs
