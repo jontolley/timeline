@@ -4,6 +4,7 @@ import { getThumbnailAsync } from 'expo-video-thumbnails'
 import { httpJson, getAuthToken } from './client'
 import { API } from '../config'
 import type { MediaRef } from './types'
+import { pdfInfo, type DocumentFile } from '../../modules/hindsite-documents'
 
 // Native port of frontend/src/api/uploads.js. The web pipeline used an HTML
 // canvas to resize photos and render video/audio/pdf thumbnails; on native we
@@ -12,10 +13,11 @@ import type { MediaRef } from './types'
 // than fetch(blob) for large files).
 //
 // Photo upload has full parity (full + thumb). Videos upload the original
-// plus a first-frame poster (expo-video-thumbnails) as the thumb. Audio/pdf
-// still upload without a client-rendered thumbnail — generating those natively
-// (PDFKit / waveform) is a phase-2 task; see mobile/README.md. The backend
-// stores them fine without a thumb_key.
+// plus a first-frame poster (expo-video-thumbnails) as the thumb. PDFs upload
+// as-is with a page-1 render (PDFKit, modules/hindsite-documents) as the thumb
+// plus their page count. Audio still uploads without a thumbnail (a native
+// waveform render is a phase-2 task; see mobile/README.md) — the backend
+// stores it fine without a thumb_key.
 
 export const FULL_MAX_DIM = 2000
 const THUMB_MAX_DIM = 400
@@ -28,6 +30,9 @@ export type PickedAsset = {
   height?: number
   mimeType?: string
   fileName?: string | null
+  // A PDF built on the phone (scan / combined photos) already knows its page
+  // count and page-1 thumb; a picked or shared PDF is read on upload.
+  document?: DocumentFile
 }
 
 async function presignUpload(contentType: string): Promise<{ upload_url: string; key: string }> {
@@ -114,6 +119,10 @@ export function isVideoAsset(asset: PickedAsset): boolean {
   return contentTypeFor(asset).startsWith('video/')
 }
 
+export function isPdfAsset(asset: PickedAsset): boolean {
+  return contentTypeFor(asset) === 'application/pdf'
+}
+
 function kindFor(contentType: string): MediaRef['kind'] {
   if (contentType.startsWith('image/')) return 'photo'
   if (contentType.startsWith('video/')) return 'video'
@@ -147,6 +156,25 @@ async function uploadVideo(asset: PickedAsset): Promise<MediaRef> {
   }
 }
 
+// The PDF as-is, plus its page-1 render as the thumb (best-effort: a PDF
+// that can't be read still attaches, with the plain document tile).
+async function uploadPdf(asset: PickedAsset): Promise<MediaRef> {
+  const info = asset.document ?? (await pdfInfo(asset.uri).catch(() => null))
+  const thumbPromise = info?.thumbUri
+    ? putToR2(info.thumbUri, 'image/jpeg').catch(() => null)
+    : Promise.resolve(null)
+  const [key, thumbKey] = await Promise.all([putToR2(asset.uri, 'application/pdf'), thumbPromise])
+  return {
+    kind: 'pdf',
+    key,
+    thumb_key: thumbKey,
+    content_type: 'application/pdf',
+    width: thumbKey ? info?.thumbWidth : undefined,
+    height: thumbKey ? info?.thumbHeight : undefined,
+    page_count: info?.pageCount ?? null,
+  }
+}
+
 // Upload a non-photo file as-is (no client thumbnail). See module note.
 async function uploadFile(asset: PickedAsset): Promise<MediaRef> {
   const contentType = contentTypeFor(asset)
@@ -163,6 +191,7 @@ export async function uploadMedia(asset: PickedAsset): Promise<MediaRef> {
   const contentType = contentTypeFor(asset)
   if (contentType.startsWith('image/')) return uploadPhoto(asset)
   if (contentType.startsWith('video/')) return uploadVideo(asset)
+  if (contentType === 'application/pdf') return uploadPdf(asset)
   return uploadFile(asset)
 }
 

@@ -17,10 +17,19 @@ import { useRouter } from 'expo-router'
 import DateTimePicker from '@react-native-community/datetimepicker'
 import { Image } from 'expo-image'
 import * as ImagePicker from 'expo-image-picker'
+import * as DocumentPicker from 'expo-document-picker'
 import { attachMedia, createEvent, deleteEvent, getEvent, removeMedia, updateEvent } from '../api/events'
 import { listPeople } from '../api/people'
 import { listThreads } from '../api/threads'
-import { extractExif, isVideoAsset, uploadMedia, videoPoster, type PickedAsset } from '../api/uploads'
+import { extractExif, isPdfAsset, isVideoAsset, uploadMedia, videoPoster, type PickedAsset } from '../api/uploads'
+import {
+  canScanDocuments,
+  documentsAvailable,
+  imagesToPdf,
+  pdfInfo,
+  scanDocument,
+  type DocumentFile,
+} from '../../modules/hindsite-documents'
 import { reverseGeocode } from '../api/geocode'
 import { resolvePlaceLink } from '../api/places'
 import { extractVideoMetadata } from '../lib/videoMetadata'
@@ -63,8 +72,10 @@ type PendingMedia = {
   isVideo?: boolean
   // A voice note recorded in the form (drawn as a waveform tile).
   isAudio?: boolean
+  // A PDF: its page 1 once rendered, the document tile until then.
+  isPdf?: boolean
   durationSeconds?: number
-  // Tile image: the photo itself, or a video's first-frame poster.
+  // Tile image: the photo itself, a video's first-frame poster, or a PDF's page 1.
   previewUri?: string
 }
 
@@ -260,7 +271,9 @@ export default function EventForm({
     sharedTaken.current = true
     addAssets(sharedAssets)
     // A shared map link names the place better than a reverse-geocoded pin.
-    void prefillFromMedia(sharedAssets[0], !sharedLink)
+    // A PDF carries no date or place to read.
+    const visual = sharedAssets.find((a) => !isPdfAsset(a))
+    if (visual) void prefillFromMedia(visual, !sharedLink)
   }, [sharedAssets, isEdit])
 
   useEffect(() => {
@@ -334,6 +347,65 @@ export default function EventForm({
     )
   }
 
+  // "Add a document": scan pages, combine photos into one PDF, or pick PDFs
+  // from Files. Every route ends as a PDF in addAssets.
+  function addDocument() {
+    setError(null)
+    const choices: { label: string; run: () => void }[] = []
+    if (canScanDocuments()) choices.push({ label: 'Scan with camera', run: () => void buildDocument(scanDocument) })
+    choices.push({ label: 'Combine photos into a PDF', run: () => void combinePhotos() })
+    choices.push({ label: 'Choose a PDF from Files', run: () => void pickPdfs() })
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title: 'Add a document', options: [...choices.map((c) => c.label), 'Cancel'], cancelButtonIndex: choices.length },
+        (i) => choices[i]?.run(),
+      )
+    } else {
+      Alert.alert('Add a document', undefined, [
+        ...choices.map((c) => ({ text: c.label, onPress: c.run })),
+        { text: 'Cancel', style: 'cancel' as const },
+      ])
+    }
+  }
+
+  async function combinePhotos() {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      // Numbered picks: the order you tap them is the page order.
+      orderedSelection: true,
+      selectionLimit: 0,
+      quality: 1,
+    })
+    if (result.canceled || result.assets.length === 0) return
+    const uris = result.assets.map((a) => a.uri)
+    await buildDocument(() => imagesToPdf(uris))
+  }
+
+  // Run a PDF builder with a spinner tile standing in until it's ready.
+  async function buildDocument(build: () => Promise<DocumentFile | null>) {
+    const placeholder = `building-${Date.now()}`
+    setPending((prev) => [...prev, { localUri: placeholder, status: 'uploading', isPdf: true }])
+    try {
+      const doc = await build()
+      if (doc) addAssets([{ uri: doc.uri, mimeType: 'application/pdf', fileName: 'Document.pdf', document: doc }])
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Couldn't make that PDF.")
+    } finally {
+      setPending((prev) => prev.filter((m) => m.localUri !== placeholder))
+    }
+  }
+
+  async function pickPdfs() {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      multiple: true,
+      copyToCacheDirectory: true,
+    })
+    if (result.canceled) return
+    addAssets(result.assets.map((a) => ({ uri: a.uri, mimeType: 'application/pdf', fileName: a.name })))
+  }
+
   // Queue each photo / video / voice note and upload it; create mode holds the
   // refs until save, edit mode attaches each one to the event as soon as it
   // lands. `extra` adds fields the upload can't know (a recording's length).
@@ -342,6 +414,7 @@ export default function EventForm({
       const localUri = picked.uri
       const isVideo = isVideoAsset(picked)
       const isAudio = (picked.mimeType || '').startsWith('audio/')
+      const isPdf = isPdfAsset(picked)
       setPending((prev) => [
         ...prev,
         {
@@ -349,8 +422,9 @@ export default function EventForm({
           status: 'uploading',
           isVideo,
           isAudio,
+          isPdf,
           durationSeconds: extra?.duration_seconds ?? undefined,
-          previewUri: isVideo || isAudio ? undefined : localUri,
+          previewUri: isVideo || isAudio ? undefined : isPdf ? picked.document?.thumbUri : localUri,
         },
       ])
       if (isVideo) {
@@ -360,7 +434,23 @@ export default function EventForm({
           )
           .catch(() => {})
       }
-      uploadMedia(picked)
+      // A PDF from Files is read here (page count + page 1) so its tile shows
+      // the page while it uploads; one built on the phone already has both.
+      const prepared: Promise<PickedAsset> =
+        isPdf && !picked.document
+          ? pdfInfo(localUri)
+              .then((document) => {
+                if (document.thumbUri) {
+                  setPending((prev) =>
+                    prev.map((m) => (m.localUri === localUri ? { ...m, previewUri: document.thumbUri } : m)),
+                  )
+                }
+                return { ...picked, document }
+              })
+              .catch(() => picked)
+          : Promise.resolve(picked)
+      prepared
+        .then(uploadMedia)
         .then(async (uploaded) => {
           const ref: MediaRef = { ...uploaded, ...extra }
           if (isEdit && eventId) {
@@ -375,7 +465,7 @@ export default function EventForm({
         .catch((e) => {
           setPending((prev) => prev.map((m) => (m.localUri === localUri ? { ...m, status: 'error' } : m)))
           const why = e instanceof Error ? e.message : String(e)
-          setError(`Couldn't upload that ${isVideo ? 'video' : isAudio ? 'recording' : 'photo'}: ${why}`)
+          setError(`Couldn't upload that ${isVideo ? 'video' : isAudio ? 'recording' : isPdf ? 'document' : 'photo'}: ${why}`)
         })
     }
   }
@@ -839,10 +929,18 @@ export default function EventForm({
       </View>
     )
 
+  // On a PDF tile showing its first page, so it doesn't pass for a photo.
+  const docBadge = (
+    <View style={styles.docBadge} pointerEvents="none">
+      <Icon name="doc.text.fill" size={13} color="#FFFFFF" />
+    </View>
+  )
+
   const mediaStrip = (
     <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.photos}>
       {serverMedia.map((m) => {
-        const uri = m.kind === 'audio' || m.kind === 'pdf' ? null : thumbUriFor(m)
+        // A PDF shows its page-1 thumb when it has one, never the PDF itself.
+        const uri = m.kind === 'audio' ? null : m.kind === 'pdf' ? (m.thumb_url ?? null) : thumbUriFor(m)
         return (
           <View key={m.key} style={styles.tile}>
             {uri ? (
@@ -855,6 +953,7 @@ export default function EventForm({
                 <Icon name="play.fill" size={24} color="#FFFFFF" weight="regular" />
               </View>
             ) : null}
+            {m.kind === 'pdf' && uri ? docBadge : null}
             {!readOnly ? removeButton(() => detachServerMedia(m.key)) : null}
           </View>
         )
@@ -862,9 +961,11 @@ export default function EventForm({
       {pending.map((m) => (
         <View key={m.localUri} style={styles.tile}>
           {m.isAudio ? glyphTile('audio', m.durationSeconds, seedOf(m.localUri)) : null}
+          {m.isPdf && !m.previewUri ? glyphTile('pdf') : null}
           {m.previewUri ? (
             <Image source={{ uri: m.previewUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
           ) : null}
+          {m.isPdf && m.previewUri ? docBadge : null}
           {m.isVideo && m.status === 'done' ? (
             <View style={styles.tileCenter} pointerEvents="none">
               <Icon name="play.fill" size={24} color="#FFFFFF" weight="regular" />
@@ -900,6 +1001,16 @@ export default function EventForm({
             >
               <Icon name="mic.fill" size={22} color={t.audio} />
               <Text style={[styles.addTileText, { color: t.audio }]}>Voice</Text>
+            </Pressable>
+          ) : null}
+          {documentsAvailable ? (
+            <Pressable
+              style={({ pressed }) => [styles.tile, styles.addTile, styles.docTile, pressed && styles.pressed]}
+              onPress={addDocument}
+              accessibilityLabel="Add a document"
+            >
+              <Icon name="doc.text.fill" size={22} color={t.danger} />
+              <Text style={[styles.addTileText, { color: t.danger }]}>Document</Text>
             </Pressable>
           ) : null}
         </>
@@ -946,7 +1057,7 @@ export default function EventForm({
             <View>
               {mediaStrip}
               {isEdit && !readOnly ? (
-                <Text style={styles.footnote}>Photo, video and voice changes save right away.</Text>
+                <Text style={styles.footnote}>Media changes save right away.</Text>
               ) : null}
             </View>
           ) : !readOnly && !recording ? (
@@ -972,6 +1083,16 @@ export default function EventForm({
                 <Icon name="mic.fill" size={17} color={t.audio} />
                 <Text style={styles.voiceRowText}>Record a voice note</Text>
               </Pressable>
+              {documentsAvailable ? (
+                <Pressable
+                  style={({ pressed }) => [styles.voiceRow, styles.docRow, pressed && styles.pressed]}
+                  onPress={addDocument}
+                  accessibilityRole="button"
+                >
+                  <Icon name="doc.text.fill" size={17} color={t.danger} />
+                  <Text style={[styles.voiceRowText, { color: t.danger }]}>Add a document</Text>
+                </Pressable>
+              ) : null}
             </View>
           ) : null}
 
@@ -1123,6 +1244,19 @@ function makeStyles(t: Theme) {
       gap: 4,
     },
     voiceTile: { borderColor: t.audio + '66' },
+    docTile: { borderColor: t.danger + '66' },
+    docBadge: {
+      position: 'absolute',
+      left: 8,
+      bottom: 8,
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: 'center',
+      justifyContent: 'center',
+      backgroundColor: t.danger,
+    },
+    docRow: { backgroundColor: t.dangerSoft },
     addTileText: { fontFamily: font.heavy, fontSize: 13, color: t.tintText },
     tileCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
     tileDur: { fontFamily: font.heavy, fontSize: 12, color: t.audio },

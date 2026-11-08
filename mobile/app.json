@@ -35,7 +35,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Hindsite needs access to your photos so you can attach them to events.",
-          "cameraPermission": false,
+          "cameraPermission": "Hindsite uses the camera to scan documents for your moments.",
           "microphonePermission": "Hindsite uses the microphone to record voice notes for your moments."
         }
       ],
@@ -47,12 +47,7 @@
         {
           "ios": {
             "enabled": true,
-            "activationRule": {
-              "supportsImageWithMaxCount": 10,
-              "supportsMovieWithMaxCount": 10,
-              "supportsWebUrlWithMaxCount": 1,
-              "supportsText": true
-            }
+            "activationRule": "SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $a, ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.image\" OR ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.movie\" OR ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO \"com.adobe.pdf\" OR ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.url\" OR ANY $a.registeredTypeIdentifiers UTI-CONFORMS-TO \"public.plain-text\").@count >= 1).@count >= 1"
           }
         }
       ],

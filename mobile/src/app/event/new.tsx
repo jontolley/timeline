@@ -11,7 +11,7 @@ import { looksLikeMapLink } from '@/api/places'
 // `?shared=1` means we arrived from the iOS share sheet (see +native-intent.ts):
 // take what was shared once, hand it to the form, and clear it so it isn't
 // picked up again by the next New Moment.
-// - Photos / videos are attached. The extension copies each into the App
+// - Photos / videos / PDFs are attached. The extension copies each into the App
 //   Group container; move them into the app's own cache first — on a device
 //   the background upload session (run by a system daemon) fails to read
 //   files in the App Group container. Drop the moved files when this screen
@@ -50,9 +50,12 @@ export default function NewEventScreen() {
     taken.current = true
 
     // Only files the extension copied locally — a shared web URL can resolve
-    // to a remote image, which isn't ours to upload or delete.
+    // to a remote image, which isn't ours to upload or delete. Of other files,
+    // only PDFs (a moment can't hold a Word doc or a zip).
+    const isPdf = (p: (typeof resolvedSharedPayloads)[number]) =>
+      p.contentMimeType === 'application/pdf' || /\.pdf$/i.test(p.originalName ?? '')
     const media = resolvedSharedPayloads.filter(
-      (p) => (p.shareType === 'image' || p.shareType === 'video') && p.contentUri,
+      (p) => (p.shareType === 'image' || p.shareType === 'video' || (p.shareType === 'file' && isPdf(p))) && p.contentUri,
     )
     if (media.length > 0) {
       void Promise.all(
@@ -63,7 +66,8 @@ export default function NewEventScreen() {
           } catch {
             // Keep the App Group copy; the upload may still work from there.
           }
-          return { uri: file.uri, mimeType: p.contentMimeType ?? undefined, fileName: p.originalName }
+          const mimeType = isPdf(p) ? 'application/pdf' : (p.contentMimeType ?? undefined)
+          return { uri: file.uri, mimeType, fileName: p.originalName }
         }),
       ).then((assets) => {
         toDelete.current = assets.map((a) => a.uri)
