@@ -33,6 +33,7 @@ import {
 import { reverseGeocode } from '../api/geocode'
 import { resolvePlaceLink } from '../api/places'
 import { extractVideoMetadata } from '../lib/videoMetadata'
+import { currentPlace } from '../lib/currentPlace'
 import type { LocationDetail, MediaRef, Person, Thread, TimelineEvent } from '../api/types'
 import { useTimelineSignal } from '../store/timeline'
 import LocationPicker from '@/components/LocationPicker'
@@ -189,6 +190,7 @@ export default function EventForm({
   // Dev effects run twice; the shared photos must only be queued once.
   const sharedTaken = useRef(false)
   const linkTaken = useRef(false)
+  const hereTried = useRef(false)
 
   const [threads, setThreads] = useState<Thread[]>([])
   const [threadId, setThreadId] = useState<string | null>(null)
@@ -282,6 +284,25 @@ export default function EventForm({
     if (sharedText) setDescription((cur) => cur || sharedText)
     if (sharedLink) void prefillFromLink(sharedLink)
   }, [sharedLink, sharedText, isEdit])
+
+  // A new moment written from scratch defaults to where the phone is, like
+  // the web form. Not when something was shared in: a shared photo or video
+  // brings its own place (or is from somewhere else entirely), and a shared
+  // Maps link is the place. Never replaces a place the user has set.
+  useEffect(() => {
+    if (isEdit || hereTried.current || sharedAssets?.length || sharedLink) return
+    // No cleanup-cancel: dev runs effects twice, and the ref means only the
+    // first run looks the place up.
+    hereTried.current = true
+    setFindingPlace(true)
+    currentPlace()
+      .then((place) => {
+        if (!place || touched.current.location) return
+        setLocation((cur) => cur ?? place)
+        setPrefillNote((cur) => cur ?? 'Place filled in from where you are.')
+      })
+      .finally(() => setFindingPlace(false))
+  }, [isEdit, sharedAssets, sharedLink])
 
   async function prefillFromLink(link: string) {
     setFindingPlace(true)
