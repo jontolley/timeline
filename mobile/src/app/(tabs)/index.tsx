@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Animated,
   FlatList,
+  Image,
   Pressable,
   RefreshControl,
   StyleSheet,
@@ -173,6 +174,9 @@ export default function TimelineScreen() {
   // True while showing a jumped-to window rather than the newest page.
   const [jumped, setJumped] = useState(false)
   const [loading, setLoading] = useState(true)
+  // False until the first load after launch settles. That one load shows the
+  // logo; later full reloads (a filter change, Try again) show skeletons.
+  const [booted, setBooted] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
   const [hasMore, setHasMore] = useState(true)
@@ -230,7 +234,10 @@ export default function TimelineScreen() {
   // Loads on mount and again whenever the filters change.
   useEffect(() => {
     setLoading(true)
-    loadFirstPage().finally(() => setLoading(false))
+    loadFirstPage().finally(() => {
+      setLoading(false)
+      setBooted(true)
+    })
   }, [loadFirstPage])
 
   // Reload (quietly, no skeleton) when another screen signals a create, edit
@@ -635,7 +642,11 @@ export default function TimelineScreen() {
   return (
     <SafeAreaView style={s.safe} edges={['top']}>
       <View style={s.body}>
-        {loading ? (
+        {loading && !booted ? (
+          <View style={s.launch} accessibilityLabel="Loading your timeline">
+            <Image source={require('../../../assets/icon.png')} style={s.launchLogo} />
+          </View>
+        ) : loading ? (
           <>
             {header}
             {skeleton}
@@ -921,6 +932,10 @@ function makeStyles(t: Theme) {
       top: 6,
     },
 
+    // Centred on the whole screen (not just below the safe-area top), so it
+    // sits where the eye already is coming off the splash.
+    launch: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+    launchLogo: { width: 96, height: 96, borderRadius: 22 },
     skel: { paddingLeft: CONTENT_X, paddingRight: 18, paddingTop: 14, gap: 16 },
     skelCard: {
       backgroundColor: t.card,
