@@ -107,6 +107,8 @@ export default function RootLayout() {
             options={{ presentation: 'modal', contentStyle: { backgroundColor: t.modalBg } }}
           />
           <Stack.Screen name="search" options={{ animation: 'fade' }} />
+          {/* A document gets the whole screen to read in; Done closes it. */}
+          <Stack.Screen name="pdf" options={{ presentation: 'fullScreenModal' }} />
           <Stack.Screen
             name="filters"
             options={{

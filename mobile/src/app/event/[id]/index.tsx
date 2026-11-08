@@ -355,7 +355,11 @@ export default function EventDetailScreen() {
     rows.push({
       key: m.key,
       node: (
-        <Pressable style={({ pressed }) => [styles.row, pressed && styles.pressed]} onPress={() => openExternal(m.url)}>
+        <Pressable
+          style={({ pressed }) => [styles.row, pressed && styles.pressed]}
+          onPress={() => m.url && router.push({ pathname: '/pdf', params: { url: m.url, title: event.title } })}
+          disabled={!m.url}
+        >
           <RowIcon icon="doc.text.fill" tone="danger" />
           <View style={styles.rowMain}>
             <Text style={styles.rowTitle}>Document</Text>
