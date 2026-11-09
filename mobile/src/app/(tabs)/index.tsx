@@ -46,6 +46,7 @@ const CONTENT_X = 50
 // stick: SectionList makes either every section header sticky or none.
 type Row =
   | { kind: 'today'; key: string }
+  | { kind: 'edge'; key: string }
   | {
       kind: 'year'
       key: string
@@ -78,7 +79,16 @@ function toRows(
   countByYear: Record<number, number>,
   withToday: boolean,
 ): Row[] {
-  const out: Row[] = withToday ? [{ kind: 'today', key: 'today' }] : []
+  // A jumped-to window opens on a year row, which is pinned (sticky). Pinned
+  // rows never report a fresh position to the list, and the list's tracking
+  // of what's on screen (which drives the scrubber's highlight) gives up when
+  // row 0 has no known position, so it stopped for good once newer moments
+  // went in above. An empty row keeps a measurable row 0 in place of Today.
+  const out: Row[] = withToday
+    ? [{ kind: 'today', key: 'today' }]
+    : events.length
+      ? [{ kind: 'edge', key: 'edge' }]
+      : []
   // Bucket by month first, so busy months can be grouped and counted.
   const months: { key: string; events: TimelineEvent[] }[] = []
   for (const ev of events) {
@@ -222,6 +232,7 @@ export default function TimelineScreen() {
       setHasMore(page.length === PAGE_SIZE)
       setHasNewer(false)
       setAnchorNewer(false)
+      setPrefixKey(null)
       setYears(sortedYears)
       setThreads(thr)
       setPeople(ppl)
@@ -298,6 +309,10 @@ export default function TimelineScreen() {
 
   // True while a finger is on the list or it is still coasting after one.
   const userScrolling = useRef(false)
+  // Key of the row that was first before the latest newer page went in.
+  const [prefixKey, setPrefixKey] = useState<string | null>(null)
+  const prefixAt = useRef(0)
+  const rowsRef = useRef<Row[]>([])
   // A newer page fetched ahead for the current window (`gen`), not yet shown.
   const newerAhead = useRef<{ gen: number; page: Promise<TimelineEvent[]> } | null>(null)
 
@@ -325,6 +340,10 @@ export default function TimelineScreen() {
         newerAhead.current = { gen, page: Promise.resolve(page) }
         return
       }
+      // Draw every new row in the same pass (see `prefixRows` below).
+      // Row 0 is the empty edge row (or Today); the row you're reading is 1.
+      setPrefixKey(rowsRef.current[1]?.key ?? null)
+      prefixAt.current = Date.now()
       setEvents((prev) => [...page, ...prev])
       if (page.length < PAGE_SIZE) {
         setHasNewer(false)
@@ -361,6 +380,12 @@ export default function TimelineScreen() {
   }, [])
   const onScrollStop = useCallback(() => {
     userScrolling.current = false
+    // The new rows are drawn and measured by now, so they can be windowed
+    // like any other. (Not in the same instant as the insert, though.)
+    if (prefixAt.current && Date.now() - prefixAt.current > 1000) {
+      prefixAt.current = 0
+      setPrefixKey(null)
+    }
   }, [])
 
   const listRef = useRef<FlatList<Row>>(null)
@@ -432,6 +457,7 @@ export default function TimelineScreen() {
       setHasMore(page.length === PAGE_SIZE)
       setHasNewer(!newest && page.length > 0)
       setAnchorNewer(false)
+      setPrefixKey(null)
       setViewYear(year)
       setJumped(!newest)
       // Start the new window at its top (the year row pinned), not mid-way
@@ -480,6 +506,18 @@ export default function TimelineScreen() {
 
   const countByYear = useMemo(() => Object.fromEntries(years.map((y) => [y.year, y.count])), [years])
   const rows = useMemo(() => toRows(events, sortBy, countByYear, !jumped), [events, sortBy, countByYear, jumped])
+  rowsRef.current = rows
+  // Rows added above the one you're reading by the latest newer page. The
+  // list always draws its first `initialNumToRender` rows, so stretching that
+  // over them draws the whole page at once. Otherwise most of the page would
+  // be a placeholder of estimated height, and the list (which keeps your row
+  // still by watching whatever sits at the top of the screen) would end up
+  // watching that placeholder mid-drag; when the real, shorter rows replaced
+  // it, the view jumped far down the timeline.
+  const prefixRows = useMemo(
+    () => (prefixKey ? Math.max(0, rows.findIndex((r) => r.key === prefixKey)) : 0),
+    [rows, prefixKey],
+  )
   const stickyIndices = useMemo(
     // +1: the ListHeaderComponent counts as index 0.
     () => rows.flatMap((r, i) => (r.kind === 'year' ? [i + 1] : [])),
@@ -549,6 +587,8 @@ export default function TimelineScreen() {
 
   const renderRow = ({ item: row }: { item: Row }) => {
     switch (row.kind) {
+      case 'edge':
+        return <View style={s.edgeRow} />
       case 'today':
         return (
           <View style={s.today}>
@@ -752,9 +792,11 @@ export default function TimelineScreen() {
             onStartReached={hasNewer ? loadNewer : undefined}
             onStartReachedThreshold={1}
             // Keep the row you're reading still while newer moments are added
-            // above it. The index counts rows only: FlatList itself skips the
-            // header, which never moves.
-            maintainVisibleContentPosition={anchorNewer ? { minIndexForVisible: 0 } : undefined}
+            // above it. The index counts rows only (FlatList itself skips the
+            // header), and 1 skips the empty edge row / Today, which stays row 0,
+            // so the list's idea of "the first row" changes when a page goes in.
+            maintainVisibleContentPosition={anchorNewer ? { minIndexForVisible: 1 } : undefined}
+            initialNumToRender={prefixRows + 10}
             ListEmptyComponent={empty}
             ListFooterComponent={
               loadingMore ? <ActivityIndicator color={t.secondary} style={{ marginVertical: 20 }} /> : undefined
@@ -871,6 +913,7 @@ function makeStyles(t: Theme) {
     withScrubber: { paddingRight: 34 },
 
     today: { paddingLeft: CONTENT_X, paddingBottom: 14 },
+    edgeRow: { height: 0 },
     todayHalo: {
       position: 'absolute',
       left: AXIS_X + 2 - 12,
