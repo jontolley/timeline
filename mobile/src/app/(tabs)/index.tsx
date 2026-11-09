@@ -9,6 +9,7 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
   type ListViewToken,
   type NativeScrollEvent,
   type NativeSyntheticEvent,
@@ -282,43 +283,85 @@ export default function TimelineScreen() {
     }
   }, [events, hasMore, loadingMore, params, sortBy])
 
-  // Scrolling up in a jumped-to window: fetch the moments just newer than the
-  // top one and put them above it. The backend's after_date + after_id cursor
-  // returns the page closest to the cursor, newest first. Once a short page
-  // comes back the window reaches today, so it becomes the ordinary timeline.
-  const loadNewer = useCallback(async () => {
-    if (loadingNewer.current || !hasNewer || !anchorNewer || events.length === 0) return
-    loadingNewer.current = true
-    const gen = windowGen.current
-    try {
-      const newest = events[0]
-      const page = await listEvents({
+  // The moments just newer than `newest`. The backend's after_date + after_id
+  // cursor returns the page closest to the cursor, newest first.
+  const fetchNewer = useCallback(
+    (newest: TimelineEvent) =>
+      listEvents({
         ...params,
         limit: PAGE_SIZE,
         after_date: sortDateOf(newest, sortBy),
         after_id: newest._id,
-      })
+      }),
+    [params, sortBy],
+  )
+
+  // True while a finger is on the list or it is still coasting after one.
+  const userScrolling = useRef(false)
+  // A newer page fetched ahead for the current window (`gen`), not yet shown.
+  const newerAhead = useRef<{ gen: number; page: Promise<TimelineEvent[]> } | null>(null)
+
+  // Scrolling up in a jumped-to window: put the moments just newer than the
+  // top one above it. Once a short page comes back the window reaches today,
+  // so it becomes the ordinary timeline.
+  //
+  // Newer moments go in only while the list is being scrolled. Inserting
+  // above a list at rest goes wrong two ways: the sticky year rows keep their
+  // old positions until the next scroll event (a newer year pinned at the top,
+  // the right one floating mid-card), and if the insert reaches the screen in
+  // the same frame that keep-my-place is switched on, the list keeps the old
+  // offset and shows the top of the newer page instead of the year you picked.
+  // A page that arrives after the scroll has stopped waits for the next one.
+  const loadNewer = useCallback(async () => {
+    if (loadingNewer.current || !hasNewer || !anchorNewer || !userScrolling.current || events.length === 0) return
+    loadingNewer.current = true
+    const gen = windowGen.current
+    const ahead = newerAhead.current?.gen === gen ? newerAhead.current.page : null
+    newerAhead.current = null
+    try {
+      const page = await (ahead ?? fetchNewer(events[0]))
       if (gen !== windowGen.current) return
+      if (!userScrolling.current) {
+        newerAhead.current = { gen, page: Promise.resolve(page) }
+        return
+      }
       setEvents((prev) => [...page, ...prev])
       if (page.length < PAGE_SIZE) {
         setHasNewer(false)
         setJumped(false)
       }
     } catch {
-      // Keep what we have; scrolling up again retries.
+      // Keep what we have; scrolling again retries.
     } finally {
       loadingNewer.current = false
     }
-  }, [anchorNewer, events, hasNewer, params, sortBy])
+  }, [anchorNewer, events, fetchNewer, hasNewer])
 
   // A jump lands on the top of its window, already close to the newer edge,
-  // so fetch one newer page straight away; after that, onStartReached loads
-  // more as you scroll up.
+  // so fetch one newer page straight away, ready for the first scroll.
   useEffect(() => {
-    if (anchorNewer && hasNewer) void loadNewer()
-    // Only when the anchor switches on, not on every loadNewer identity change.
+    if (!anchorNewer || !hasNewer || events.length === 0) return
+    const page = fetchNewer(events[0])
+    page.catch(() => {})
+    newerAhead.current = { gen: windowGen.current, page }
+    // Only when the anchor switches on, not on every events change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [anchorNewer])
+
+  // A drag near the top of the window brings in the newer page. (The list's
+  // own onStartReached only fires once per content size, so a call it made
+  // while the list was at rest, and loadNewer skipped, never comes again.)
+  const { height: screenH } = useWindowDimensions()
+  const onScrollBeginDrag = useCallback(() => {
+    userScrolling.current = true
+    if (scrollY.current < screenH * 1.5) void loadNewer()
+  }, [loadNewer, screenH])
+  const onMomentumScrollBegin = useCallback(() => {
+    userScrolling.current = true
+  }, [])
+  const onScrollStop = useCallback(() => {
+    userScrolling.current = false
+  }, [])
 
   const listRef = useRef<FlatList<Row>>(null)
   const scrollY = useRef(0)
@@ -690,6 +733,10 @@ export default function TimelineScreen() {
             renderItem={renderRow}
             stickyHeaderIndices={stickyIndices}
             onScroll={onScroll}
+            onScrollBeginDrag={onScrollBeginDrag}
+            onScrollEndDrag={onScrollStop}
+            onMomentumScrollBegin={onMomentumScrollBegin}
+            onMomentumScrollEnd={onScrollStop}
           // The year scrubber owns the right edge.
           showsVerticalScrollIndicator={!showScrubber}
             scrollEventThrottle={16}
@@ -705,9 +752,9 @@ export default function TimelineScreen() {
             onStartReached={hasNewer ? loadNewer : undefined}
             onStartReachedThreshold={1}
             // Keep the row you're reading still while newer moments are added
-            // above it. Index 0 is the header, which never moves, so anchor on
-            // the first row after it.
-            maintainVisibleContentPosition={anchorNewer ? { minIndexForVisible: 1 } : undefined}
+            // above it. The index counts rows only: FlatList itself skips the
+            // header, which never moves.
+            maintainVisibleContentPosition={anchorNewer ? { minIndexForVisible: 0 } : undefined}
             ListEmptyComponent={empty}
             ListFooterComponent={
               loadingMore ? <ActivityIndicator color={t.secondary} style={{ marginVertical: 20 }} /> : undefined
