@@ -675,7 +675,7 @@ export default function EventForm({
   function inlinePicker(which: NonNullable<typeof openPicker>, value: Date, onPick: (picked: Date) => void) {
     if (openPicker !== which || readOnly) return null
     const mode = which === 'time' || which === 'endTime' ? 'time' : 'date'
-    return (
+    const picker = (
       <DateTimePicker
         value={value}
         mode={mode}
@@ -685,13 +685,33 @@ export default function EventForm({
         display={Platform.OS === 'ios' ? (mode === 'date' ? 'inline' : 'spinner') : 'default'}
         style={styles.picker}
         onValueChange={(_event, picked) => {
-          // A calendar closes on a pick; the time wheels stay up while they spin.
-          if (Platform.OS !== 'ios' || mode === 'date') setOpenPicker(null)
+          // The calendar closes when a day is tapped. Spinning its month/year
+          // wheels also changes the value, but keeps the day of the month, so
+          // a change that leaves the day alone keeps the calendar up (tap the
+          // month heading to get back to the days, or Done). The time wheels
+          // stay up while they spin.
+          const dayTapped = mode === 'date' && picked.getUTCDate() !== value.getUTCDate()
+          if (Platform.OS !== 'ios' || dayTapped) setOpenPicker(null)
           markDates()
           onPick(picked)
         }}
         onDismiss={() => setOpenPicker(null)}
       />
+    )
+    if (Platform.OS !== 'ios') return picker
+    return (
+      <View>
+        {picker}
+        <Pressable
+          style={({ pressed }) => [styles.pickerDone, pressed && styles.pressed]}
+          onPress={() => setOpenPicker(null)}
+          accessibilityRole="button"
+          accessibilityLabel={mode === 'date' ? 'Done choosing the date' : 'Done choosing the time'}
+          hitSlop={8}
+        >
+          <Text style={styles.pickerDoneText}>Done</Text>
+        </Pressable>
+      </View>
     )
   }
 
@@ -1376,6 +1396,17 @@ function makeStyles(t: Theme) {
     datePillText: { fontFamily: font.heavy, fontSize: 15, color: t.tintText },
     pills: { marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', gap: 8 },
     picker: { marginHorizontal: 8 },
+    pickerDone: {
+      alignSelf: 'flex-end',
+      height: 36,
+      paddingHorizontal: 16,
+      marginRight: 14,
+      marginBottom: 12,
+      borderRadius: 12,
+      backgroundColor: t.primarySoft,
+      justifyContent: 'center',
+    },
+    pickerDoneText: { fontFamily: font.heavy, fontSize: 15, color: t.tintText },
     tagsRow: { alignItems: 'flex-start' },
     tagWrap: { flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 7, minHeight: 38 },
     tag: {
